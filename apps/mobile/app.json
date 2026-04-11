@@ -7,7 +7,13 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "patrollog",
+    "icon": "./assets/LOGO.jpg",
     "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/LOGO.jpg",
+      "resizeMode": "contain",
+      "backgroundColor": "#1D4ED8"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.example.patrollog",
@@ -19,6 +25,10 @@
     },
     "android": {
       "package": "com.example.patrollog",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/LOGO.jpg",
+        "backgroundColor": "#1D4ED8"
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -39,7 +49,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
+          "icon": "./assets/LOGO.jpg",
           "color": "#1D4ED8",
           "androidMode": "default",
           "androidCollapsedTitle": "Patrol Log"
