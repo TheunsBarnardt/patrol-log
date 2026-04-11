@@ -37,5 +37,10 @@ apps/mobile/ios/build/
 apps/mobile/android/build/
 apps/mobile/android/.gradle/
 
+# firebase credentials — never commit these
+apps/mobile/google-services.json
+apps/mobile/GoogleService-Info.plist
+**/firebase-service-account*.json
+
 # drizzle
 apps/api/drizzle/meta/

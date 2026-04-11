@@ -19,35 +19,7 @@ import {
 } from "../db/schema.js";
 import type { Env } from "../env.js";
 import type { AuthenticatedContext } from "../env.js";
-
-// ── Push delivery ────────────────────────────────────────
-
-async function sendExpoPush(
-  tokens: string[],
-  title: string,
-  body: string,
-  data: Record<string, unknown> = {},
-): Promise<void> {
-  if (!tokens.length) return;
-  try {
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(
-        tokens.map((to) => ({
-          to,
-          title,
-          body: body.slice(0, 150),
-          data,
-          sound: "default",
-          priority: "high",
-        })),
-      ),
-    });
-  } catch {
-    // Best-effort — don't fail the request if push fails
-  }
-}
+import { sendFcm } from "../lib/fcm.js";
 
 // ── Audience resolution ──────────────────────────────────
 
@@ -246,7 +218,7 @@ export async function sendOutOfSectorNotification(
   const allIds = Array.from(new Set([...staffIds, auth.patroller.patroller_id]));
   const tokens = await getPushTokensForPatrollers(db, allIds);
 
-  await sendExpoPush(tokens, "⚠ Sector Boundary Alert", alertBody, {
+  await sendFcm(env, tokens, "⚠ Sector Boundary Alert", alertBody, {
     type: "out_of_sector",
     patroller_id: auth.patroller.patroller_id,
     sector_id: sectorId,
@@ -428,7 +400,7 @@ messagesRoute.post("/:channelId", async (c) => {
       ? `🚨 URGENT — ${auth.patroller.call_sign}`
       : auth.patroller.call_sign;
 
-  void sendExpoPush(tokens, pushTitle, body.body.trim(), {
+  void sendFcm(c.env, tokens, pushTitle, body.body.trim(), {
     type: "message",
     channel_id: channelId,
     channel_name: channel.name,

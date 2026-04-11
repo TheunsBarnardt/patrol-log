@@ -1,9 +1,13 @@
 // Push token registration and local notification helpers.
-// Uses expo-notifications (SDK 51 compatible ~0.28.0).
+// Uses expo-notifications (SDK 51 compatible ~0.28.x).
+//
+// NOTE: we intentionally use getDevicePushTokenAsync() — this returns the
+// raw FCM registration token on Android (and the APNs token on iOS). The
+// backend sends pushes directly to Firebase Cloud Messaging v1, so we
+// skip the Expo push relay entirely.
 
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
-import Constants from "expo-constants";
 import { api } from "./api";
 
 // Configure how notifications appear when the app is in foreground
@@ -16,8 +20,8 @@ Notifications.setNotificationHandler({
 });
 
 /**
- * Request permission + register Expo push token with the backend.
- * Call after successful login (and after EAS projectId is configured).
+ * Request permission + register the device's FCM token with the backend.
+ * Safe to call multiple times — the backend upserts by patroller_id.
  */
 export async function registerPushToken(): Promise<void> {
   try {
@@ -34,21 +38,20 @@ export async function registerPushToken(): Promise<void> {
       return;
     }
 
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      Constants.easConfig?.projectId;
-
-    if (!projectId || projectId === "YOUR_EXPO_PROJECT_ID") {
-      console.warn("[notifications] No Expo projectId configured — skipping push token registration");
+    // getDevicePushTokenAsync returns the raw FCM/APNs token.
+    // On Android this requires google-services.json to be embedded in the APK
+    // (configured via `eas credentials --platform android`).
+    const tokenData = await Notifications.getDevicePushTokenAsync();
+    if (!tokenData?.data) {
+      console.warn("[notifications] getDevicePushTokenAsync returned no token");
       return;
     }
 
-    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     await api.registerPushToken({
-      expo_token: tokenData.data,
+      expo_token: tokenData.data, // field name kept for wire compat — it's actually an FCM token
       platform: Platform.OS,
     });
-    console.log("[notifications] Push token registered:", tokenData.data);
+    console.log("[notifications] FCM token registered:", tokenData.data.slice(0, 24) + "…");
   } catch (err) {
     console.warn("[notifications] Failed to register push token:", err);
   }
