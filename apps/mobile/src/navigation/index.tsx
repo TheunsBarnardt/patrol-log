@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { TouchableOpacity } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAuthStore } from "../store/auth";
+import { useMessagingStore } from "../store/messaging";
 import { colors } from "../theme";
 import { ProfileDrawer } from "../components/ProfileDrawer";
 import { LoginScreen } from "../screens/LoginScreen";
@@ -32,17 +33,50 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-/** Hamburger icon rendered as three horizontal bars. */
+/** Hamburger icon — three horizontal bars */
 function HamburgerIcon({ onPress }: { onPress: () => void }) {
   return (
     <TouchableOpacity onPress={onPress} hitSlop={12} style={{ padding: 4, gap: 5, justifyContent: "center" }}>
       {[0, 1, 2].map((i) => (
-        <TouchableOpacity
+        <View
           key={i}
           style={{ width: 22, height: 2, backgroundColor: colors.primary, borderRadius: 1 }}
-          pointerEvents="none"
         />
       ))}
+    </TouchableOpacity>
+  );
+}
+
+/** Bell icon with unread badge — navigates to Messaging */
+function BellIcon({ navigation }: { navigation: any }) {
+  const unreadCount = useMessagingStore((s) => s.unreadCount);
+  return (
+    <TouchableOpacity
+      onPress={() => navigation.navigate("Messaging")}
+      hitSlop={12}
+      style={{ padding: 4, marginRight: 8 }}
+    >
+      <Text style={{ fontSize: 22 }}>💬</Text>
+      {unreadCount > 0 && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            backgroundColor: colors.danger,
+            borderRadius: 8,
+            minWidth: 16,
+            height: 16,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingHorizontal: 3,
+          }}
+        >
+          <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -69,12 +103,15 @@ export function RootNavigator() {
             <Stack.Screen
               name="Home"
               component={HomeScreen}
-              options={{
+              options={({ navigation }) => ({
                 title: "PATROL LOG",
                 headerRight: () => (
-                  <HamburgerIcon onPress={() => setDrawerOpen(true)} />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <BellIcon navigation={navigation} />
+                    <HamburgerIcon onPress={() => setDrawerOpen(true)} />
+                  </View>
                 ),
-              }}
+              })}
             />
             <Stack.Screen name="CommencePatrol" component={CommencePatrolScreen} options={{ title: "Commence Patrol" }} />
             <Stack.Screen name="ActivePatrol" component={ActivePatrolScreen} options={{ title: "Active Patrol" }} />

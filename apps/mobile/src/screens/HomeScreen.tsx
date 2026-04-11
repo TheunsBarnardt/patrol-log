@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { useAuthStore } from "../store/auth";
+import { useMessagingStore } from "../store/messaging";
 import { api } from "../lib/api";
 import { registerPushToken } from "../lib/notifications";
 import type { ActivePatrolResponse } from "@patrol-log/shared";
@@ -13,29 +14,30 @@ type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 
 export function HomeScreen({ navigation }: Props) {
   const profile = useAuthStore((s) => s.profile);
+  const setUnreadCount = useMessagingStore((s) => s.setUnreadCount);
+  const unreadCount = useMessagingStore((s) => s.unreadCount);
   const [activePatrol, setActivePatrol] = useState<ActivePatrolResponse | null>(null);
-  const [totalUnread, setTotalUnread] = useState(0);
   const pushRegistered = useRef(false);
 
-  // Fetch unread count for messaging bell
   async function refreshUnread() {
     try {
       const res = await api.messageChannels();
       const total = res.channels.reduce((sum, ch) => sum + ch.unreadCount, 0);
-      setTotalUnread(total);
+      setUnreadCount(total);
     } catch {
-      // Ignore — messaging may not be set up yet
+      // Messaging not yet set up — ignore
     }
   }
 
+  // Register push token once after login
   useEffect(() => {
-    // Register push token once after login
     if (!pushRegistered.current) {
       pushRegistered.current = true;
       void registerPushToken();
     }
   }, []);
 
+  // Refresh patrol status and unread count on focus
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => {
       void api.activePatrol().then(setActivePatrol).catch(() => setActivePatrol(null));
@@ -43,26 +45,6 @@ export function HomeScreen({ navigation }: Props) {
     });
     return unsub;
   }, [navigation]);
-
-  // Set messaging bell in header
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity
-          onPress={() => navigation.navigate("Messaging")}
-          style={styles.bellBtn}
-          hitSlop={12}
-        >
-          <Text style={styles.bellIcon}>💬</Text>
-          {totalUnread > 0 && (
-            <View style={styles.bellBadge}>
-              <Text style={styles.bellBadgeText}>{totalUnread > 99 ? "99+" : totalUnread}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation, totalUnread]);
 
   if (!profile) return null;
 
@@ -105,11 +87,11 @@ export function HomeScreen({ navigation }: Props) {
           </View>
         </View>
 
-        {/* Messaging */}
+        {/* Messaging shortcut */}
         <View style={styles.group}>
           <ActionButton
             title="Messages"
-            subtitle={totalUnread > 0 ? `${totalUnread} unread message${totalUnread !== 1 ? "s" : ""}` : "Broadcast & sector channels"}
+            subtitle={unreadCount > 0 ? `${unreadCount} unread message${unreadCount !== 1 ? "s" : ""}` : "Broadcast & sector channels"}
             color={colors.info}
             icon="💬"
             onPress={() => navigation.navigate("Messaging")}
@@ -205,20 +187,4 @@ const styles = StyleSheet.create({
   dirIcon: { fontSize: 20 },
   dirTitle: { flex: 1, fontSize: 15, fontWeight: "600" },
   chevron: { fontSize: 20, color: colors.textMuted, fontWeight: "300" },
-
-  bellBtn: { position: "relative", padding: 4 },
-  bellIcon: { fontSize: 22 },
-  bellBadge: {
-    position: "absolute",
-    top: -2,
-    right: -2,
-    backgroundColor: colors.danger,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 3,
-  },
-  bellBadgeText: { color: "#fff", fontSize: 9, fontWeight: "700" },
 });
