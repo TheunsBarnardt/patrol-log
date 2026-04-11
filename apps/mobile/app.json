@@ -49,7 +49,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/LOGO.jpg",
+          "icon": "./assets/notification-icon.png",
           "color": "#1D4ED8",
           "androidMode": "default",
           "androidCollapsedTitle": "Patrol Log"
