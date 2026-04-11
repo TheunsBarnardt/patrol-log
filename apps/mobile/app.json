@@ -7,10 +7,10 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "patrollog",
-    "icon": "./assets/LOGO.jpg",
+    "icon": "./assets/app-icon.png",
     "newArchEnabled": false,
     "splash": {
-      "image": "./assets/LOGO.jpg",
+      "image": "./assets/app-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#1D4ED8"
     },
@@ -26,7 +26,7 @@
     "android": {
       "package": "com.example.patrollog",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/LOGO.jpg",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1D4ED8"
       },
       "permissions": [

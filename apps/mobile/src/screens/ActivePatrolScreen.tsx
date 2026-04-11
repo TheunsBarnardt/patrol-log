@@ -7,7 +7,8 @@ import * as Location from "expo-location";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
-import { stopHeartbeat } from "../lib/heartbeat";
+import { startHeartbeat, stopHeartbeat } from "../lib/heartbeat";
+import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
 import type { ActivePatrolResponse, GeoPoint } from "@patrol-log/shared";
 
@@ -18,6 +19,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   const [patrol, setPatrol] = useState<ActivePatrolResponse | null>(null);
   const [odometerEnd, setOdometerEnd] = useState("");
   const [busy, setBusy] = useState(false);
+  const deviceToken = useAuthStore((s) => s.deviceToken);
 
   const refresh = useCallback(async () => {
     try {
@@ -31,6 +33,16 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Re-start the heartbeat loop whenever this screen mounts with an active patrol.
+  // This matters when the app was killed/backgrounded — the in-memory setInterval
+  // from startHeartbeat() dies, so the live-map pin freezes until we re-arm it.
+  useEffect(() => {
+    if (!deviceToken) return;
+    const jti = decodeJti(deviceToken);
+    if (!jti) return;
+    void startHeartbeat(patrolId, jti);
+  }, [patrolId, deviceToken]);
 
   async function standDownSelf() {
     if (!patrol) return;
@@ -126,6 +138,16 @@ async function captureGps(): Promise<GeoPoint | undefined> {
 function formatTime(iso: string): string {
   const d = new Date(iso);
   return `${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${d.toISOString().slice(0, 10)}`;
+}
+
+function decodeJti(jwt: string): string | null {
+  try {
+    const [, payload] = jwt.split(".");
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof json.jti === "string" ? json.jti : null;
+  } catch {
+    return null;
+  }
 }
 
 const styles = StyleSheet.create({

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { FontAwesome } from "@expo/vector-icons";
 import { useAuthStore } from "../store/auth";
 import { useMessagingStore } from "../store/messaging";
 import { colors } from "../theme";
@@ -54,9 +55,9 @@ function BellIcon({ navigation }: { navigation: any }) {
     <TouchableOpacity
       onPress={() => navigation.navigate("Messaging")}
       hitSlop={12}
-      style={{ padding: 4, marginRight: 8 }}
+      style={{ padding: 4, marginRight: 8, width: 32, height: 32, justifyContent: "center", alignItems: "center" }}
     >
-      <Text style={{ fontSize: 22 }}>💬</Text>
+      <FontAwesome name="bell-o" size={24} color={colors.text} />
       {unreadCount > 0 && (
         <View
           style={{
@@ -64,15 +65,17 @@ function BellIcon({ navigation }: { navigation: any }) {
             top: 0,
             right: 0,
             backgroundColor: colors.danger,
-            borderRadius: 8,
-            minWidth: 16,
-            height: 16,
+            borderRadius: 9,
+            minWidth: 18,
+            height: 18,
             alignItems: "center",
             justifyContent: "center",
-            paddingHorizontal: 3,
+            paddingHorizontal: 4,
+            borderWidth: 1.5,
+            borderColor: "#fff",
           }}
         >
-          <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>
+          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "800" }}>
             {unreadCount > 99 ? "99+" : unreadCount}
           </Text>
         </View>

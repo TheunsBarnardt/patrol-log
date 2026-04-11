@@ -28,33 +28,38 @@ function formatTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function MessageBubble({ msg, myCallSign }: { msg: Message; myCallSign: string }) {
-  const isMe = msg.senderCallSign === myCallSign;
-  const isSystem = msg.senderId === null && msg.senderCallSign === "System";
+function MessageBubble({ msg, myId }: { msg: Message; myId: string }) {
+  const isMe = !!msg.senderId && msg.senderId === myId;
+  const isSystem = msg.senderId === null;
 
   if (isSystem) {
     return (
       <View style={styles.systemRow}>
-        <Text style={styles.systemText}>{msg.body}</Text>
+        <View style={styles.systemPill}>
+          <Text style={styles.systemText}>{msg.body}</Text>
+          <Text style={styles.systemTime}>{formatTime(msg.createdAt)}</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={[styles.bubbleRow, isMe ? styles.bubbleRight : styles.bubbleLeft]}>
-      {!isMe && <Text style={styles.senderLabel}>{msg.senderCallSign}</Text>}
-      <View
-        style={[
-          styles.bubble,
-          isMe ? styles.bubbleMe : styles.bubbleThem,
-          msg.priority === "urgent" && styles.bubbleUrgent,
-        ]}
-      >
-        {msg.priority === "urgent" && (
-          <Text style={styles.urgentLabel}>🚨 URGENT  </Text>
-        )}
-        <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{msg.body}</Text>
-        <Text style={[styles.timeText, isMe && styles.timeTextMe]}>{formatTime(msg.createdAt)}</Text>
+    <View style={[styles.bubbleRow, { justifyContent: isMe ? "flex-end" : "flex-start" }]}>
+      <View style={{ maxWidth: "80%" }}>
+        {!isMe && <Text style={styles.senderLabel}>{msg.senderCallSign}</Text>}
+        <View
+          style={[
+            styles.bubble,
+            isMe ? styles.bubbleMe : styles.bubbleThem,
+            msg.priority === "urgent" && styles.bubbleUrgent,
+          ]}
+        >
+          {msg.priority === "urgent" && (
+            <Text style={styles.urgentLabel}>🚨 URGENT</Text>
+          )}
+          <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{msg.body}</Text>
+          <Text style={[styles.timeText, isMe && styles.timeTextMe]}>{formatTime(msg.createdAt)}</Text>
+        </View>
       </View>
     </View>
   );
@@ -63,7 +68,7 @@ function MessageBubble({ msg, myCallSign }: { msg: Message; myCallSign: string }
 export function ChannelScreen({ route }: Props) {
   const { channelId } = route.params;
   const profile = useAuthStore((s) => s.profile);
-  const myCallSign = profile?.call_sign ?? "";
+  const myId = profile?.patroller_id ?? "";
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,7 +148,7 @@ export function ChannelScreen({ route }: Props) {
               <Text style={styles.emptyText}>No messages yet. Say something!</Text>
             </View>
           }
-          renderItem={({ item }) => <MessageBubble msg={item} myCallSign={myCallSign} />}
+          renderItem={({ item }) => <MessageBubble msg={item} myId={myId} />}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         />
 
@@ -182,47 +187,56 @@ export function ChannelScreen({ route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F3F4F6" },
+  container: { flex: 1, backgroundColor: "#ECE5DD" }, // WhatsApp-beige backdrop
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   emptyText: { color: colors.textMuted, fontSize: 14 },
 
-  messageList: { padding: spacing.md, gap: spacing.sm, flexGrow: 1 },
+  messageList: { padding: spacing.md, flexGrow: 1 },
 
-  systemRow: { alignItems: "center", marginVertical: spacing.xs },
+  systemRow: { alignItems: "center", marginVertical: spacing.sm },
+  systemPill: {
+    backgroundColor: "rgba(255,255,255,0.85)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    maxWidth: "90%",
+  },
   systemText: { fontSize: 12, color: colors.textMuted, fontStyle: "italic", textAlign: "center" },
+  systemTime: { fontSize: 10, color: colors.textMuted, textAlign: "center", marginTop: 2 },
 
-  bubbleRow: { marginBottom: spacing.sm },
-  bubbleLeft: { alignItems: "flex-start" },
-  bubbleRight: { alignItems: "flex-end" },
-  senderLabel: { fontSize: 11, color: colors.textMuted, marginBottom: 2, marginLeft: 4 },
+  bubbleRow: {
+    flexDirection: "row",
+    width: "100%",
+    marginBottom: 6,
+  },
+  senderLabel: { fontSize: 11, color: colors.primary, fontWeight: "700", marginBottom: 2, marginLeft: 10 },
 
   bubble: {
-    maxWidth: "80%",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 16,
-  },
-  bubbleMe: {
-    backgroundColor: colors.primary,
-    borderBottomRightRadius: 4,
-  },
-  bubbleThem: {
-    backgroundColor: colors.bg,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: 14,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 1,
     elevation: 1,
   },
+  bubbleMe: {
+    backgroundColor: "#DCF8C6", // WhatsApp outgoing green
+    borderBottomRightRadius: 4,
+    alignSelf: "flex-end",
+  },
+  bubbleThem: {
+    backgroundColor: "#FFFFFF",
+    borderBottomLeftRadius: 4,
+    alignSelf: "flex-start",
+  },
   bubbleUrgent: { borderWidth: 2, borderColor: colors.danger },
-  urgentLabel: { color: colors.danger, fontSize: 11, fontWeight: "700" },
-  bubbleText: { fontSize: 15, color: colors.text, lineHeight: 20 },
-  bubbleTextMe: { color: "#fff" },
-  timeText: { fontSize: 10, color: colors.textMuted, marginTop: 3, textAlign: "right" },
-  timeTextMe: { color: "rgba(255,255,255,0.7)" },
+  urgentLabel: { color: colors.danger, fontSize: 11, fontWeight: "800", marginBottom: 2 },
+  bubbleText: { fontSize: 15, color: "#111827", lineHeight: 20 },
+  bubbleTextMe: { color: "#111827" },
+  timeText: { fontSize: 10, color: "#6B7280", marginTop: 4, textAlign: "right" },
+  timeTextMe: { color: "#6B7280" },
 
   compose: {
     flexDirection: "row",
