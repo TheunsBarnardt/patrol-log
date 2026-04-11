@@ -25,6 +25,7 @@
     },
     "android": {
       "package": "com.example.patrollog",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1D4ED8"
