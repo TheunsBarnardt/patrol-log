@@ -74,7 +74,7 @@ pnpm dev:mobile
 
 | Call sign | Password    | Role              | Use for                             |
 | --------- | ----------- | ----------------- | ----------------------------------- |
-| `WV01`    | `Admin1234!` | admin             | Admin portal login, full access     |
+| `<YOUR_ADMIN_CALL_SIGN>`    | `<YOUR_ADMIN_PASSWORD>` | admin             | Admin portal login, full access     |
 | `WV46`    | `Patrol123!` | call_centre_agent | Dispatch view of live patroller map |
 | `WC29`    | `Patrol123!` | patroller         | Mobile app, commence/stand-down     |
 | `WC46`    | `Patrol123!` | patroller         | Mobile app, second patroller        |

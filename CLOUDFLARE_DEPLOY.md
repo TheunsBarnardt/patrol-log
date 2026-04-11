@@ -85,7 +85,7 @@ You should see `[seed] done.` with four demo accounts:
 
 | Call sign | Password     | Role              |
 | --------- | ------------ | ----------------- |
-| `WV01`    | `Admin1234!` | admin             |
+| `<YOUR_ADMIN_CALL_SIGN>`    | `<YOUR_ADMIN_PASSWORD>` | admin             |
 | `WV46`    | `Patrol123!` | call_centre_agent |
 | `WC29`    | `Patrol123!` | patroller         |
 | `WC46`    | `Patrol123!` | patroller         |
@@ -164,7 +164,7 @@ curl https://patrol-log-api.<yourname>.workers.dev/health
 
 curl -X POST https://patrol-log-api.<yourname>.workers.dev/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"call_sign":"WV01","password":"Admin1234!","device_id":"test"}'
+  -d '{"call_sign":"<YOUR_ADMIN_CALL_SIGN>","password":"<YOUR_ADMIN_PASSWORD>","device_id":"test"}'
 # → {"device_token":"eyJhbGciOiJI...","patroller":{...}}
 ```
 
@@ -176,8 +176,8 @@ Invoke-RestMethod https://patrol-log-api.<yourname>.workers.dev/health
 
 # Login
 $body = @{
-  call_sign = "WV01"
-  password  = "Admin1234!"
+  call_sign = "<YOUR_ADMIN_CALL_SIGN>"
+  password  = "<YOUR_ADMIN_PASSWORD>"
   device_id = "test"
 } | ConvertTo-Json
 
@@ -193,7 +193,7 @@ $res.patroller.access_level    # should print "admin"
 
 If the login returns a token, the API is live and talking to Neon. 🎉
 
-> Alternative: skip curl entirely and smoke-test via the admin portal after §5. If you can log in at `https://patrol-log-admin.pages.dev` with `WV01` / `Admin1234!` and see the Dashboard render, the API is working end-to-end (auth + CORS + `/admin/stats`).
+> Alternative: skip curl entirely and smoke-test via the admin portal after §5. If you can log in at `https://patrol-log-admin.pages.dev` with `<YOUR_ADMIN_CALL_SIGN>` / `<YOUR_ADMIN_PASSWORD>` and see the Dashboard render, the API is working end-to-end (auth + CORS + `/admin/stats`).
 
 ---
 
@@ -248,7 +248,7 @@ wrangler deploy
 
 ### 5.5 — Smoke test the admin portal
 
-Open `https://patrol-log-admin.pages.dev` and log in with `WV01` / `Admin1234!`. You should land on the Dashboard and see counts for active patrols, residents, and members.
+Open `https://patrol-log-admin.pages.dev` and log in with `<YOUR_ADMIN_CALL_SIGN>` / `<YOUR_ADMIN_PASSWORD>`. You should land on the Dashboard and see counts for active patrols, residents, and members.
 
 ---
 
@@ -520,8 +520,8 @@ curl.exe https://patrol-log-api.<yourname>.workers.dev/health
 Invoke-RestMethod https://patrol-log-api.<yourname>.workers.dev/health
 
 $body = @{
-  call_sign = "WV01"
-  password  = "Admin1234!"
+  call_sign = "<YOUR_ADMIN_CALL_SIGN>"
+  password  = "<YOUR_ADMIN_PASSWORD>"
   device_id = "test"
 } | ConvertTo-Json
 
