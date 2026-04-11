@@ -1,0 +1,203 @@
+feature: hotspots-map
+version: 1.0.0
+description: Display incident hotspots on a map over a preset time period for patrol planning
+category: data
+tags:
+  - map
+  - hotspots
+  - incidents
+  - cpf
+  - read-only
+
+fields:
+  - name: period
+    type: select
+    required: true
+    label: Period
+    default: 7d
+    options:
+      - value: today
+        label: Today
+      - value: 7d
+        label: Last 7 days
+      - value: 30d
+        label: Last 30 days
+      - value: 90d
+        label: Last 90 days
+    validation:
+      - type: required
+        message: Select a time period
+      - type: oneOf
+        value:
+          - today
+          - 7d
+          - 30d
+          - 90d
+        message: Invalid time period
+
+  - name: from_timestamp
+    type: datetime
+    required: false
+    label: From timestamp (computed from period)
+
+  - name: to_timestamp
+    type: datetime
+    required: false
+    label: To timestamp (computed from period)
+
+  - name: incidents
+    type: json
+    required: false
+    label: Incident pins
+
+rules:
+  security:
+    required_authentication: true
+    read_only: true
+    all_sectors_visible_to_all: true
+  caching:
+    server_cache_ttl_seconds: 300
+    cache_key:
+      - period
+  redaction:
+    sensitive_types_require_sector_lead:
+      - domestic_violence
+      - minors
+  upstream:
+    source: incidents_api
+    fallback_on_failure: degraded_list_view
+
+outcomes:
+  unauthenticated:
+    priority: 1
+    error: HOTSPOTS_UNAUTHENTICATED
+    given:
+      - field: session
+        source: session
+        operator: not_exists
+    result: show "Please log in to view hotspots."
+
+  invalid_period:
+    priority: 2
+    error: HOTSPOTS_INVALID_PERIOD
+    given:
+      - field: period
+        source: input
+        operator: not_in
+        value:
+          - today
+          - 7d
+          - 30d
+          - 90d
+    result: show "Select a valid time period."
+
+  incidents_api_unavailable:
+    priority: 3
+    error: HOTSPOTS_INCIDENTS_API_UNAVAILABLE
+    given:
+      - field: incidents_api_status
+        source: system
+        operator: neq
+        value: ok
+      - field: cache_has_period
+        source: system
+        operator: eq
+        value: false
+    then:
+      - action: emit_event
+        event: hotspots.upstreamdown
+        payload:
+          - period
+          - timestamp
+    result: show "Incident data is unavailable. Falling back to list view."
+
+  map_provider_unavailable:
+    priority: 4
+    error: HOTSPOTS_MAP_PROVIDER_UNAVAILABLE
+    given:
+      - field: tile_provider_status
+        source: system
+        operator: neq
+        value: ok
+    result: show "Map provider unavailable. Showing list only."
+
+  successful_query:
+    priority: 10
+    transaction: false
+    given:
+      - field: session
+        source: session
+        operator: exists
+      - field: period
+        source: input
+        operator: in
+        value:
+          - today
+          - 7d
+          - 30d
+          - 90d
+    then:
+      - action: set_field
+        target: from_timestamp
+        value: period_start_from_preset
+      - action: set_field
+        target: to_timestamp
+        value: now
+      - action: call_service
+        target: incidents_api
+        description: Query upstream incidents API for points with occurred_at in window
+      - action: emit_event
+        event: hotspots.queried
+        payload:
+          - period
+          - from_timestamp
+          - to_timestamp
+          - result_count
+          - viewer_call_sign
+    result: render map pins with clustering, or empty-state when zero results
+
+errors:
+  - code: HOTSPOTS_UNAUTHENTICATED
+    status: 401
+    message: Please log in to view hotspots
+    retry: false
+  - code: HOTSPOTS_INVALID_PERIOD
+    status: 422
+    message: Select a valid time period
+    retry: true
+  - code: HOTSPOTS_INCIDENTS_API_UNAVAILABLE
+    status: 503
+    message: Incident data is unavailable. Please try again shortly.
+    retry: true
+  - code: HOTSPOTS_MAP_PROVIDER_UNAVAILABLE
+    status: 503
+    message: Map provider unavailable
+    retry: true
+
+events:
+  - name: hotspots.queried
+    description: A hotspot map query was served
+    payload:
+      - period
+      - from_timestamp
+      - to_timestamp
+      - result_count
+      - viewer_call_sign
+  - name: hotspots.upstreamdown
+    description: The upstream incidents data source was unreachable
+    payload:
+      - period
+      - timestamp
+
+related:
+  - feature: patroller-login
+    type: required
+    reason: Hotspot queries require an authenticated session
+  - feature: incidents-api
+    type: recommended
+    reason: External incidents API provides the point data rendered on the map
+
+ui_hints:
+  layout: period_pickers_over_map
+  period_input: dropdown
+  empty_state: "No incidents in this period"

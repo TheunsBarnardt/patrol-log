@@ -1,0 +1,121 @@
+import type { ReactNode } from "react";
+
+export interface Column<T> {
+  header: string;
+  render: (row: T) => ReactNode;
+  className?: string;
+}
+
+export function DataTable<T>({
+  rows,
+  columns,
+  keyExtractor,
+  emptyMessage = "No records",
+}: {
+  rows: T[];
+  columns: Column<T>[];
+  keyExtractor?: (row: T, index: number) => string | number;
+  emptyMessage?: string;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="text-center text-gray-400 py-16 bg-white rounded-xl border border-dashed">
+        <p className="text-sm">{emptyMessage}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-auto bg-white border rounded-xl shadow-sm">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-gray-50">
+            {columns.map((c, i) => (
+              <th
+                key={i}
+                className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider ${c.className ?? ""}`}
+              >
+                {c.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {rows.map((row, i) => (
+            <tr
+              key={keyExtractor ? keyExtractor(row, i) : (row as { id?: string }).id ?? i}
+              className="hover:bg-gray-50 transition-colors"
+            >
+              {columns.map((c, j) => (
+                <td key={j} className={`px-4 py-3 ${c.className ?? ""}`}>
+                  {c.render(row)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function PageHeader({ title, action, search, onSearch }: {
+  title: string;
+  action?: ReactNode;
+  search?: string;
+  onSearch?: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 mb-5">
+      <h1 className="text-lg font-bold text-gray-900 shrink-0">{title}</h1>
+      {onSearch && (
+        <input
+          type="search"
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          className="flex-1 max-w-xs border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+        />
+      )}
+      <div className="ml-auto">{action}</div>
+    </div>
+  );
+}
+
+export function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    active: "bg-emerald-100 text-emerald-700",
+    inactive: "bg-gray-100 text-gray-500",
+    suspended: "bg-red-100 text-red-700",
+    available: "bg-emerald-100 text-emerald-700",
+    maintenance: "bg-yellow-100 text-yellow-700",
+    retired: "bg-gray-100 text-gray-500",
+  };
+  return (
+    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${map[status] ?? "bg-gray-100 text-gray-600"}`}>
+      {status}
+    </span>
+  );
+}
+
+export function RowActions({ onEdit, onDelete }: { onEdit?: () => void; onDelete?: () => void }) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      {onEdit && (
+        <button
+          onClick={onEdit}
+          className="text-xs font-medium text-gray-600 hover:text-brand-primary transition-colors px-2 py-1 rounded hover:bg-gray-100"
+        >
+          Edit
+        </button>
+      )}
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          className="text-xs font-medium text-red-500 hover:text-red-700 transition-colors px-2 py-1 rounded hover:bg-red-50"
+        >
+          Delete
+        </button>
+      )}
+    </div>
+  );
+}

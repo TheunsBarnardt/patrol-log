@@ -1,0 +1,523 @@
+feature: stand-down-patrol
+version: 1.0.0
+description: End a patrol with geo-stamped end location, computed SARS distance, and optional primary handoff
+category: workflow
+tags:
+  - patrol
+  - cpf
+  - geo
+  - sars
+  - logbook
+  - handoff
+  - state-machine
+
+fields:
+  - name: patrol_id
+    type: hidden
+    required: true
+    label: Patrol identifier
+    immutable: true
+
+  - name: actor_call_sign
+    type: hidden
+    required: true
+    label: Actor call sign
+    immutable: true
+
+  - name: role
+    type: hidden
+    required: false
+    label: Actor role on this patrol
+
+  - name: odometer_end
+    type: number
+    required: false
+    label: Odometer end (km)
+    placeholder: Reading at stand down
+    validation:
+      - type: min
+        value: 0
+        message: Odometer reading cannot be negative
+      - type: max
+        value: 9999999
+        message: Odometer reading is unrealistically high
+
+  - name: distance_km
+    type: number
+    required: false
+    label: Distance travelled (km)
+
+  - name: end_time
+    type: datetime
+    required: false
+    label: End time
+    immutable: true
+
+  - name: end_location
+    type: json
+    required: false
+    label: End location
+    sensitive: true
+
+  - name: reason
+    type: select
+    required: false
+    label: Stand down reason
+    options:
+      - value: shift_end
+        label: Shift end
+      - value: emergency
+        label: Emergency
+      - value: vehicle_issue
+        label: Vehicle issue
+      - value: personal
+        label: Personal
+
+  - name: handoff
+    type: json
+    required: false
+    label: Primary handoff
+
+  - name: record_seal_hash
+    type: hidden
+    required: false
+    label: Record seal hash
+    sensitive: true
+    immutable: true
+
+rules:
+  security:
+    required_authentication: true
+    allowed_actors:
+      - patrol_member
+      - sector_lead
+      - admin
+    server_assigned_fields:
+      - end_time
+      - distance_km
+      - record_seal_hash
+    admin_force_close:
+      allowed: true
+      requires_reason: true
+  geo:
+    capture_end_location_from_device_gps: true
+    minimum_accuracy_meters: 100
+    missing_or_inaccurate_behavior: flag_non_sars_compliant_and_continue
+  odometer:
+    required_when_role_is_primary_and_vehicle_patrol: true
+    must_be_greater_than_start: true
+  audit:
+    seal_on_transition_to_stood_down: true
+    seal_algorithm: sha256_over_all_record_fields
+    append_only_after_seal: true
+    corrections_logged_as_separate_records: true
+  idempotency:
+    scope: patrol_id_plus_actor_call_sign
+    replay_is_noop: true
+
+outcomes:
+  not_on_patrol:
+    priority: 1
+    error: STAND_DOWN_NOT_ON_PATROL
+    given:
+      - field: actor_patrol_membership
+        source: db
+        operator: not_exists
+    result: show "You are not on any active patrol."
+
+  already_stood_down:
+    priority: 2
+    error: STAND_DOWN_ALREADY_STOOD_DOWN
+    given:
+      - field: actor_end_time
+        source: db
+        operator: exists
+        description: Idempotent guard - stand down already recorded for this actor
+    result: silently return the existing stand down record
+
+  odometer_end_required:
+    priority: 3
+    error: STAND_DOWN_ODOMETER_END_REQUIRED
+    given:
+      - field: role
+        source: db
+        operator: eq
+        value: primary
+      - field: patrol_vehicle
+        source: db
+        operator: exists
+      - field: odometer_end
+        source: input
+        operator: not_exists
+    result: show "Enter the odometer reading before standing down."
+
+  odometer_end_less_than_start:
+    priority: 4
+    error: STAND_DOWN_ODOMETER_END_LESS_THAN_START
+    given:
+      - field: role
+        source: db
+        operator: eq
+        value: primary
+      - field: odometer_end
+        source: input
+        operator: lt
+        value: odometer_start
+    result: show "End odometer must be greater than the starting odometer."
+
+  handoff_no_candidates:
+    priority: 5
+    error: STAND_DOWN_HANDOFF_NO_CANDIDATES
+    given:
+      - field: handoff_requested
+        source: input
+        operator: eq
+        value: true
+      - field: joined_patrollers_remaining
+        source: db
+        operator: eq
+        value: 0
+    result: show "No joined patrollers remain to take over as primary."
+
+  handoff_new_primary_invalid:
+    priority: 6
+    error: STAND_DOWN_HANDOFF_NEW_PRIMARY_INVALID
+    given:
+      - field: handoff_new_primary_call_sign
+        source: input
+        operator: exists
+      - any:
+          - field: new_primary_status
+            source: db
+            operator: eq
+            value: inactive
+          - field: new_primary_access_level
+            source: db
+            operator: not_in
+            value:
+              - patroller
+              - sector_lead
+              - admin
+          - field: new_primary_on_patrol_membership
+            source: db
+            operator: not_exists
+          - field: new_primary_other_active_patrol
+            source: db
+            operator: exists
+    result: show "The nominated new primary is not eligible to take over."
+
+  unauthorized_stand_down_of_other:
+    priority: 7
+    error: STAND_DOWN_UNAUTHORIZED
+    given:
+      - field: actor_call_sign
+        source: session
+        operator: neq
+        value: target_call_sign
+      - field: access_level
+        source: session
+        operator: not_in
+        value:
+          - sector_lead
+          - admin
+    result: show "You cannot stand down another patroller without sector lead or admin rights."
+
+  joined_stands_down_early:
+    priority: 10
+    transaction: true
+    given:
+      - field: role
+        source: db
+        operator: eq
+        value: joined
+      - field: state
+        source: db
+        operator: eq
+        value: active
+    then:
+      - action: set_field
+        target: actor_end_time
+        value: now
+      - action: set_field
+        target: actor_end_location
+        value: device_gps_capture
+      - action: emit_event
+        event: patrol.joinedstooddown
+        payload:
+          - patrol_id
+          - actor_call_sign
+          - end_time
+          - end_location
+    result: show "You have stood down. The patrol continues."
+
+  primary_stands_down_and_closes:
+    priority: 11
+    transaction: true
+    given:
+      - field: role
+        source: db
+        operator: eq
+        value: primary
+      - field: state
+        source: db
+        operator: eq
+        value: active
+      - field: handoff_requested
+        source: input
+        operator: neq
+        value: true
+      - field: odometer_end
+        source: input
+        operator: gte
+        value: odometer_start
+        description: Odometer end is a valid continuation of odometer start
+    then:
+      - action: set_field
+        target: end_time
+        value: now
+      - action: set_field
+        target: end_location
+        value: device_gps_capture
+      - action: set_field
+        target: distance_km
+        value: server_computed_from_odometer
+        description: distance_km = odometer_end - odometer_start, server side
+      - action: set_field
+        target: sars_compliant
+        value: false
+        when: "end_location is null"
+      - action: transition_state
+        field: state
+        from: active
+        to: stood_down
+      - action: set_field
+        target: record_seal_hash
+        value: sha256_of_record
+        description: Cryptographic seal written at transition to stood_down
+      - action: emit_event
+        event: patrol.stooddown
+        payload:
+          - patrol_id
+          - actor_call_sign
+          - end_time
+          - end_location
+          - odometer_end
+          - distance_km
+          - reason
+          - sars_compliant
+          - record_seal_hash
+    result: show summary with distance, duration, SARS compliance indicator
+
+  primary_hands_off_to_new_primary:
+    priority: 12
+    transaction: true
+    given:
+      - field: role
+        source: db
+        operator: eq
+        value: primary
+      - field: state
+        source: db
+        operator: eq
+        value: active
+      - field: handoff_requested
+        source: input
+        operator: eq
+        value: true
+      - field: handoff_new_primary_call_sign
+        source: input
+        operator: exists
+      - field: odometer_end
+        source: input
+        operator: gte
+        value: odometer_start
+    then:
+      - action: set_field
+        target: end_time
+        value: now
+      - action: set_field
+        target: end_location
+        value: device_gps_capture
+      - action: set_field
+        target: distance_km
+        value: server_computed_from_odometer
+      - action: transition_state
+        field: state
+        from: active
+        to: stood_down
+      - action: set_field
+        target: record_seal_hash
+        value: sha256_of_record
+      - action: create_record
+        type: patrol
+        target: successor_patrol
+        description: Commence a new patrol with the nominated patroller as primary, transferring remaining joined patrollers
+      - action: emit_event
+        event: patrol.handedoff
+        payload:
+          - old_patrol_id
+          - new_patrol_id
+          - previous_primary_call_sign
+          - new_primary_call_sign
+          - end_time
+          - odometer_end
+          - distance_km
+          - record_seal_hash
+    result: show handoff confirmation and navigate back to home dashboard
+
+flows:
+  happy_path_primary_close:
+    description: Primary finishes the shift, no handoff, vehicle returned
+    actor: primary_patroller
+    steps:
+      - Primary taps Stand down on the active patrol screen
+      - App captures current GPS coordinates for end_location
+      - App prompts for odometer_end and optional reason
+      - Server validates odometer_end greater than or equal to odometer_start
+      - Server computes distance_km = odometer_end - odometer_start
+      - Server records end_time, end_location, transitions state to stood_down
+      - Server writes record_seal_hash over all fields
+      - patrol.stooddown event emitted
+      - Any still-active joined patrollers are auto-stood-down with the same end_time
+      - App shows summary screen with SARS compliance indicator
+
+  handoff_path:
+    description: Primary stands down mid-shift and hands over to a joined patroller
+    actor: primary_patroller
+    steps:
+      - Primary taps Stand down and selects Handoff
+      - Primary nominates a joined patroller from the remaining crew as new primary
+      - Primary enters odometer_end and confirms
+      - Server validates the nominee (active, correct access level, on this patrol, no other active patrol)
+      - Server closes the current patrol (same as happy_path_primary_close) and seals it
+      - Server commences a new patrol in one atomic transaction with the new primary and remaining joined patrollers
+      - patrol.handedoff event emitted
+      - New primary is prompted for their own odometer_start on the new patrol record
+
+  joined_early_exit:
+    description: Joined patroller leaves before the primary
+    actor: joined_patroller
+    steps:
+      - Joined patroller taps Stand down on their row
+      - App captures GPS coordinates for the joined patroller's end_location
+      - Server records actor_end_time for this joined patroller only
+      - Primary continues the patrol uninterrupted
+      - patrol.joinedstooddown event emitted
+
+  admin_force_close:
+    description: Sector lead or admin force-closes an abandoned patrol
+    actor: sector_lead
+    steps:
+      - Admin navigates to the abandoned patrol record
+      - Admin confirms force-close and provides a reason
+      - Server records end_time, reason, records record_seal_hash
+      - If odometer_end is unknown, record is marked sars_compliant false
+      - patrol.stooddown event emitted with reason flagged as forced
+
+errors:
+  - code: STAND_DOWN_NOT_ON_PATROL
+    status: 409
+    message: You are not on any active patrol
+    retry: false
+  - code: STAND_DOWN_ALREADY_STOOD_DOWN
+    status: 409
+    message: Stand down already recorded
+    retry: false
+  - code: STAND_DOWN_ODOMETER_END_REQUIRED
+    status: 422
+    message: Enter the odometer reading before standing down
+    retry: true
+  - code: STAND_DOWN_ODOMETER_END_LESS_THAN_START
+    status: 422
+    message: End odometer must be greater than the starting odometer
+    retry: true
+  - code: STAND_DOWN_HANDOFF_NO_CANDIDATES
+    status: 409
+    message: No joined patrollers remain to take over
+    retry: false
+  - code: STAND_DOWN_HANDOFF_NEW_PRIMARY_INVALID
+    status: 422
+    message: The nominated new primary is not eligible
+    retry: true
+  - code: STAND_DOWN_UNAUTHORIZED
+    status: 403
+    message: You do not have permission to stand down another patroller
+    retry: false
+
+events:
+  - name: patrol.stooddown
+    description: An active patrol has transitioned to stood_down and been sealed
+    payload:
+      - patrol_id
+      - actor_call_sign
+      - end_time
+      - end_location
+      - odometer_end
+      - distance_km
+      - reason
+      - sars_compliant
+      - record_seal_hash
+  - name: patrol.joinedstooddown
+    description: A joined patroller exited an active patrol early
+    payload:
+      - patrol_id
+      - actor_call_sign
+      - end_time
+      - end_location
+  - name: patrol.handedoff
+    description: A primary handed off a running patrol to a new primary
+    payload:
+      - old_patrol_id
+      - new_patrol_id
+      - previous_primary_call_sign
+      - new_primary_call_sign
+      - end_time
+      - odometer_end
+      - distance_km
+      - record_seal_hash
+
+states:
+  field: state
+  initial: active
+  values:
+    - active
+    - stood_down
+  transitions:
+    - from: active
+      to: stood_down
+      trigger: stand-down-patrol
+
+actors:
+  - id: primary_patroller
+    name: Primary Patroller
+    type: human
+    description: The current primary (driver or lead) of the patrol
+    role: patroller
+  - id: joined_patroller
+    name: Joined Patroller
+    type: human
+    description: A joined patroller under the current primary's patrol
+    role: patroller
+  - id: sector_lead
+    name: Sector Lead
+    type: human
+    description: Can force-close an abandoned patrol within their sector
+    role: sector_lead
+
+related:
+  - feature: commence-patrol
+    type: required
+    reason: Only active patrols can be stood down
+  - feature: patroller-login
+    type: required
+    reason: Standing down requires an authenticated session
+  - feature: live-patroller-map
+    type: recommended
+    reason: Stand down purges the patroller's pin from the live cache
+
+ui_hints:
+  layout: patrol_detail
+  primary_stand_down_button_color: red
+  joined_stand_down_button_color: blue
+  km_field: computed_read_only
+  mockup_gap: Stand Down screen should show odometer_end input, computed distance_km read-only, and a SARS compliance indicator

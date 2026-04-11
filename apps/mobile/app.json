@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Patrol Log",
+    "slug": "patrol-log",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "patrollog",
+    "newArchEnabled": false,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.example.patrollog",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Patrol Log captures your location to geo-stamp patrol start/end, update the live patroller map, and comply with the SARS logbook.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Patrol Log captures your location while on patrol to update the live map for other patrollers and dispatch.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.example.patrollog",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CALL_PHONE",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "web": { "bundler": "metro" },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Patrol Log needs your location while you're on patrol."
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1D4ED8",
+          "androidMode": "default",
+          "androidCollapsedTitle": "Patrol Log"
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://patrol-log-api.small-night-657e.workers.dev",
+      "eas": {
+        "projectId": "d9e869bb-8f02-488d-a81c-26a30b19b4ef"
+      }
+    }
+  }
+}

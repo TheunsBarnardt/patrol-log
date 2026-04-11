@@ -1,0 +1,41 @@
+# ai-fdl-kit
+.fdl/cache/
+*.proposed.blueprint.yaml
+
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build artifacts
+dist/
+build/
+.wrangler/
+.vercel/
+.next/
+.expo/
+.turbo/
+
+# environment
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# native
+apps/mobile/ios/build/
+apps/mobile/android/build/
+apps/mobile/android/.gradle/
+
+# drizzle
+apps/api/drizzle/meta/

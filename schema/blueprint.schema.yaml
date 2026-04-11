@@ -1,0 +1,519 @@
+# ============================================================
+# Feature Definition Language (FDL) — Meta-Schema v0.1.0
+# ============================================================
+# This schema defines the structure that ALL blueprints must follow.
+# It is the spec itself — the "schema of schemas."
+# ============================================================
+
+schema:
+  name: "Feature Definition Language"
+  version: "0.1.0"
+  description: "Framework-agnostic specification for defining software features"
+  license: "MIT"
+
+# ─── REQUIRED TOP-LEVEL FIELDS ─────────────────────────────
+# Every blueprint MUST include these fields
+
+required:
+  feature:
+    type: string
+    description: "Unique kebab-case identifier (e.g., 'login', 'password-reset')"
+    pattern: "^[a-z][a-z0-9-]*$"
+
+  version:
+    type: string
+    description: "Semantic version of this blueprint"
+    pattern: "^\\d+\\.\\d+\\.\\d+$"
+
+  description:
+    type: string
+    description: "One-line human-readable summary of what this feature does"
+    maxLength: 200
+
+  category:
+    type: string
+    description: "Feature category for organization"
+    oneOf:
+      - auth          # Authentication & identity
+      - data          # CRUD, search, storage
+      - access        # Roles, permissions, policies
+      - ui            # UI patterns (modals, forms, navigation)
+      - integration   # External services, webhooks, APIs
+      - notification  # Email, push, in-app
+      - payment       # Billing, checkout, subscriptions
+      - workflow       # Business processes, approvals, pipelines
+      - inventory     # Stock, warehouse, shipping, logistics
+      - manufacturing # Production, BOM, work orders, planning
+      - crm           # Leads, opportunities, campaigns, contracts
+      - asset         # Fixed assets, depreciation, maintenance
+      - project       # Projects, tasks, timesheets
+      - quality       # Quality control, inspections, compliance
+      - procurement   # Purchasing, supplier management, RFQs
+      - ai            # ML frameworks, LLM providers, model training/inference
+      - trading       # Financial markets, order execution, FIX protocol
+      - infrastructure # Container orchestration, IaC, caching, storage
+      - observability # Monitoring, tracing, metrics, alerting
+
+  fields:
+    type: array
+    description: "Inputs and data the feature works with"
+    minItems: 1
+    items:
+      type: field
+    # Optional for system-driven features (webhooks, scheduled jobs, background workers)
+    # that have no user-facing inputs. A warning is emitted if missing.
+
+  rules:
+    type: object
+    description: "Business logic, security policies, and constraints"
+
+# ─── CONDITIONALLY REQUIRED ───────────────────────────────
+# A blueprint must have at least ONE of these (or both)
+
+  flows:
+    type: object
+    description: "Step-by-step procedures — good for business process documentation"
+    minKeys: 1
+    # Use when documenting exact procedures for human actors to follow.
+    # Required if outcomes is not provided.
+
+  outcomes:
+    type: object
+    description: "Outcome-based acceptance criteria — what must be true, not how to do it"
+    minKeys: 1
+    # Preferred for AI code generation. Describe given/then/result for each scenario.
+    # Required if flows is not provided.
+    #
+    # ─── OUTCOME STRUCTURE ─────────────────────────────────
+    #
+    # Each outcome has:
+    #   priority: number (lower = checked first, e.g., 1 before 2)
+    #   given: conditions that must be true (AND/OR grouping supported)
+    #   then: structured side effects
+    #   result: what the user sees
+    #
+    # ─── PRIORITY (execution order) ────────────────────────
+    #
+    # Outcomes are evaluated in priority order (lowest number first).
+    # This resolves "what runs first?" ambiguity.
+    #
+    # Example:
+    #   rate_limited:
+    #     priority: 1    # checked before anything else
+    #   account_locked:
+    #     priority: 2    # checked after rate limit
+    #   invalid_credentials:
+    #     priority: 3    # checked after lock
+    #   successful_login:
+    #     priority: 10   # only if everything above passes
+    #
+    # ─── CONDITIONS (given) ────────────────────────────────
+    #
+    # Conditions can be:
+    #   1. Plain text string (human-readable, AI-interpreted):
+    #      - "user is authenticated"
+    #
+    #   2. Structured condition (machine-parseable):
+    #      - field: amount
+    #        source: input          # where the data comes from
+    #        operator: gt
+    #        value: 1000
+    #        description: "Expense exceeds threshold"
+    #
+    #   3. Logical groups (AND/OR):
+    #      - any:                   # OR — at least one must be true
+    #          - field: user
+    #            source: db
+    #            operator: not_exists
+    #          - field: password
+    #            source: input
+    #            operator: neq
+    #            value: stored_hash
+    #      - all:                   # AND — all must be true (default for top-level)
+    #          - field: status
+    #            operator: eq
+    #            value: active
+    #          - field: email_verified
+    #            operator: eq
+    #            value: true
+    #
+    # Top-level given[] items are AND by default.
+    # Use "any:" for OR groups, "all:" for nested AND groups.
+    #
+    # ─── DATA SOURCES ──────────────────────────────────────
+    #
+    # The "source" property on conditions specifies where data comes from:
+    #   input    — user/client input (form fields, request body)
+    #   db       — database lookup result
+    #   request  — HTTP request metadata (IP, user-agent, headers)
+    #   session  — current session/auth state
+    #   system   — system state (time, config, external service)
+    #   computed — derived from other fields (e.g., attempt count)
+    #
+    # When source is omitted, it's inferred from context.
+    #
+    # ─── OPERATORS ─────────────────────────────────────────
+    #
+    # Comparison:
+    #   eq        — equals (===)
+    #   neq       — not equals (!==)
+    #   gt        — greater than (>)
+    #   gte       — greater than or equal (>=)
+    #   lt        — less than (<)
+    #   lte       — less than or equal (<=)
+    #
+    # Collection:
+    #   in        — value is in a list (e.g., status in [active, pending])
+    #   not_in    — value is not in a list
+    #
+    # Pattern:
+    #   matches   — regex match (e.g., email format)
+    #
+    # Existence:
+    #   exists     — field has a non-null value
+    #   not_exists — field is null/missing
+    #
+    # ─── SIDE EFFECTS (then) ───────────────────────────────
+    #
+    # Side effects can be:
+    #   1. Plain text string (human-readable):
+    #      - "confirmation email is sent"
+    #
+    #   2. Structured action (machine-parseable):
+    #      - action: set_field
+    #        target: failed_login_attempts
+    #        value: 0
+    #        description: "Reset attempt counter on success"
+    #
+    #      - action: emit_event
+    #        event: login.success
+    #        payload: [user_id, email, timestamp, ip_address]
+    #
+    #      - action: transition_state
+    #        field: status
+    #        from: submitted
+    #        to: approved
+    #
+    #      - action: notify
+    #        channel: email
+    #        template: account_locked_email
+    #        to: user
+    #
+    #      - action: invalidate
+    #        target: refresh_token
+    #        scope: current_session  # or all_sessions
+    #
+    # Action types:
+    #   set_field         — update a field value
+    #   emit_event        — fire an event with payload
+    #   transition_state  — change state machine status
+    #   notify            — send notification (email, push, in-app)
+    #   invalidate        — revoke tokens, sessions, or cached data
+    #   create_record     — insert a new record
+    #   delete_record     — remove a record
+    #   call_service      — invoke an external service
+    #
+    # ─── ERROR BINDING ─────────────────────────────────────
+    #
+    # Outcomes can bind to a specific error code:
+    #   error: LOGIN_INVALID_CREDENTIALS
+    # The code generator returns this error when the outcome matches.
+    # The error code must exist in the errors[] section.
+    #
+    # ─── TRANSACTION BOUNDARIES ────────────────────────────
+    #
+    # Outcomes can mark their side effects as atomic:
+    #   transaction: true
+    # All then[] actions execute in a single transaction.
+    # If any action fails, all are rolled back.
+    #
+    # ─── VALUE TYPE SYSTEM ─────────────────────────────────
+    #
+    # Typed values replace ambiguous strings:
+    #   string:    "submitted", "active"
+    #   number:    5, 1000, 0.01
+    #   boolean:   true, false
+    #   duration:  15m, 1h, 7d, 30d, 24h
+    #   field_ref: stored_hash, user.email (reference to another field)
+    #   now:       current timestamp
+    #   null:      absence of value
+    #   array:     [active, pending, submitted]
+    #
+    # ─── EXPRESSION LANGUAGE (when:) ───────────────────────
+    #
+    # The when: property uses a formal expression language:
+    #
+    # Grammar:
+    #   expression = comparison ( ("and" | "or") comparison )*
+    #   comparison = operand operator operand | operand "is" ["not"] "null"
+    #   operand    = field_ref | number | string | boolean | duration | "now"
+    #   operator   = "==" | "!=" | ">" | ">=" | "<" | "<="
+    #
+    # Examples:
+    #   when: "failed_login_attempts >= 5"
+    #   when: "amount > 1000 and status == \"submitted\""
+    #   when: "token.created_at < now - 60m"
+    #
+    # Duration literals: 5s (seconds), 10m (minutes), 1h (hours), 7d (days)
+    # Arithmetic: now - 15m, now + 7d
+    # Logical: and, or
+    # Field refs: dotted paths like user.email, token.created_at
+    #
+
+# ─── OPTIONAL TOP-LEVEL FIELDS ─────────────────────────────
+
+optional:
+  tags:
+    type: array
+    description: "Searchable tags for discovery"
+    items:
+      type: string
+
+  related:
+    type: array
+    description: "Features this blueprint connects to"
+    items:
+      type: relationship
+
+  events:
+    type: array
+    description: "Named events this feature emits for other features to consume"
+    items:
+      type: event
+
+  errors:
+    type: array
+    description: "Standardized error codes with HTTP status and user-safe messages"
+    items:
+      type: error
+
+  actors:
+    type: array
+    description: "Roles, people, departments, or systems that participate in the process"
+    items:
+      type: actor
+
+  states:
+    type: object
+    description: "State machine definition — valid statuses and allowed transitions"
+    # Define which field holds the state, valid values, and transition rules
+
+  sla:
+    type: object
+    description: "Service level agreements — time constraints on steps or transitions"
+    # Define max durations, escalation rules, and compliance targets
+
+  ui_hints:
+    type: object
+    description: "Non-binding layout and UX suggestions — adapters may ignore these"
+
+  extensions:
+    type: object
+    description: "Framework-specific overrides keyed by adapter name"
+    # e.g., extensions.nextjs, extensions.laravel, extensions.flutter
+
+# ─── TYPE DEFINITIONS ──────────────────────────────────────
+
+types:
+
+  # --- Field ---
+  field:
+    required:
+      name:
+        type: string
+        description: "Field identifier (snake_case)"
+        pattern: "^[a-z][a-z0-9_]*$"
+      type:
+        type: string
+        description: "Data type"
+        oneOf:
+          - text          # Free-form text
+          - email         # Email address
+          - password      # Masked input, hashed storage
+          - number        # Integer or decimal
+          - boolean       # True/false, checkbox
+          - date          # Date only (no time)
+          - datetime      # Date + time
+          - phone         # Phone number
+          - url           # URL/URI
+          - file          # File upload
+          - select        # Single choice from options
+          - multiselect   # Multiple choices from options
+          - hidden        # Not shown to user (system fields)
+          - token         # System-generated (JWT, OTP, UUID)
+          - rich_text     # Formatted text (HTML/Markdown)
+          - json          # Arbitrary JSON data
+      required:
+        type: boolean
+        description: "Whether the field must be provided"
+    optional:
+      label:
+        type: string
+        description: "Human-readable display label"
+      placeholder:
+        type: string
+        description: "Input placeholder text"
+      default:
+        type: any
+        description: "Default value if not provided"
+      validation:
+        type: array
+        description: "Validation rules applied in order"
+        items:
+          type: validation_rule
+      options:
+        type: array
+        description: "For select/multiselect — available choices"
+        items:
+          type: object
+          properties:
+            value: { type: string }
+            label: { type: string }
+      sensitive:
+        type: boolean
+        description: "If true, value should be masked/encrypted (passwords, tokens)"
+        default: false
+      immutable:
+        type: boolean
+        description: "If true, cannot be changed after creation"
+        default: false
+
+  # --- Actor ---
+  actor:
+    required:
+      id:
+        type: string
+        description: "Unique snake_case identifier (e.g., 'finance_manager')"
+        pattern: "^[a-z][a-z0-9_]*$"
+      name:
+        type: string
+        description: "Human-readable name (e.g., 'Finance Manager')"
+      type:
+        type: string
+        description: "What kind of participant this is"
+        oneOf:
+          - human          # A person or role (employee, manager)
+          - system         # An automated system (payment gateway, scheduler)
+          - external       # An outside party (vendor, auditor, customer)
+    optional:
+      description:
+        type: string
+        description: "What this actor is responsible for in this process"
+      role:
+        type: string
+        description: "Role or department (e.g., 'finance', 'engineering')"
+
+  # --- Validation Rule ---
+  validation_rule:
+    required:
+      type:
+        type: string
+        oneOf:
+          - required       # Field must have a value
+          - minLength      # Minimum string length
+          - maxLength      # Maximum string length
+          - min            # Minimum numeric value
+          - max            # Maximum numeric value
+          - pattern        # Regex pattern match
+          - email          # Valid email format
+          - phone          # Valid phone format
+          - url            # Valid URL format
+          - oneOf          # Value must be in a list
+          - unique         # Value must be unique (e.g., email not taken)
+          - match          # Must match another field (e.g., confirm_password)
+          - custom         # Adapter-defined validation
+      message:
+        type: string
+        description: "User-facing error message when validation fails"
+    optional:
+      value:
+        type: any
+        description: "The constraint value (e.g., 8 for minLength: 8)"
+      field:
+        type: string
+        description: "Reference to another field (for 'match' type)"
+
+  # --- Relationship ---
+  relationship:
+    required:
+      feature:
+        type: string
+        description: "The related feature's identifier"
+      type:
+        type: string
+        oneOf:
+          - required       # Cannot function without this feature
+          - recommended    # Should have, app works without it
+          - optional       # Nice to have enhancement
+          - extends        # Builds on top of this feature
+    optional:
+      reason:
+        type: string
+        description: "Why this relationship exists"
+      ui_link:
+        type: string
+        description: "Suggested link text (e.g., 'Forgot password?')"
+      insert_after:
+        type: string
+        description: "Where in the parent flow this feature inserts (e.g., 'flows.happy_path.6')"
+
+  # --- Event ---
+  event:
+    required:
+      name:
+        type: string
+        description: "Dot-notation event name (e.g., 'login.success')"
+        pattern: "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+      payload:
+        type: array
+        description: "Data fields included in the event"
+        items:
+          type: string
+    optional:
+      description:
+        type: string
+        description: "What triggers this event and who might listen"
+
+  # --- Error ---
+  error:
+    required:
+      code:
+        type: string
+        description: "UPPER_SNAKE_CASE error identifier"
+        pattern: "^[A-Z][A-Z0-9_]*$"
+      status:
+        type: number
+        description: "HTTP status code"
+        oneOf: [400, 401, 403, 404, 409, 410, 413, 422, 423, 429, 500, 503]
+      message:
+        type: string
+        description: "User-safe error message — NEVER leak internal details"
+    optional:
+      retry:
+        type: boolean
+        description: "Whether the user can retry this action"
+        default: false
+      redirect:
+        type: string
+        description: "Where to send the user on this error"
+
+# ─── CONVENTIONS ───────────────────────────────────────────
+
+conventions:
+  naming:
+    features: "kebab-case (e.g., password-reset)"
+    fields: "snake_case (e.g., remember_me)"
+    errors: "UPPER_SNAKE_CASE (e.g., LOGIN_INVALID_CREDENTIALS)"
+    events: "dot.notation (e.g., login.success)"
+
+  security:
+    - "Error messages must never reveal internal state"
+    - "Password fields must use constant-time comparison"
+    - "Rate limiting should be applied to all public endpoints"
+    - "Session tokens must be cryptographically random"
+    - "OWASP Top 10 defaults are the baseline"
+
+  documentation:
+    - "YAML comments explain WHY, not WHAT"
+    - "Every security rule should cite its source (OWASP, RFC, etc.)"
+    - "Flows must cover happy path AND every failure case"

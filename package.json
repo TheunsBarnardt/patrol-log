@@ -1,0 +1,46 @@
+{
+  "name": "patrol-log",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CPF Patrol Log — RN mobile + Cloudflare Workers API + React admin portal, generated from FDL blueprints",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "pnpm --filter @patrol-log/api dev",
+    "dev:mobile": "pnpm --filter @patrol-log/mobile start",
+    "dev:admin": "pnpm --filter @patrol-log/admin dev",
+    "build:api": "pnpm --filter @patrol-log/api build",
+    "build:admin": "pnpm --filter @patrol-log/admin build",
+    "deploy:api": "pnpm --filter @patrol-log/api deploy",
+    "deploy:admin": "pnpm --filter @patrol-log/admin deploy",
+    "db:generate": "pnpm --filter @patrol-log/api db:generate",
+    "db:push": "pnpm --filter @patrol-log/api db:push",
+    "db:seed": "pnpm --filter @patrol-log/api db:seed",
+    "fdl:check": "npx ai-fdl-kit check"
+  },
+  "devDependencies": {
+    "ai-fdl-kit": "^0.1.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "workerd",
+      "@cloudflare/workerd-windows-64",
+      "@cloudflare/workerd-darwin-64",
+      "@cloudflare/workerd-darwin-arm64",
+      "@cloudflare/workerd-linux-64",
+      "@cloudflare/workerd-linux-arm64",
+      "sharp",
+      "@img/sharp-win32-x64",
+      "@img/sharp-darwin-x64",
+      "@img/sharp-darwin-arm64",
+      "@img/sharp-linux-x64",
+      "@img/sharp-linux-arm64"
+    ]
+  }
+}

@@ -1,0 +1,455 @@
+feature: commence-patrol
+version: 1.0.0
+description: Record the start of a CPF patrol with geo-stamped start location and odometer for SARS logbook compliance
+category: workflow
+tags:
+  - patrol
+  - cpf
+  - geo
+  - sars
+  - logbook
+  - state-machine
+
+fields:
+  - name: patrol_id
+    type: hidden
+    required: false
+    label: Patrol identifier
+    immutable: true
+
+  - name: primary_patroller_call_sign
+    type: hidden
+    required: true
+    label: Primary patroller
+    immutable: true
+
+  - name: joined_patroller_call_signs
+    type: multiselect
+    required: false
+    label: Patrollers joining you
+    placeholder: Select other patrollers joining this patrol
+    default: []
+
+  - name: patrol_type
+    type: select
+    required: true
+    label: Type of patrol
+    options:
+      - value: foot
+        label: Foot patrol
+      - value: vehicle
+        label: Vehicle patrol
+      - value: static
+        label: Static post
+    validation:
+      - type: required
+        message: Select a patrol type
+      - type: oneOf
+        value:
+          - foot
+          - vehicle
+          - static
+        message: Invalid patrol type
+
+  - name: patrol_vehicle
+    type: select
+    required: false
+    label: Patrol vehicle
+    placeholder: Select a vehicle (required for vehicle patrols)
+
+  - name: odometer_start
+    type: number
+    required: false
+    label: Odometer start (km)
+    placeholder: Current reading on the vehicle
+    validation:
+      - type: min
+        value: 0
+        message: Odometer reading cannot be negative
+      - type: max
+        value: 9999999
+        message: Odometer reading is unrealistically high
+
+  - name: start_time
+    type: datetime
+    required: false
+    label: Start time
+    immutable: true
+
+  - name: start_location
+    type: json
+    required: false
+    label: Start location
+    sensitive: true
+
+  - name: sars_purpose
+    type: text
+    required: true
+    label: Trip purpose (SARS)
+    default: CPF sector patrol
+    validation:
+      - type: required
+        message: A purpose is required for SARS logbook compliance
+      - type: maxLength
+        value: 200
+        message: Purpose is too long
+
+  - name: sars_compliant
+    type: boolean
+    required: false
+    label: SARS compliant
+    default: false
+
+  - name: sector
+    type: hidden
+    required: false
+    label: Sector
+
+  - name: state
+    type: hidden
+    required: false
+    label: Patrol state
+    default: active
+
+rules:
+  security:
+    required_authentication: true
+    allowed_access_levels:
+      - patroller
+      - sector_lead
+      - admin
+    denied_access_levels:
+      - call_centre_agent
+    server_assigned_fields:
+      - start_time
+      - patrol_id
+      - sector
+      - sars_compliant
+  concurrency:
+    primary_max_active_patrols: 1
+    vehicle_max_active_patrols: 1
+    atomic_vehicle_allocation: true
+  geo:
+    capture_start_location_from_device_gps: true
+    minimum_accuracy_meters: 100
+    missing_or_inaccurate_behavior: flag_non_sars_compliant_and_continue
+  odometer:
+    required_when_vehicle_present: true
+    must_not_be_less_than_last_recorded: true
+  audit:
+    append_only_while_active: true
+    log_fields:
+      - patrol_id
+      - primary_patroller_call_sign
+      - device_id
+      - start_time
+      - start_location
+      - odometer_start
+  sars:
+    compliance_fields:
+      - start_location
+      - odometer_start
+      - sars_purpose
+
+outcomes:
+  unauthorized_access_level:
+    priority: 1
+    error: COMMENCE_UNAUTHORIZED
+    given:
+      - field: access_level
+        source: session
+        operator: eq
+        value: call_centre_agent
+    result: show "Call centre agents cannot commence a patrol. Dispatch only."
+
+  missing_patrol_type:
+    priority: 2
+    error: COMMENCE_INVALID_PATROL_TYPE
+    given:
+      - any:
+          - field: patrol_type
+            source: input
+            operator: not_exists
+          - field: patrol_type
+            source: input
+            operator: not_in
+            value:
+              - foot
+              - vehicle
+              - static
+    result: show "Select a valid patrol type (foot, vehicle, or static)."
+
+  vehicle_required_for_vehicle_patrol:
+    priority: 3
+    error: COMMENCE_VEHICLE_REQUIRED
+    given:
+      - field: patrol_type
+        source: input
+        operator: eq
+        value: vehicle
+      - field: patrol_vehicle
+        source: input
+        operator: not_exists
+    result: show "Select a patrol vehicle for a vehicle patrol."
+
+  primary_already_on_patrol:
+    priority: 4
+    error: COMMENCE_ALREADY_ON_PATROL
+    given:
+      - field: active_patrol_for_primary
+        source: db
+        operator: exists
+        description: Primary patroller already has an active patrol
+    result: show "You are already on an active patrol. Stand down before commencing another."
+
+  invalid_vehicle:
+    priority: 5
+    error: COMMENCE_INVALID_VEHICLE
+    given:
+      - field: patrol_vehicle
+        source: input
+        operator: exists
+      - field: patrol_vehicle
+        source: db
+        operator: not_exists
+        description: Vehicle is not registered or not available for this sector
+    result: show "Selected vehicle is not available for your sector."
+
+  vehicle_in_use:
+    priority: 6
+    error: COMMENCE_VEHICLE_IN_USE
+    given:
+      - field: patrol_vehicle
+        source: input
+        operator: exists
+      - field: vehicle_active_patrol
+        source: db
+        operator: exists
+        description: Another active patrol is already assigned this vehicle
+    result: show "This vehicle is already allocated to another active patrol."
+
+  odometer_start_invalid:
+    priority: 7
+    error: COMMENCE_ODOMETER_START_INVALID
+    given:
+      - field: patrol_vehicle
+        source: input
+        operator: exists
+      - any:
+          - field: odometer_start
+            source: input
+            operator: not_exists
+          - field: odometer_start
+            source: input
+            operator: lt
+            value: 0
+          - field: odometer_start
+            source: input
+            operator: lt
+            value: vehicle_last_odometer
+            description: Odometer lower than last recorded reading for this vehicle
+    result: show "Enter a valid odometer reading greater than or equal to the vehicle's last recorded reading."
+
+  joined_patroller_unavailable:
+    priority: 8
+    error: COMMENCE_JOINED_PATROLLER_UNAVAILABLE
+    given:
+      - field: joined_patroller_call_signs
+        source: input
+        operator: exists
+      - any:
+          - field: joined_patroller_status
+            source: db
+            operator: eq
+            value: inactive
+          - field: joined_patroller_active_patrol
+            source: db
+            operator: exists
+    result: show "One or more joined patrollers are unavailable or already on another patrol."
+
+  successful_commence:
+    priority: 10
+    transaction: true
+    given:
+      - field: access_level
+        source: session
+        operator: in
+        value:
+          - patroller
+          - sector_lead
+          - admin
+      - field: active_patrol_for_primary
+        source: db
+        operator: not_exists
+      - field: patrol_type
+        source: input
+        operator: in
+        value:
+          - foot
+          - vehicle
+          - static
+    then:
+      - action: create_record
+        type: patrol
+        target: patrol
+        description: Create patrol record with server-generated patrol_id, start_time = now, state = active
+      - action: set_field
+        target: start_time
+        value: now
+      - action: set_field
+        target: sector
+        value: session.sector
+      - action: set_field
+        target: state
+        value: active
+      - action: set_field
+        target: sars_compliant
+        value: true
+        when: "start_location.accuracy_m <= 100 and odometer_start is not null"
+      - action: set_field
+        target: sars_compliant
+        value: false
+        when: "start_location is null or start_location.accuracy_m > 100"
+      - action: set_field
+        target: joined_patroller_start_times
+        value: now_per_joined_call_sign
+      - action: emit_event
+        event: patrol.commenced
+        payload:
+          - patrol_id
+          - primary_patroller_call_sign
+          - joined_patroller_call_signs
+          - patrol_type
+          - patrol_vehicle
+          - odometer_start
+          - start_time
+          - start_location
+          - sars_compliant
+          - sector
+    result: navigate to active patrol screen with stand down controls
+
+flows:
+  happy_path:
+    description: Primary patroller commences a vehicle patrol with one joined patroller
+    actor: primary_patroller
+    steps:
+      - Patroller opens app and taps Commence patrol from home dashboard
+      - Patroller selects joined patrollers from multiselect
+      - Patroller selects patrol type
+      - If type is vehicle, patroller selects vehicle and enters odometer start
+      - Device captures current GPS coordinates for start_location
+      - Patroller taps Start
+      - Server validates access level, concurrency, vehicle availability, odometer
+      - Patrol record created in state active with all fields populated server-side
+      - patrol.commenced event emitted
+      - App navigates to active patrol screen
+
+  no_gps_degraded:
+    description: GPS is unavailable or inaccurate at commence time
+    actor: primary_patroller
+    steps:
+      - Device cannot obtain a GPS fix within acceptable accuracy
+      - App still submits commence request with start_location = null
+      - Server creates patrol record and sets sars_compliant = false
+      - App shows banner "Patrol started but not SARS-compliant (no GPS)"
+      - Patroller continues patrol normally
+
+errors:
+  - code: COMMENCE_UNAUTHORIZED
+    status: 403
+    message: Your access level does not permit commencing a patrol
+    retry: false
+  - code: COMMENCE_INVALID_PATROL_TYPE
+    status: 422
+    message: Select a valid patrol type (foot, vehicle, or static)
+    retry: true
+  - code: COMMENCE_VEHICLE_REQUIRED
+    status: 422
+    message: Vehicle patrols require a patrol vehicle
+    retry: true
+  - code: COMMENCE_ALREADY_ON_PATROL
+    status: 409
+    message: You are already on an active patrol
+    retry: false
+  - code: COMMENCE_INVALID_VEHICLE
+    status: 422
+    message: Selected vehicle is not available for your sector
+    retry: true
+  - code: COMMENCE_VEHICLE_IN_USE
+    status: 409
+    message: This vehicle is already on another active patrol
+    retry: false
+  - code: COMMENCE_ODOMETER_START_INVALID
+    status: 422
+    message: Enter a valid odometer reading at or above the last recorded value
+    retry: true
+  - code: COMMENCE_JOINED_PATROLLER_UNAVAILABLE
+    status: 409
+    message: One or more joined patrollers are unavailable
+    retry: true
+
+events:
+  - name: patrol.commenced
+    description: A patrol has been commenced and is now in the active state
+    payload:
+      - patrol_id
+      - primary_patroller_call_sign
+      - joined_patroller_call_signs
+      - patrol_type
+      - patrol_vehicle
+      - odometer_start
+      - start_time
+      - start_location
+      - sars_compliant
+      - sector
+
+states:
+  field: state
+  initial: active
+  values:
+    - active
+    - stood_down
+  transitions:
+    - from: null
+      to: active
+      trigger: commence-patrol
+    - from: active
+      to: stood_down
+      trigger: stand-down-patrol
+
+actors:
+  - id: primary_patroller
+    name: Primary Patroller
+    type: human
+    description: Driver or lead patroller commencing this patrol
+    role: patroller
+  - id: joined_patroller
+    name: Joined Patroller
+    type: human
+    description: Additional patroller riding along under the primary's patrol record
+    role: patroller
+  - id: vehicle_allocation_service
+    name: Vehicle Allocation Service
+    type: system
+    description: Enforces that a vehicle is allocated to at most one active patrol
+
+related:
+  - feature: patroller-login
+    type: required
+    reason: Commencing a patrol requires an authenticated session
+  - feature: stand-down-patrol
+    type: required
+    reason: Every commenced patrol must eventually be stood down
+  - feature: live-patroller-map
+    type: recommended
+    reason: Commenced patrols emit heartbeats to the live map
+
+ui_hints:
+  layout: form
+  field_order:
+    - joined_patroller_call_signs
+    - patrol_type
+    - patrol_vehicle
+    - odometer_start
+  submit_label: Start
+  mockup_gap: Add odometer_start input to the Commence Patrol screen (screen 3)

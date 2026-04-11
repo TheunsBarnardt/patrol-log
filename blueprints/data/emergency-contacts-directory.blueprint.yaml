@@ -1,0 +1,241 @@
+feature: emergency-contacts-directory
+version: 1.0.0
+description: Offline-first curated list of emergency service contacts (SAPS, EMS, fire, armed response) with auto-log to active patrol on tap-to-call
+category: data
+tags:
+  - emergency
+  - services
+  - offline-first
+  - cpf
+  - escalation
+
+fields:
+  - name: service_type_filter
+    type: select
+    required: false
+    label: Filter by service type
+    options:
+      - value: police
+        label: Police
+      - value: ambulance
+        label: Ambulance
+      - value: fire
+        label: Fire
+      - value: armed_response
+        label: Armed response
+      - value: hospital
+        label: Hospital
+      - value: ops_room
+        label: Ops room
+      - value: vet
+        label: Veterinary
+      - value: tow
+        label: Tow
+      - value: poison_control
+        label: Poison control
+      - value: other
+        label: Other
+
+  - name: services
+    type: json
+    required: false
+    label: Emergency services
+
+rules:
+  security:
+    required_authentication: true
+    read_only: true
+    all_sectors_visible_to_all: true
+    admin_maintained_only: true
+    hide_sensitive_from_non_patrollers: true
+  offline_first:
+    on_device_cache:
+      encrypted_at_rest: true
+      refresh_on_every_app_open_when_online: true
+      wiped_on_logout: false
+    critical_fallback: native_emergency_dial
+  verification:
+    stale_threshold_days: 90
+    stale_badge_visible: true
+  audit:
+    log_tap_to_call: true
+    attach_to_active_patrol_as_escalation_event: true
+    payload:
+      - actor_call_sign
+      - service_id
+      - service_name
+      - service_type
+      - patrol_id
+      - timestamp
+
+outcomes:
+  unauthorized:
+    priority: 1
+    error: EMERGENCY_UNAUTHORIZED
+    given:
+      - field: session
+        source: session
+        operator: not_exists
+    result: show "Please log in. In a real emergency, use your phone's native 10111."
+
+  no_services_configured:
+    priority: 2
+    error: EMERGENCY_NO_SERVICES_CONFIGURED
+    given:
+      - field: service_count
+        source: db
+        operator: eq
+        value: 0
+    result: show "No emergency contacts configured. Ask your CPF administrator to add them."
+
+  sync_unavailable_no_cache:
+    priority: 3
+    error: EMERGENCY_SYNC_UNAVAILABLE
+    given:
+      - field: remote_store_status
+        source: system
+        operator: neq
+        value: ok
+      - field: device_cache_present
+        source: system
+        operator: eq
+        value: false
+    then:
+      - action: emit_event
+        event: emergency.syncfailed
+        payload:
+          - actor_call_sign
+          - timestamp
+    result: show "Emergency contacts unavailable. Use your phone's native 10111 immediately."
+
+  successful_load:
+    priority: 10
+    transaction: false
+    given:
+      - field: session
+        source: session
+        operator: exists
+      - field: service_count
+        source: db
+        operator: gt
+        value: 0
+    then:
+      - action: set_field
+        target: services
+        value: sorted_by_priority_then_sector_local
+      - action: emit_event
+        event: emergency.loaded
+        payload:
+          - actor_call_sign
+          - service_count
+          - source
+          - timestamp
+    result: render emergency services list with warning badges for services stale over 90 days
+
+  tap_to_call_with_active_patrol:
+    priority: 11
+    transaction: true
+    given:
+      - field: service_id
+        source: input
+        operator: exists
+      - field: actor_active_patrol
+        source: db
+        operator: exists
+    then:
+      - action: create_record
+        type: escalation_event
+        target: patrol.escalation_events
+        description: Append an escalation event to the active patrol record
+      - action: emit_event
+        event: emergency.taptocall
+        payload:
+          - actor_call_sign
+          - service_id
+          - service_name
+          - service_type
+          - patrol_id
+          - timestamp
+    result: open native dialer with the service's primary number
+
+  tap_to_call_without_active_patrol:
+    priority: 12
+    transaction: false
+    given:
+      - field: service_id
+        source: input
+        operator: exists
+      - field: actor_active_patrol
+        source: db
+        operator: not_exists
+    then:
+      - action: emit_event
+        event: emergency.taptocall
+        payload:
+          - actor_call_sign
+          - service_id
+          - service_name
+          - service_type
+          - timestamp
+    result: open native dialer with the service's primary number
+
+errors:
+  - code: EMERGENCY_UNAUTHORIZED
+    status: 401
+    message: Please log in
+    retry: false
+  - code: EMERGENCY_NO_SERVICES_CONFIGURED
+    status: 404
+    message: No emergency contacts configured
+    retry: false
+  - code: EMERGENCY_SYNC_UNAVAILABLE
+    status: 503
+    message: Emergency contacts unavailable. Use your phone's native 10111.
+    retry: false
+  - code: EMERGENCY_SERVICE_NUMBER_UNVERIFIED
+    status: 410
+    message: This number has not been verified recently
+    retry: true
+
+events:
+  - name: emergency.loaded
+    description: Emergency services list was loaded
+    payload:
+      - actor_call_sign
+      - service_count
+      - source
+      - timestamp
+  - name: emergency.taptocall
+    description: A patroller tapped to call an emergency service
+    payload:
+      - actor_call_sign
+      - service_id
+      - service_name
+      - service_type
+      - patrol_id
+      - timestamp
+  - name: emergency.syncfailed
+    description: The emergency contacts store was unreachable and no cache was present
+    payload:
+      - actor_call_sign
+      - timestamp
+
+related:
+  - feature: patroller-login
+    type: required
+    reason: Emergency contact access requires an authenticated session
+  - feature: stand-down-patrol
+    type: recommended
+    reason: Tap-to-call events are appended to the active patrol record as escalation evidence
+
+ui_hints:
+  layout: services_list
+  card_fields:
+    - name
+    - service_type
+    - primary_number
+    - secondary_number
+    - address
+  no_search_required: true
+  sort_order: priority_then_sector_local
+  stale_badge_after_days: 90

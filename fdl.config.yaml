@@ -1,0 +1,26 @@
+# ai-fdl-kit project configuration
+# See https://github.com/TheunsBarnardt/ai-fdl-kit
+
+# Local blueprint directory (relative to this file)
+blueprints_dir: blueprints
+
+# Remote API for pulling community blueprints
+remote_api: https://theunsbarnardt.github.io/ai-fdl-kit/api
+
+# Categories used in this project. Add more as needed.
+categories:
+  - auth
+  - data
+  - access
+  - ui
+  - integration
+  - notification
+  - payment
+  - workflow
+
+# Validation behavior
+validation:
+  # Fail the command if any blueprint is incomplete (placeholders, empty outcomes)
+  strict_completeness: true
+  # Require every blueprint to have at least one success AND one failure outcome
+  require_failure_paths: true
