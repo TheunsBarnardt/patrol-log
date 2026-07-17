@@ -1,6 +1,9 @@
-// Messaging center: broadcast / sector / direct channels + Expo push delivery.
+// Messaging center: broadcast / sector / direct channels.
 // Two-way: any authenticated patroller can send and reply.
 // Admin/sector_lead/call_centre_agent can manage channels.
+//
+// NOTE: Firebase Cloud Messaging (FCM) push notifications have been removed.
+// All notifications are delivered as in-app messages only.
 
 import { Hono } from "hono";
 import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
@@ -17,55 +20,15 @@ import {
   pushTokens,
   sectors,
 } from "../db/schema.js";
-import type { Env } from "../env.js";
 import type { AuthenticatedContext } from "../env.js";
-import { sendFcm } from "../lib/fcm.js";
 
 // ── Audience resolution ──────────────────────────────────
 
 /**
  * Returns patroller IDs who can receive messages in a channel.
  * - broadcast: all active patrollers in CPF
- * - sector: all active patrollers in the channel's sector + all staff (admin/sector_lead/call_centre_agent)
+ * - sector: all active patrollers in the channel's sector + all staff
  * - direct: explicit messageChannelMembers
- */
-async function getChannelAudienceIds(
-  db: Db,
-  channel: { id: string; cpfId: string; type: string; sectorId: string | null },
-): Promise<string[]> {
-  if (channel.type === "broadcast") {
-    const rows = await db
-      .select({ id: patrollers.id })
-      .from(patrollers)
-      .where(and(eq(patrollers.cpfId, channel.cpfId), eq(patrollers.status, "active")));
-    return rows.map((r) => r.id);
-  }
-  if (channel.type === "sector" && channel.sectorId) {
-    const rows = await db
-      .select({ id: patrollers.id, accessLevel: patrollers.accessLevel })
-      .from(patrollers)
-      .where(and(eq(patrollers.cpfId, channel.cpfId), eq(patrollers.status, "active")));
-    return rows
-      .filter(
-        (r) =>
-          r.accessLevel === "admin" ||
-          r.accessLevel === "sector_lead" ||
-          r.accessLevel === "call_centre_agent" ||
-          // patrollers only in this sector
-          true, // we rely on the DB join below for precision; simplified: include all for sector
-      )
-      .map((r) => r.id);
-  }
-  // direct
-  const rows = await db
-    .select({ patrollerId: messageChannelMembers.patrollerId })
-    .from(messageChannelMembers)
-    .where(eq(messageChannelMembers.channelId, channel.id));
-  return rows.map((r) => r.patrollerId);
-}
-
-/**
- * Precise sector audience: sector members + all staff.
  */
 async function getSectorChannelAudienceIds(
   db: Db,
@@ -101,15 +64,6 @@ async function getSectorChannelAudienceIds(
   return rows.map((r) => r.patrollerId);
 }
 
-async function getPushTokensForPatrollers(db: Db, patrollerIds: string[]): Promise<string[]> {
-  if (!patrollerIds.length) return [];
-  const rows = await db
-    .select({ token: pushTokens.expoToken })
-    .from(pushTokens)
-    .where(inArray(pushTokens.patrollerId, patrollerIds));
-  return rows.map((r) => r.token);
-}
-
 // ── Lazy channel creation ────────────────────────────────
 
 async function ensureDefaultChannels(
@@ -118,7 +72,6 @@ async function ensureDefaultChannels(
   sectorId: string,
   sectorName: string,
 ): Promise<void> {
-  // Broadcast channel
   const bc = await db.query.messageChannels.findFirst({
     where: and(eq(messageChannels.cpfId, cpfId), eq(messageChannels.type, "broadcast")),
   });
@@ -129,7 +82,6 @@ async function ensureDefaultChannels(
       .onConflictDoNothing();
   }
 
-  // Sector channel
   const sc = await db.query.messageChannels.findFirst({
     where: and(
       eq(messageChannels.cpfId, cpfId),
@@ -161,7 +113,6 @@ async function canAccessChannel(
       auth.patroller.access_level === "call_centre_agent";
     return isStaff || channel.sectorId === auth.patroller.sector_id;
   }
-  // direct — must be a member
   const membership = await db.query.messageChannelMembers.findFirst({
     where: and(
       eq(messageChannelMembers.channelId, channel.id),
@@ -172,16 +123,15 @@ async function canAccessChannel(
 }
 
 // ── Exported helper for heartbeat out-of-sector alert ────
+// Now sends only in-app messages (no FCM push).
 
 export async function sendOutOfSectorNotification(
   db: Db,
-  env: Env,
   auth: AuthenticatedContext,
   sectorId: string,
   sectorName: string,
   cpfId: string,
 ): Promise<void> {
-  // Post a system message to the sector channel
   const channel = await db.query.messageChannels.findFirst({
     where: and(
       eq(messageChannels.cpfId, cpfId),
@@ -200,29 +150,6 @@ export async function sendOutOfSectorNotification(
       priority: "urgent",
     });
   }
-
-  // Push to all admin/sector_lead/call_centre_agent in this CPF
-  const staffRows = await db
-    .select({ id: patrollers.id })
-    .from(patrollers)
-    .where(
-      and(
-        eq(patrollers.cpfId, cpfId),
-        eq(patrollers.status, "active"),
-        inArray(patrollers.accessLevel, ["admin", "sector_lead", "call_centre_agent"] as any),
-      ),
-    );
-  const staffIds = staffRows.map((r) => r.id);
-
-  // Also notify the patroller themselves
-  const allIds = Array.from(new Set([...staffIds, auth.patroller.patroller_id]));
-  const tokens = await getPushTokensForPatrollers(db, allIds);
-
-  await sendFcm(env, tokens, "⚠ Sector Boundary Alert", alertBody, {
-    type: "out_of_sector",
-    patroller_id: auth.patroller.patroller_id,
-    sector_id: sectorId,
-  });
 }
 
 // ── Routes ───────────────────────────────────────────────
@@ -239,11 +166,11 @@ pushTokensRoute.post("/", requireAuth(), async (c) => {
       patrollerId: auth.patroller.patroller_id,
       expoToken: body.expo_token,
       platform: body.platform ?? "android",
-      updatedAt: new Date(),
+      updatedAt: new Date().toISOString(),
     })
     .onConflictDoUpdate({
       target: pushTokens.patrollerId,
-      set: { expoToken: body.expo_token, platform: body.platform ?? "android", updatedAt: new Date() },
+      set: { expoToken: body.expo_token, platform: body.platform ?? "android", updatedAt: new Date().toISOString() },
     });
   return c.json({ ok: true });
 });
@@ -251,28 +178,23 @@ pushTokensRoute.post("/", requireAuth(), async (c) => {
 export const messagesRoute = new Hono<AppContext>();
 messagesRoute.use("*", requireAuth());
 
-// GET /messages — channel inbox
 messagesRoute.get("/", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
 
-  // Ensure default broadcast + sector channels exist
   const sector = await db.query.sectors.findFirst({ where: eq(sectors.id, auth.patroller.sector_id) });
   await ensureDefaultChannels(db, auth.patroller.cpf_id, auth.patroller.sector_id, sector?.name ?? "Sector");
 
-  // Fetch all CPF channels
   const allChannels = await db.query.messageChannels.findMany({
     where: eq(messageChannels.cpfId, auth.patroller.cpf_id),
     orderBy: [desc(messageChannels.createdAt)],
   });
 
-  // Filter to channels this patroller can access
   const accessible: typeof allChannels = [];
   for (const ch of allChannels) {
     if (await canAccessChannel(db, auth, ch)) accessible.push(ch);
   }
 
-  // For each channel: last message + unread count
   const enriched = await Promise.all(
     accessible.map(async (ch) => {
       const [lastMsg] = await db
@@ -305,7 +227,7 @@ messagesRoute.get("/", async (c) => {
         sectorId: ch.sectorId,
         unreadCount,
         lastMessage: lastMsg?.body ?? null,
-        lastMessageAt: lastMsg?.createdAt?.toISOString() ?? null,
+        lastMessageAt: lastMsg?.createdAt ?? null,
       };
     }),
   );
@@ -313,11 +235,10 @@ messagesRoute.get("/", async (c) => {
   return c.json({ channels: enriched });
 });
 
-// GET /messages/:channelId — paginated messages
 messagesRoute.get("/:channelId", async (c) => {
   const auth = getAuth(c);
   const channelId = c.req.param("channelId");
-  const before = c.req.query("before"); // ISO timestamp for pagination
+  const before = c.req.query("before");
   const limit = Math.min(Number(c.req.query("limit") ?? 50), 100);
 
   const db = getDb(c.env);
@@ -326,7 +247,7 @@ messagesRoute.get("/:channelId", async (c) => {
   if (!(await canAccessChannel(db, auth, channel))) return c.json({ error: "Forbidden" }, 403);
 
   const whereClause = before
-    ? and(eq(messages.channelId, channelId), lt(messages.createdAt, new Date(before)))
+    ? and(eq(messages.channelId, channelId), lt(messages.createdAt, before))
     : eq(messages.channelId, channelId);
 
   const rows = await db
@@ -336,7 +257,6 @@ messagesRoute.get("/:channelId", async (c) => {
     .orderBy(desc(messages.createdAt))
     .limit(limit);
 
-  // Check read status for each message
   const readRows = rows.length
     ? await db
         .select({ messageId: messageReads.messageId })
@@ -360,14 +280,13 @@ messagesRoute.get("/:channelId", async (c) => {
     senderCallSign: r.senderCallSign,
     body: r.body,
     priority: r.priority,
-    createdAt: r.createdAt.toISOString(),
+    createdAt: r.createdAt,
     isRead: readSet.has(r.id),
   }));
 
   return c.json({ messages: result });
 });
 
-// POST /messages/:channelId — send a message
 messagesRoute.post("/:channelId", async (c) => {
   const auth = getAuth(c);
   const channelId = c.req.param("channelId");
@@ -390,23 +309,6 @@ messagesRoute.post("/:channelId", async (c) => {
     })
     .returning();
 
-  // Send push to channel audience (excluding sender)
-  const audienceIds = await getSectorChannelAudienceIds(db, channel);
-  const recipientIds = audienceIds.filter((id) => id !== auth.patroller.patroller_id);
-  const tokens = await getPushTokensForPatrollers(db, recipientIds);
-
-  const pushTitle =
-    body.priority === "urgent"
-      ? `🚨 URGENT — ${auth.patroller.call_sign}`
-      : auth.patroller.call_sign;
-
-  void sendFcm(c.env, tokens, pushTitle, body.body.trim(), {
-    type: "message",
-    channel_id: channelId,
-    channel_name: channel.name,
-    message_id: msg.id,
-  });
-
   return c.json({
     id: msg.id,
     channelId: msg.channelId,
@@ -414,12 +316,11 @@ messagesRoute.post("/:channelId", async (c) => {
     senderCallSign: msg.senderCallSign,
     body: msg.body,
     priority: msg.priority,
-    createdAt: msg.createdAt.toISOString(),
+    createdAt: msg.createdAt,
     isRead: false,
   });
 });
 
-// POST /messages/:channelId/read — mark all unread as read
 messagesRoute.post("/:channelId/read", async (c) => {
   const auth = getAuth(c);
   const channelId = c.req.param("channelId");
@@ -429,7 +330,6 @@ messagesRoute.post("/:channelId/read", async (c) => {
   if (!channel) return c.json({ error: "Channel not found" }, 404);
   if (!(await canAccessChannel(db, auth, channel))) return c.json({ error: "Forbidden" }, 403);
 
-  // Get unread messages
   const unread = await db
     .select({ id: messages.id })
     .from(messages)
@@ -448,7 +348,7 @@ messagesRoute.post("/:channelId/read", async (c) => {
       unread.map((m) => ({
         messageId: m.id,
         patrollerId: auth.patroller.patroller_id,
-        readAt: new Date(),
+        readAt: new Date().toISOString(),
       })),
     ).onConflictDoNothing();
   }
@@ -465,7 +365,6 @@ adminMessagesRoute.use(
   requireAccessLevel("admin", "sector_lead", "call_centre_agent"),
 );
 
-// GET /admin/messages/channels — list all CPF channels
 adminMessagesRoute.get("/channels", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -474,7 +373,6 @@ adminMessagesRoute.get("/channels", async (c) => {
     orderBy: [messageChannels.type, messageChannels.name],
   });
 
-  // Enrich with member counts
   const enriched = await Promise.all(
     rows.map(async (ch) => {
       let memberCount = 0;
@@ -498,7 +396,6 @@ adminMessagesRoute.get("/channels", async (c) => {
   return c.json({ channels: enriched });
 });
 
-// POST /admin/messages/channels — create a channel
 adminMessagesRoute.post("/channels", async (c) => {
   const auth = getAuth(c);
   const body = await c.req.json<{
@@ -521,7 +418,6 @@ adminMessagesRoute.post("/channels", async (c) => {
     })
     .returning();
 
-  // Add members for direct channels
   if (body.type === "direct" && body.target_patroller_ids?.length) {
     await db.insert(messageChannelMembers).values(
       body.target_patroller_ids.map((pid) => ({ channelId: channel.id, patrollerId: pid })),

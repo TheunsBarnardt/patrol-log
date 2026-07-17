@@ -1,7 +1,7 @@
 // FDL: blueprints/data/hotspots-map.blueprint.yaml
 
 import { Hono } from "hono";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { AppError, type HotspotPeriod } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth } from "../lib/middleware.js";
@@ -19,25 +19,29 @@ hotspots.get("/", requireAuth(), async (c) => {
   const from = periodStart(period, now);
   const db = getDb(c.env);
 
+  // SQLite stores dates as ISO-8601 text; compare with ISO strings
+  const fromStr = from.toISOString();
+  const nowStr = now.toISOString();
+
   const rows = await db
     .select()
     .from(incidents)
-    .where(and(gte(incidents.occurredAt, from), lte(incidents.occurredAt, now)))
+    .where(and(gte(incidents.occurredAt, fromStr), lte(incidents.occurredAt, nowStr)))
     .limit(500);
 
   await logAudit(db, "hotspots.queried", c.get("auth")!, { period, result_count: rows.length });
 
   return c.json({
     period,
-    from: from.toISOString(),
-    to: now.toISOString(),
+    from: fromStr,
+    to: nowStr,
     pins: rows.map((r) => ({
       incident_id: r.id,
       lat: r.lat,
       lng: r.lng,
       type: r.type,
       severity: r.severity as "low" | "medium" | "high",
-      occurred_at: r.occurredAt.toISOString(),
+      occurred_at: r.occurredAt,
     })),
   });
 });

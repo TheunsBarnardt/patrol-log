@@ -11,7 +11,6 @@ export const vehiclesRoute = new Hono<AppContext>();
 vehiclesRoute.get("/", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
-  // Return only vehicles assigned to this patroller (linked via patroller_id).
   const rows = await db
     .select()
     .from(vehicles)

@@ -29,7 +29,7 @@ sectorsRoute.get("/sectors", async (c) => {
 sectorsRoute.post("/sectors", async (c) => {
   const auth = getAuth(c);
   const body = await c.req.json<{ name: string; boundaries?: GeoJSONPolygon | null }>();
-  if (!body.name?.trim()) throw new AppError("LIVE_MAP_HEARTBEAT_PATROL_NOT_ACTIVE"); // reuse 422
+  if (!body.name?.trim()) throw new AppError("LIVE_MAP_HEARTBEAT_PATROL_NOT_ACTIVE");
   const db = getDb(c.env);
   const [row] = await db
     .insert(sectors)
@@ -62,7 +62,6 @@ sectorsRoute.delete("/sectors/:id", async (c) => {
   const auth = getAuth(c);
   const id = c.req.param("id");
   const db = getDb(c.env);
-  // Guard: refuse if patrollers are assigned to this sector
   const assigned = await db.query.patrollers.findFirst({ where: eq(patrollers.sectorId, id) });
   if (assigned) {
     return c.json({ error: "SECTOR_HAS_MEMBERS", message: "Reassign all members before deleting this sector." }, 409);

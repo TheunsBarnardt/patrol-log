@@ -1,20 +1,16 @@
 // Cloudflare Worker environment bindings.
-// DATABASE_URL and JWT_SECRET come from `wrangler secret` in production,
+// JWT_SECRET comes from `wrangler secret` in production,
 // and `.dev.vars` in local development.
+// DB is a D1 database binding configured in wrangler.toml.
+
+import type { D1Database } from "@cloudflare/workers-types";
 
 export interface Env {
-  DATABASE_URL: string;
+  DB: D1Database;
   JWT_SECRET: string;
   CORS_ORIGINS?: string;
   ENV?: string;
   APP_NAME?: string;
-  /**
-   * Firebase service account JSON for FCM HTTP v1 API.
-   * Paste the full JSON (Firebase Console → Project Settings →
-   * Service Accounts → Generate new private key) as one string.
-   * Set via: `wrangler secret put FCM_SERVICE_ACCOUNT`.
-   */
-  FCM_SERVICE_ACCOUNT?: string;
 }
 
 export type AuthenticatedContext = {

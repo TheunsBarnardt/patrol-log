@@ -9,7 +9,7 @@ import { devices, patrollers, sectors, cpfs } from "../db/schema.js";
 import { verifyPassword, hashPassword } from "../lib/hashing.js";
 import { signDeviceToken, verifyDeviceToken } from "../lib/tokens.js";
 import { checkLoginRateLimit, recordLoginAttempt } from "../lib/rate-limit.js";
-import { logAudit } from "../lib/audit.js";
+import { logAudit, logAuditRaw } from "../lib/audit.js";
 import { requireAuth, getAuth } from "../lib/middleware.js";
 
 export const auth = new Hono<AppContext>();
@@ -23,36 +23,31 @@ auth.post("/login", async (c) => {
   const ip = c.req.header("cf-connecting-ip") ?? null;
   const db = getDb(c.env);
 
-  // Priority 1 — rate limit
   const rl = await checkLoginRateLimit(db, callSign, ip);
   if (rl.limited) {
     await recordLoginAttempt(db, callSign, ip, body.device_id, "rate_limited");
     throw new AppError("LOGIN_RATE_LIMITED");
   }
 
-  // Lookup patroller
   const patroller = await db.query.patrollers.findFirst({
     where: (p, { eq }) => eq(p.callSign, callSign),
   });
 
-  // Priority 2 — account locked
-  if (patroller?.lockedUntil && patroller.lockedUntil > new Date()) {
+  if (patroller?.lockedUntil && new Date(patroller.lockedUntil) > new Date()) {
     await recordLoginAttempt(db, callSign, ip, body.device_id, "locked");
     throw new AppError("LOGIN_ACCOUNT_LOCKED");
   }
 
-  // Priority 3 — account inactive
   if (patroller && patroller.status !== "active") {
     await recordLoginAttempt(db, callSign, ip, body.device_id, "inactive");
     throw new AppError("LOGIN_ACCOUNT_INACTIVE");
   }
 
-  // Priority 6 — invalid credentials (enumeration prevention: same error for either branch)
   const ok = patroller ? await verifyPassword(body.password, patroller.passwordHash) : false;
   if (!patroller || !ok) {
     const attempts = (patroller?.failedLoginAttempts ?? 0) + 1;
     if (patroller) {
-      const lockUntil = attempts >= 10 ? new Date(Date.now() + 30 * 60_000) : patroller.lockedUntil;
+      const lockUntil = attempts >= 10 ? new Date(Date.now() + 30 * 60_000).toISOString() : patroller.lockedUntil;
       await db
         .update(patrollers)
         .set({ failedLoginAttempts: attempts, lockedUntil: lockUntil ?? null })
@@ -62,7 +57,6 @@ auth.post("/login", async (c) => {
     throw new AppError("LOGIN_INVALID_CREDENTIALS");
   }
 
-  // Priority 10 — successful login. Reset counter, issue device token.
   await db.update(patrollers).set({ failedLoginAttempts: 0, lockedUntil: null }).where(eq(patrollers.id, patroller.id));
 
   const { token, jti } = await signDeviceToken(c.env.JWT_SECRET, {
@@ -74,12 +68,11 @@ auth.post("/login", async (c) => {
     dev: body.device_id,
   });
 
-  // Upsert device row (one row per patroller+device).
   const existing = await db.query.devices.findFirst({
     where: (d, { and, eq }) => and(eq(d.patrollerId, patroller.id), eq(d.deviceId, body.device_id)),
   });
   if (existing) {
-    await db.update(devices).set({ tokenJti: jti, status: "active", lastSeenAt: new Date() }).where(eq(devices.id, existing.id));
+    await db.update(devices).set({ tokenJti: jti, status: "active", lastSeenAt: new Date().toISOString() }).where(eq(devices.id, existing.id));
   } else {
     await db.insert(devices).values({
       patrollerId: patroller.id,
@@ -93,11 +86,15 @@ auth.post("/login", async (c) => {
   await recordLoginAttempt(db, callSign, ip, body.device_id, "success");
 
   const profile = await hydrateProfile(db, patroller);
-  await logAudit(db, "login.success", {
-    patroller: { patroller_id: patroller.id, call_sign: patroller.callSign, access_level: patroller.accessLevel, cpf_id: patroller.cpfId, sector_id: patroller.sectorId },
-    device: { device_id: body.device_id, device_token_jti: jti },
+  await logAuditRaw(db, "login.success", {
+    patroller_id: patroller.id,
+    call_sign: patroller.callSign,
+    access_level: patroller.accessLevel,
+    cpf_id: patroller.cpfId,
+    sector_id: patroller.sectorId,
+    device_id: body.device_id,
     ip: ip ?? "unknown",
-  }, { event: "login.success" });
+  }, { device_token_jti: jti });
 
   return c.json({ device_token: token, patroller: profile });
 });
@@ -120,7 +117,7 @@ auth.post("/resume", async (c) => {
   const patroller = await db.query.patrollers.findFirst({ where: eq(patrollers.id, claims.sub) });
   if (!patroller || patroller.status !== "active") throw new AppError("LOGIN_ACCOUNT_INACTIVE");
 
-  await db.update(devices).set({ lastSeenAt: new Date() }).where(eq(devices.id, device.id));
+  await db.update(devices).set({ lastSeenAt: new Date().toISOString() }).where(eq(devices.id, device.id));
   const profile = await hydrateProfile(db, patroller);
   return c.json({ device_token: body.device_token, patroller: profile });
 });

@@ -10,5 +10,6 @@ export default defineConfig({
     },
   },
   server: { port: 5173 },
-  // VITE_* variables are loaded automatically from .env by Vite — no define needed.
+  // VITE_* variables are loaded automatically from .env by Vite.
+  // Set VITE_API_BASE_URL=.env.local for local development.
 });

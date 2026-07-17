@@ -4,15 +4,22 @@ compatibility_date = "2024-11-06"
 compatibility_flags = ["nodejs_compat"]
 
 # Non-secret environment variables.
-# Secrets (DATABASE_URL, JWT_SECRET, CORS_ORIGINS) are set with `wrangler secret put`
+# Secrets (JWT_SECRET) are set with `wrangler secret put`
 # and do NOT belong in this file.
 [vars]
 APP_NAME = "Patrol Log API"
 ENV = "production"
 
-# ── Custom domain (optional) ─────────────────────────────────
-# Uncomment once you've added a zone to Cloudflare and want the API
-# reachable at api.your-domain.example instead of *.workers.dev.
+# ── D1 Database ───────────────────────────────────────────
+# Create with: wrangler d1 create patrol-log-db
+# Then bind it here:
+[[d1_databases]]
+binding = "DB"
+database_name = "patrol-log-db"
+database_id = "SET_THIS_AFTER_CREATING"
+
+# ── Custom domain (optional) ─────────────────────────────
+# Uncomment once you've added a zone to Cloudflare.
 #
 # routes = [
 #   { pattern = "api.patrol-log.example.com/*", zone_name = "patrol-log.example.com" }

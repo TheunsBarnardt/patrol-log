@@ -1,6 +1,6 @@
 // Authentication + CORS + error middleware for Hono.
 
-import type { Context, MiddlewareHandler, Next } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { eq } from "drizzle-orm";
 import { verifyDeviceToken } from "./tokens.js";
@@ -47,7 +47,7 @@ export function requireAuth(): MiddlewareHandler<AppContext> {
     if (!patroller || patroller.status !== "active") throw new AppError("LOGIN_ACCOUNT_INACTIVE");
 
     // Update last_seen asynchronously — don't block the request.
-    void db.update(devices).set({ lastSeenAt: new Date() }).where(eq(devices.id, device.id));
+    void db.update(devices).set({ lastSeenAt: new Date().toISOString() }).where(eq(devices.id, device.id));
 
     const auth: AuthenticatedContext = {
       patroller: {

@@ -1,6 +1,8 @@
 import { createApiClient } from "@patrol-log/shared";
 
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787";
+// API base URL — points to your Cloudflare Workers deployment.
+// Override with VITE_API_BASE_URL env var for local/dev.
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "https://patrol-log-api.your-worker.workers.dev";
 
 const TOKEN_KEY = "patrol_log.admin.device_token";
 const PROFILE_KEY = "patrol_log.admin.profile";

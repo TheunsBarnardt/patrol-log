@@ -1,5 +1,4 @@
 // Admin portal CRUD routes.
-// Follow-ups from the brainstorm: member-profile-admin-edit is scoped to the admin's own sector.
 
 import { Hono } from "hono";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
@@ -26,16 +25,13 @@ export const admin = new Hono<AppContext>();
 
 admin.use("*", requireAuth(), requireAccessLevel("admin", "sector_lead"));
 
-// ── Live map snapshot (all active pins for this CPF) ─────
-// Admin sees a 30-minute window — stale if > 2 min, not shown if > 30 min.
-// This tolerates brief phone backgrounding without losing the pin entirely.
-const STALE_MS = 2 * 60_000;      // 2 min — mark as stale/grey
-const WINDOW_MS = 30 * 60_000;    // 30 min — maximum age shown
+const STALE_MS = 2 * 60_000;
+const WINDOW_MS = 30 * 60_000;
 
 admin.get("/live-map", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
-  const since = new Date(Date.now() - WINDOW_MS);
+  const since = new Date(Date.now() - WINDOW_MS).toISOString();
 
   const rows = await db
     .select()
@@ -55,9 +51,9 @@ admin.get("/live-map", async (c) => {
         lng: r.lng,
         heading: r.heading ?? undefined,
         speed: r.speed ?? undefined,
-        last_update: r.lastSeenAt.toISOString(),
-        duration_on_patrol_min: patrol ? Math.floor((now - patrol.startTime.getTime()) / 60_000) : 0,
-        stale: now - r.lastSeenAt.getTime() > STALE_MS,
+        last_update: r.lastSeenAt,
+        duration_on_patrol_min: patrol ? Math.floor((now - new Date(patrol.startTime).getTime()) / 60_000) : 0,
+        stale: now - new Date(r.lastSeenAt).getTime() > STALE_MS,
       };
     }),
   );
@@ -65,7 +61,6 @@ admin.get("/live-map", async (c) => {
   return c.json({ pins });
 });
 
-// ── Dashboard stats ──────────────────────────────────────
 admin.get("/stats", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -81,7 +76,6 @@ admin.get("/stats", async (c) => {
   });
 });
 
-// ── Residents CRUD ───────────────────────────────────────
 admin.get("/residents", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -123,8 +117,6 @@ admin.delete("/residents/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Members CRUD ─────────────────────────────────────────
-// Scope rule (brainstorm): sector_lead/admin can only edit members in their own sector.
 admin.get("/members", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -198,7 +190,6 @@ admin.post("/members/:id/next-of-kin", async (c) => {
   return c.json(row);
 });
 
-// ── Emergency services CRUD ──────────────────────────────
 admin.get("/emergency-services", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -237,7 +228,7 @@ admin.patch("/emergency-services/:id", async (c) => {
     address: body.address,
     priority: body.priority,
     sensitive: body.sensitive,
-    verifiedAt: new Date(),
+    verifiedAt: new Date().toISOString(),
   };
   const [row] = await db.update(emergencyServices).set(update).where(eq(emergencyServices.id, id)).returning();
   await logAudit(db, "admin.emergency.updated", auth, { service_id: id });
@@ -253,7 +244,6 @@ admin.delete("/emergency-services/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Vehicles CRUD ────────────────────────────────────────
 admin.get("/vehicles", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -319,7 +309,6 @@ admin.delete("/vehicles/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Patrols (view + admin force-close) ───────────────────
 admin.get("/patrols", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -327,7 +316,6 @@ admin.get("/patrols", async (c) => {
   return c.json({ results: rows });
 });
 
-// ── Devices (admin view + revoke) ────────────────────────
 admin.get("/devices", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -349,7 +337,6 @@ admin.post("/devices/:id/revoke", async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Bulk import endpoints ────────────────────────────────
 type ImportResult = { imported: number; skipped: number; errors: string[] };
 
 admin.post("/residents/import", async (c) => {
@@ -463,7 +450,6 @@ admin.post("/vehicles/import", async (c) => {
   return c.json({ imported, skipped, errors } satisfies ImportResult);
 });
 
-// ── Audit log view (POPIA — payload intentionally omitted from response) ──────
 admin.get("/audit-log", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -489,7 +475,6 @@ admin.get("/audit-log", async (c) => {
   return c.json({ results: rows });
 });
 
-// ── Incidents seed (for hotspots) ─────────────────────────
 admin.post("/incidents", async (c) => {
   const auth = getAuth(c);
   const body = await c.req.json<{ type: string; severity: string; lat: number; lng: number; occurred_at: string; description?: string; sector_id?: string }>();
@@ -501,7 +486,7 @@ admin.post("/incidents", async (c) => {
     severity: body.severity,
     lat: body.lat,
     lng: body.lng,
-    occurredAt: new Date(body.occurred_at),
+    occurredAt: new Date(body.occurred_at).toISOString(),
     description: body.description ?? null,
   }).returning();
   await logAudit(db, "admin.incident.created", auth, { incident_id: row.id });

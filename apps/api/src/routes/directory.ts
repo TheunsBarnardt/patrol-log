@@ -3,7 +3,7 @@
 // FDL: blueprints/data/emergency-contacts-directory.blueprint.yaml
 
 import { Hono } from "hono";
-import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { AppError } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, getAuth } from "../lib/middleware.js";
@@ -22,7 +22,10 @@ import { logAudit } from "../lib/audit.js";
 
 export const directory = new Hono<AppContext>();
 
-// ── Residents ──────────────────────────────────────────────
+function ilikeCol(col: any, pattern: string) {
+  return sql`${col} LIKE ${pattern}`;
+}
+
 directory.get("/residents", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const q = (c.req.query("q") ?? "").trim();
@@ -37,9 +40,9 @@ directory.get("/residents", requireAuth(), async (c) => {
         eq(residents.sectorId, auth.patroller.sector_id),
         q
           ? or(
-              ilike(residents.name, `%${q}%`),
-              ilike(residents.phone, `%${q}%`),
-              ilike(residents.address, `%${q}%`),
+              ilikeCol(residents.name, `%${q}%`),
+              ilikeCol(residents.phone, `%${q}%`),
+              ilikeCol(residents.address, `%${q}%`),
             )
           : sql`true`,
       ),
@@ -60,7 +63,6 @@ directory.post("/residents/:id/call", requireAuth(), async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Members ────────────────────────────────────────────────
 directory.get("/members", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const q = (c.req.query("q") ?? "").trim();
@@ -76,9 +78,9 @@ directory.get("/members", requireAuth(), async (c) => {
         eq(patrollers.status, "active"),
         q
           ? or(
-              ilike(patrollers.name, `%${q}%`),
-              ilike(patrollers.callSign, `%${q}%`),
-              ilike(patrollers.phone, `%${q}%`),
+              ilikeCol(patrollers.name, `%${q}%`),
+              ilikeCol(patrollers.callSign, `%${q.toUpperCase().trim()}%`),
+              ilikeCol(patrollers.phone, `%${q}%`),
             )
           : sql`true`,
       ),
@@ -89,10 +91,11 @@ directory.get("/members", requireAuth(), async (c) => {
   const enriched = await Promise.all(
     rows.map(async (r) => {
       const nok = await db.select().from(nextOfKin).where(eq(nextOfKin.patrollerId, r.id));
+      const since = new Date(Date.now() - 2 * 60_000).toISOString();
       const onDuty = await db.query.livePins.findFirst({
-        where: (lp, { eq, and, gt }) => and(
+        where: (lp, { eq, gt }) => and(
           eq(lp.callSign, r.callSign),
-          gt(lp.lastSeenAt, new Date(Date.now() - 2 * 60_000)),
+          gt(lp.lastSeenAt, since),
         ),
       });
       return {
@@ -120,7 +123,6 @@ directory.post("/members/:id/call", requireAuth(), async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Emergency services ─────────────────────────────────────
 directory.get("/emergency-contacts", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -132,7 +134,6 @@ directory.get("/emergency-contacts", requireAuth(), async (c) => {
 
   if (rows.length === 0) throw new AppError("EMERGENCY_NO_SERVICES_CONFIGURED");
 
-  // Hide sensitive services from non-patroller levels
   const filtered = rows.filter((r) => !r.sensitive || auth.patroller.access_level !== "call_centre_agent");
 
   return c.json({
@@ -144,7 +145,7 @@ directory.get("/emergency-contacts", requireAuth(), async (c) => {
       secondary_number: r.secondaryNumber ?? undefined,
       address: r.address ?? undefined,
       priority: r.priority,
-      verified_at: r.verifiedAt.toISOString(),
+      verified_at: r.verifiedAt,
       sensitive: r.sensitive,
     })),
   });
@@ -158,7 +159,6 @@ directory.post("/emergency-contacts/:id/call", requireAuth(), async (c) => {
   const service = await db.query.emergencyServices.findFirst({ where: eq(emergencyServices.id, serviceId) });
   if (!service) return c.json({ ok: true });
 
-  // Attach to active patrol record if one exists
   const membership = await db.query.patrolMembers.findFirst({
     where: (pm, { and, eq, isNull }) => and(eq(pm.patrollerId, auth.patroller.patroller_id), isNull(pm.endTime)),
   });

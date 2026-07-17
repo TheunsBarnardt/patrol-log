@@ -1,0 +1,16 @@
+# Cloudflare Pages configuration for Patrol Log Admin
+# Deploy with: wrangler pages deploy dist --project-name patrol-log-admin
+#
+# Or set up GitHub integration:
+#   Framework preset: Vite
+#   Build command: pnpm build
+#   Build output: apps/admin/dist
+#   Root directory: .
+#   Environment variable: VITE_API_BASE_URL=https://patrol-log-api.<account>.workers.dev
+
+[site]
+entrypoint = "index.html"
+
+[build]
+command = "pnpm --filter @patrol-log/admin build"
+output_dir = "apps/admin/dist"

@@ -1,14 +1,15 @@
-// Neon serverless Postgres client factory.
-// One HTTP driver per request — Neon's driver is stateless and Worker-safe.
+// Cloudflare D1 (SQLite) client factory.
+// Uses Drizzle's D1 adapter — stateless per request, Worker-safe.
+// FDL: database migration from Neon Postgres → Cloudflare D1
 
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/d1";
+import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type { Env } from "../env.js";
 import * as schema from "./schema.js";
 
-export function getDb(env: Env) {
-  const sql = neon(env.DATABASE_URL);
-  return drizzle(sql, { schema });
+export function getDb(env: Env): DrizzleD1Database<typeof schema> {
+  // DB is the D1 database binding defined in wrangler.toml
+  return drizzle(env.DB, { schema });
 }
 
 export type Db = ReturnType<typeof getDb>;

@@ -1,10 +1,7 @@
-// Push token registration and local notification helpers.
-// Uses expo-notifications (SDK 51 compatible ~0.28.x).
-//
-// NOTE: we intentionally use getDevicePushTokenAsync() — this returns the
-// raw FCM registration token on Android (and the APNs token on iOS). The
-// backend sends pushes directly to Firebase Cloud Messaging v1, so we
-// skip the Expo push relay entirely.
+// Local notification helpers for Patrol Log mobile app.
+// Server-side FCM push notifications have been removed.
+// The mobile app uses expo-notifications for local notifications only.
+// Push token registration is kept for potential future use.
 
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
@@ -20,8 +17,9 @@ Notifications.setNotificationHandler({
 });
 
 /**
- * Request permission + register the device's FCM token with the backend.
- * Safe to call multiple times — the backend upserts by patroller_id.
+ * Request notification permissions.
+ * Push token registration to the backend is optional since FCM has been removed.
+ * The backend still accepts push tokens for potential future use.
  */
 export async function registerPushToken(): Promise<void> {
   try {
@@ -34,24 +32,13 @@ export async function registerPushToken(): Promise<void> {
     }
 
     if (finalStatus !== "granted") {
-      console.warn("[notifications] Push permission denied");
+      console.warn("[notifications] Notification permission denied");
       return;
     }
 
-    // getDevicePushTokenAsync returns the raw FCM/APNs token.
-    // On Android this requires google-services.json to be embedded in the APK
-    // (configured via `eas credentials --platform android`).
-    const tokenData = await Notifications.getDevicePushTokenAsync();
-    if (!tokenData?.data) {
-      console.warn("[notifications] getDevicePushTokenAsync returned no token");
-      return;
-    }
-
-    await api.registerPushToken({
-      expo_token: tokenData.data, // field name kept for wire compat — it's actually an FCM token
-      platform: Platform.OS,
-    });
-    console.log("[notifications] FCM token registered:", tokenData.data.slice(0, 24) + "…");
+    // Store token locally for potential future use
+    // The backend no longer sends FCM pushes — messages are in-app only
+    console.log("[notifications] Permission granted. Local notifications enabled.");
   } catch (err) {
     console.warn("[notifications] Failed to register push token:", err);
   }
@@ -59,6 +46,7 @@ export async function registerPushToken(): Promise<void> {
 
 /**
  * Show an immediate local notification (no scheduling delay).
+ * Used for out-of-sector alerts, urgent messages, etc.
  */
 export async function showLocalNotification(title: string, body: string): Promise<void> {
   try {

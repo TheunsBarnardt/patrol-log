@@ -3,7 +3,7 @@
 // Clients POST /live-map/heartbeat every 30s and GET /live-map/snapshot every 30s.
 
 import { Hono } from "hono";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { AppError, type HeartbeatRequest, type LiveMapPin } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, getAuth } from "../lib/middleware.js";
@@ -37,7 +37,7 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
 
   // Priority 2 — rate limit (1 per 20s): check last_seen_at on the row.
   const existing = await db.query.livePins.findFirst({ where: eq(livePins.patrolId, body.patrol_id) });
-  if (existing && existing.lastSeenAt > new Date(Date.now() - 20_000)) {
+  if (existing && new Date(existing.lastSeenAt) > new Date(Date.now() - 20_000)) {
     throw new AppError("LIVE_MAP_HEARTBEAT_RATE_LIMITED");
   }
 
@@ -54,7 +54,7 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
       heading: body.heading ?? null,
       speed: body.speed ?? null,
       accuracyM: body.accuracy_m,
-      lastSeenAt: new Date(),
+      lastSeenAt: new Date().toISOString(),
     })
     .onConflictDoUpdate({
       target: livePins.patrolId,
@@ -64,7 +64,7 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
         heading: body.heading ?? null,
         speed: body.speed ?? null,
         accuracyM: body.accuracy_m,
-        lastSeenAt: new Date(),
+        lastSeenAt: new Date().toISOString(),
       },
     });
 
@@ -87,18 +87,17 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
     const pin = await db.query.livePins.findFirst({ where: eq(livePins.patrolId, body.patrol_id) });
     const shouldAlert =
       !pin?.lastOutOfSectorAlertAt ||
-      Date.now() - pin.lastOutOfSectorAlertAt.getTime() > OUT_OF_SECTOR_THROTTLE_MS;
+      Date.now() - new Date(pin.lastOutOfSectorAlertAt).getTime() > OUT_OF_SECTOR_THROTTLE_MS;
 
     if (shouldAlert) {
       await db
         .update(livePins)
-        .set({ lastOutOfSectorAlertAt: new Date() })
+        .set({ lastOutOfSectorAlertAt: new Date().toISOString() })
         .where(eq(livePins.patrolId, body.patrol_id));
 
-      // Fire-and-forget: send push + system message to sector channel
+      // In-app message only (no FCM push)
       void sendOutOfSectorNotification(
         db,
-        c.env,
         auth,
         patrol.sectorId,
         sector?.name ?? "Unknown Sector",
@@ -118,7 +117,7 @@ liveMap.get("/snapshot", requireAuth(), async (c) => {
   const isDispatch = auth.patroller.access_level === "call_centre_agent"
     || auth.patroller.access_level === "admin"
     || auth.patroller.access_level === "sector_lead";
-  const since = new Date(Date.now() - STALE_THRESHOLD_MS * 2); // include stale-greyed pins
+  const since = new Date(Date.now() - STALE_THRESHOLD_MS * 2).toISOString();
 
   const rows = isDispatch
     ? await db.select().from(livePins).where(and(eq(livePins.cpfId, auth.patroller.cpf_id), gt(livePins.lastSeenAt, since)))
@@ -137,9 +136,9 @@ liveMap.get("/snapshot", requireAuth(), async (c) => {
         lng: r.lng,
         heading: r.heading ?? undefined,
         speed: r.speed ?? undefined,
-        last_update: r.lastSeenAt.toISOString(),
-        duration_on_patrol_min: patrol ? Math.floor((now - patrol.startTime.getTime()) / 60_000) : 0,
-        stale: now - r.lastSeenAt.getTime() > STALE_THRESHOLD_MS,
+        last_update: r.lastSeenAt,
+        duration_on_patrol_min: patrol ? Math.floor((now - new Date(patrol.startTime).getTime()) / 60_000) : 0,
+        stale: now - new Date(r.lastSeenAt).getTime() > STALE_THRESHOLD_MS,
         out_of_sector: r.outOfSector,
       };
     }),

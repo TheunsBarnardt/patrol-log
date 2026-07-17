@@ -2,7 +2,7 @@
   "name": "patrol-log",
   "version": "0.1.0",
   "private": true,
-  "description": "CPF Patrol Log — RN mobile + Cloudflare Workers API + React admin portal, generated from FDL blueprints",
+  "description": "CPF Patrol Log — RN mobile + Cloudflare Workers API (D1) + React admin portal, generated from FDL blueprints",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -40,7 +40,8 @@
       "@img/sharp-darwin-x64",
       "@img/sharp-darwin-arm64",
       "@img/sharp-linux-x64",
-      "@img/sharp-linux-arm64"
+      "@img/sharp-linux-arm64",
+      "miniflare"
     ]
   }
 }

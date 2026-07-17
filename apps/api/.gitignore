@@ -1,0 +1,10 @@
+# D1 local database
+*.sqlite
+*.db
+
+# Wrangler
+.wrangler/
+
+# Env files
+.dev.vars
+.env.local

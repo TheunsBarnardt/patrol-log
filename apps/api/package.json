@@ -8,12 +8,11 @@
     "deploy": "wrangler deploy",
     "build": "wrangler deploy --dry-run --outdir dist",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push",
-    "db:seed": "node src/db/seed.mjs",
+    "db:push": "wrangler d1 push patrol-log-db --local",
+    "db:seed": "node src/db/seed-d1.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.9.3",
     "@noble/hashes": "^1.6.0",
     "@patrol-log/shared": "workspace:*",
     "drizzle-orm": "^0.30.10",
@@ -23,6 +22,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240512.0",
     "drizzle-kit": "^0.21.0",
+    "miniflare": "^3.20240512.0",
     "typescript": "^5.4.5",
     "wrangler": "^3.57.0",
     "dotenv": "^16.4.5"
