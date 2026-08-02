@@ -53,49 +53,66 @@ export function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
-          <View style={styles.brand}>
-            {logo ? (
-              <Image source={logo} style={styles.logoImg} resizeMode="contain" />
-            ) : (
-              <View style={styles.logoFallback}>
-                <Text style={styles.logoFallbackText}>PL</Text>
-              </View>
-            )}
-            <Text style={styles.appName}>Patrol Log</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.flex}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.sheet}>
+            <View style={styles.brand}>
+              {logo ? (
+                <Image source={logo} style={styles.logoImg} resizeMode="cover" />
+              ) : (
+                <View style={styles.logoFallback}>
+                  <Text style={styles.logoFallbackText}>PL</Text>
+                </View>
+              )}
+              <Text style={styles.appName}>PATROL LOG</Text>
+              <Text style={styles.tagline}>Sign in with your call sign</Text>
+            </View>
+
+            <View style={styles.form}>
+              <Text style={styles.label}>Call sign</Text>
+              <TextInput
+                style={styles.input}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                value={callSign}
+                onChangeText={setCallSign}
+                placeholder="e.g. WC29"
+                placeholderTextColor={colors.textMuted}
+                returnKeyType="next"
+              />
+
+              <Text style={[styles.label, styles.labelSpaced]}>Password</Text>
+              <TextInput
+                style={styles.input}
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor={colors.textMuted}
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+              />
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  busy && styles.buttonDisabled,
+                  pressed && !busy && styles.buttonPressed,
+                ]}
+                onPress={handleLogin}
+                disabled={busy}
+              >
+                <Text style={styles.buttonText}>{busy ? "Signing in…" : "Continue"}</Text>
+              </Pressable>
+            </View>
           </View>
-
-          <Text style={styles.headline}>Welcome back</Text>
-
-          <TextInput
-            style={styles.input}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            value={callSign}
-            onChangeText={setCallSign}
-            placeholder="Call sign"
-            placeholderTextColor="#AFAFAF"
-            returnKeyType="next"
-          />
-          <TextInput
-            style={styles.input}
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor="#AFAFAF"
-            returnKeyType="done"
-            onSubmitEditing={handleLogin}
-          />
-
-          <Pressable
-            style={({ pressed }) => [styles.button, busy && { opacity: 0.6 }, pressed && { opacity: 0.9 }]}
-            onPress={handleLogin}
-            disabled={busy}
-          >
-            <Text style={styles.buttonText}>{busy ? "Signing in…" : "Continue"}</Text>
-          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -104,49 +121,88 @@ export function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  inner: {
+  flex: { flex: 1 },
+  scroll: {
     flexGrow: 1,
+    width: "100%",
+    justifyContent: "center",
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xl,
-    justifyContent: "center",
+    paddingVertical: spacing.xl,
   },
-  brand: { alignItems: "flex-start", marginBottom: spacing.xl },
-  logoImg: { width: 56, height: 56, borderRadius: radii.md, marginBottom: spacing.md },
-  logoFallback: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
+  sheet: {
+    width: "100%",
+    maxWidth: 400,
+    alignSelf: "center",
+  },
+  brand: {
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.md,
-  },
-  logoFallbackText: { fontSize: 18, fontWeight: "700", color: "#fff" },
-  appName: { fontSize: 15, fontWeight: "600", color: colors.textMuted },
-  headline: {
-    fontSize: 34,
-    fontWeight: "700",
-    color: colors.text,
-    letterSpacing: -0.8,
     marginBottom: spacing.xl,
   },
-  input: {
+  logoImg: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    marginBottom: spacing.md,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    fontSize: 17,
-    fontWeight: "500",
-    color: colors.text,
+  },
+  logoFallback: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: spacing.md,
   },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: 28,
-    paddingVertical: 17,
-    alignItems: "center",
-    marginTop: spacing.sm,
+  logoFallbackText: { fontSize: 28, fontWeight: "800", color: "#fff" },
+  appName: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.text,
+    letterSpacing: 1.2,
+    textAlign: "center",
   },
+  tagline: {
+    marginTop: spacing.sm,
+    fontSize: 15,
+    fontWeight: "500",
+    color: colors.textMuted,
+    textAlign: "center",
+  },
+  form: {
+    width: "100%",
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+    marginLeft: 4,
+  },
+  labelSpaced: {
+    marginTop: spacing.md,
+  },
+  input: {
+    width: "100%",
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: Platform.OS === "web" ? 14 : 16,
+    fontSize: 17,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  button: {
+    width: "100%",
+    backgroundColor: colors.primary,
+    borderRadius: radii.lg,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginTop: spacing.lg,
+  },
+  buttonPressed: { opacity: 0.88 },
+  buttonDisabled: { opacity: 0.55 },
   buttonText: { color: "#fff", fontWeight: "700", fontSize: 17 },
 });
