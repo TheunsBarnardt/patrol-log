@@ -16,7 +16,7 @@ ENV = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "patrol-log-db"
-database_id = "SET_THIS_AFTER_CREATING"
+database_id = "288b3322-de8f-401f-a174-5108fea98d68"
 
 # ── Custom domain (optional) ─────────────────────────────
 # Uncomment once you've added a zone to Cloudflare.

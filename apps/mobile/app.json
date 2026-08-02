@@ -58,7 +58,7 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "http://192.168.1.107:8787",
+      "apiBaseUrl": "https://patrol-log-api.small-night-657e.workers.dev",
       "eas": {
         "projectId": "d9e869bb-8f02-488d-a81c-26a30b19b4ef"
       }
