@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useAuthStore } from "./src/store/auth";
 import { RootNavigator } from "./src/navigation";
+import { AppDialog } from "./src/components/AppDialog";
 import { colors } from "./src/theme";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
           <RootNavigator />
         </NavigationContainer>
       )}
+      <AppDialog />
     </SafeAreaProvider>
   );
 }

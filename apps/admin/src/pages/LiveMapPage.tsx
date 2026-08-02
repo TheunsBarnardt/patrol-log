@@ -1,39 +1,98 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { adminFetch } from "../lib/api";
 import { PageHeader } from "../components/DataTable";
-import type { LiveMapPin } from "@patrol-log/shared";
+import type { LiveMapMovement, LiveMapPin, PatrolType } from "@patrol-log/shared";
 
-// Leaflet's default icon path breaks with Vite bundling — fix it manually.
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+function movementOf(pin: LiveMapPin): LiveMapMovement {
+  if (pin.patrol_type === "vehicle") return "car";
+  if (pin.patrol_type === "static") return "stationary";
+  return "walk";
+}
 
-const activeIcon = new L.Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-});
+function movementLabel(m: LiveMapMovement): string {
+  if (m === "car") return "In vehicle";
+  if (m === "walk") return "On foot";
+  return "Stationary";
+}
 
-const staleIcon = new L.Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  className: "stale-marker",
-});
+const MOVING_MS = 0.8; // m/s — below this, don't rotate heading
 
-// Pan the map when pins first load so we don't stay on the default view.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Uber-style glyph + always-on call sign (and plate for cars). */
+function makePinIcon(pin: LiveMapPin): L.DivIcon {
+  const movement = movementOf(pin);
+  const stale = pin.stale;
+  const moving = pin.speed != null && pin.speed >= MOVING_MS;
+  const heading =
+    movement === "car" && moving && pin.heading != null && Number.isFinite(pin.heading)
+      ? pin.heading
+      : 0;
+
+  const fill = stale ? "#9CA3AF" : movement === "car" ? "#2563EB" : movement === "walk" ? "#059669" : "#D97706";
+  const ring = stale ? "#6B7280" : "#fff";
+
+  const glyph =
+    movement === "car"
+      ? `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;transform:rotate(${heading}deg)">
+          <path fill="${ring}" d="M5 11.5 6.2 7.8A2 2 0 0 1 8.1 6.5h7.8a2 2 0 0 1 1.9 1.3L19 11.5v5a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-.5H8V16.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-5Z"/>
+          <circle cx="7.5" cy="15" r="1.4" fill="${fill}"/>
+          <circle cx="16.5" cy="15" r="1.4" fill="${fill}"/>
+          <path fill="${fill}" d="M7.2 8h9.6l1.1 3.2H6.1L7.2 8Z"/>
+        </svg>`
+      : movement === "walk"
+        ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="${ring}" xmlns="http://www.w3.org/2000/svg" style="display:block">
+            <circle cx="13.5" cy="4.5" r="2.2"/>
+            <path d="M10.2 8.2c.7-.5 1.7-.6 2.6-.2l2.2 1.1 2.1-.7.7 1.9-2.8.9-1.5-.7-.8 2.2 2.4 1.6-.9 1.7-3.1-2.1c-.7-.5-1-1.4-.7-2.2l1-3.5-1.4-.9Z"/>
+            <path d="M9.2 20.5 11 14.8l2.2 1.5 1.8 4.2-2 .9-1.2-2.8-1.1.7-.7 1.2Z"/>
+          </svg>`
+        : `<svg width="18" height="18" viewBox="0 0 24 24" fill="${ring}" xmlns="http://www.w3.org/2000/svg" style="display:block">
+            <circle cx="12" cy="6" r="2.4"/>
+            <path d="M8.5 10.2c0-1.2 1.5-2.2 3.5-2.2s3.5 1 3.5 2.2V14h-1.6v7.2h-3.8V14H8.5v-3.8Z"/>
+          </svg>`;
+
+  const sub =
+    movement === "car" && pin.vehicle_registration
+      ? escapeHtml(pin.vehicle_registration)
+      : movementLabel(movement);
+
+  const html = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;opacity:${stale ? 0.55 : 1}">
+      <div style="
+        width:40px;height:40px;border-radius:9999px;background:${fill};
+        border:3px solid ${ring};box-shadow:0 2px 8px rgba(0,0,0,.35);
+        display:flex;align-items:center;justify-content:center;
+      ">${glyph}</div>
+      <div style="
+        margin-top:1px;padding:2px 7px;border-radius:9999px;background:rgba(17,24,39,.92);
+        color:#fff;font:700 11px/1.2 system-ui,sans-serif;white-space:nowrap;
+        box-shadow:0 1px 4px rgba(0,0,0,.35);max-width:120px;overflow:hidden;text-overflow:ellipsis;
+      ">${escapeHtml(pin.call_sign)}</div>
+      <div style="
+        padding:1px 6px;border-radius:9999px;background:rgba(255,255,255,.92);
+        color:#374151;font:600 10px/1.2 system-ui,sans-serif;white-space:nowrap;
+        box-shadow:0 1px 3px rgba(0,0,0,.2);max-width:120px;overflow:hidden;text-overflow:ellipsis;
+      ">${sub}</div>
+    </div>`;
+
+  return L.divIcon({
+    className: "live-pin",
+    html,
+    iconSize: [40, 68],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -28],
+  });
+}
+
 function AutoFit({ pins }: { pins: LiveMapPin[] }) {
   const map = useMap();
   const fitted = useRef(false);
@@ -55,6 +114,12 @@ function formatAge(isoString: string): string {
   if (diffMin < 1) return "just now";
   if (diffMin === 1) return "1 min ago";
   return `${diffMin} min ago`;
+}
+
+function typeCaption(type: PatrolType): string {
+  if (type === "vehicle") return "Vehicle patrol";
+  if (type === "static") return "Static post";
+  return "Foot patrol";
 }
 
 export function LiveMapPage() {
@@ -82,37 +147,51 @@ export function LiveMapPage() {
     };
   }, []);
 
+  const icons = useMemo(() => {
+    const map = new Map<string, L.DivIcon>();
+    for (const p of pins) map.set(p.patrol_id, makePinIcon(p));
+    return map;
+  }, [pins]);
+
   const active = pins.filter((p) => !p.stale).length;
   const stale = pins.filter((p) => p.stale).length;
+  const cars = pins.filter((p) => movementOf(p) === "car").length;
+  const walks = pins.filter((p) => movementOf(p) === "walk").length;
+  const stationary = pins.filter((p) => movementOf(p) === "stationary").length;
 
   return (
     <>
       <PageHeader title="Live Patroller Map" />
 
-      {/* Status bar */}
-      <div className="flex items-center gap-4 mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-4">
         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700">
-          <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />
-          {active} active
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
+          {active} live
         </span>
         {stale > 0 && (
           <span className="inline-flex items-center gap-1.5 text-sm text-gray-400">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
-            {stale} stale (phone backgrounded / signal lost)
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
+            {stale} stale
           </span>
         )}
+        <span className="text-sm text-gray-500">
+          {cars} car · {walks} walk · {stationary} stationary
+        </span>
         {lastRefresh && (
           <span className="ml-auto text-xs text-gray-400">
-            Last updated {lastRefresh.toLocaleTimeString()} · auto-refreshes every 30s
+            Last updated {lastRefresh.toLocaleTimeString()} · every 30s
           </span>
         )}
         {error && (
-          <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">⚠ {error}</span>
+          <span className="rounded bg-red-50 px-2 py-1 text-xs text-red-600">⚠ {error}</span>
         )}
       </div>
 
-      {/* Map */}
-      <div className="rounded-lg overflow-hidden border border-gray-200 shadow-sm" style={{ height: "calc(100vh - 200px)", minHeight: 480 }}>
+      <div
+        className="overflow-hidden rounded-lg border border-gray-200 shadow-sm"
+        style={{ height: "calc(100vh - 200px)", minHeight: 480 }}
+      >
+        <style>{`.live-pin{background:transparent!important;border:0!important}`}</style>
         <MapContainer
           center={[-25.842, 28.178]}
           zoom={11}
@@ -127,19 +206,22 @@ export function LiveMapPage() {
           />
           <AutoFit pins={pins} />
           {pins.map((p) => (
-            <Marker
-              key={p.patrol_id}
-              position={[p.lat, p.lng]}
-              icon={p.stale ? staleIcon : activeIcon}
-            >
+            <Marker key={p.patrol_id} position={[p.lat, p.lng]} icon={icons.get(p.patrol_id)}>
               <Popup>
                 <div className="text-sm">
-                  <p className="font-bold text-base mb-1">{p.call_sign}</p>
-                  <p className="text-gray-600 capitalize">{p.patrol_type.replace("_", " ")} patrol</p>
-                  {p.patrol_vehicle && <p className="text-gray-600">Vehicle: {p.patrol_vehicle}</p>}
+                  <p className="mb-1 text-base font-bold">{p.call_sign}</p>
+                  <p className="font-medium text-gray-800">{movementLabel(movementOf(p))}</p>
+                  <p className="text-gray-600">{typeCaption(p.patrol_type)}</p>
+                  {p.vehicle_registration && (
+                    <p className="text-gray-600">Vehicle: {p.vehicle_registration}</p>
+                  )}
                   <p className="text-gray-600">{p.duration_on_patrol_min} min on patrol</p>
-                  {p.speed != null && <p className="text-gray-500 text-xs">{Math.round(p.speed * 3.6)} km/h</p>}
-                  <p className={`text-xs mt-1 font-medium ${p.stale ? "text-orange-500" : "text-green-600"}`}>
+                  {p.speed != null && (
+                    <p className="text-xs text-gray-500">{Math.round(p.speed * 3.6)} km/h</p>
+                  )}
+                  <p
+                    className={`mt-1 text-xs font-medium ${p.stale ? "text-orange-500" : "text-green-600"}`}
+                  >
                     {p.stale ? "⚠ Stale — " : "✓ Live — "}
                     {formatAge(p.last_update)}
                   </p>
@@ -150,15 +232,18 @@ export function LiveMapPage() {
         </MapContainer>
       </div>
 
-      {/* Legend */}
-      <div className="flex gap-6 mt-3 text-xs text-gray-500">
-        <span className="flex items-center gap-1.5">
-          <img src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png" alt="" className="h-4 opacity-100" />
-          Active (heartbeat &lt;2 min)
+      <div className="mt-3 flex flex-wrap gap-5 text-xs text-gray-500">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded-full bg-blue-600" /> Car
         </span>
-        <span className="flex items-center gap-1.5 opacity-40">
-          <img src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png" alt="" className="h-4" />
-          Stale (heartbeat &gt;2 min)
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded-full bg-emerald-600" /> Walk
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 rounded-full bg-amber-600" /> Stationary
+        </span>
+        <span className="inline-flex items-center gap-1.5 opacity-50">
+          <span className="inline-block h-3 w-3 rounded-full bg-gray-400" /> Stale (&gt;2 min)
         </span>
         <span className="ml-auto">Map data © OpenStreetMap contributors</span>
       </div>

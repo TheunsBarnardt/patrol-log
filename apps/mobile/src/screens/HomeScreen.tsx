@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome5 } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { useAuthStore } from "../store/auth";
@@ -8,9 +9,10 @@ import { useMessagingStore } from "../store/messaging";
 import { api } from "../lib/api";
 import { registerPushToken } from "../lib/notifications";
 import type { ActivePatrolResponse } from "@patrol-log/shared";
-import { colors, spacing } from "../theme";
+import { colors, radii, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
+type IconName = ComponentProps<typeof FontAwesome5>["name"];
 
 export function HomeScreen({ navigation }: Props) {
   const profile = useAuthStore((s) => s.profile);
@@ -22,14 +24,10 @@ export function HomeScreen({ navigation }: Props) {
   async function refreshUnread() {
     try {
       const res = await api.messageChannels();
-      const total = res.channels.reduce((sum, ch) => sum + ch.unreadCount, 0);
-      setUnreadCount(total);
-    } catch {
-      // Messaging not yet set up — ignore
-    }
+      setUnreadCount(res.channels.reduce((sum, ch) => sum + ch.unreadCount, 0));
+    } catch {}
   }
 
-  // Register push token once after login
   useEffect(() => {
     if (!pushRegistered.current) {
       pushRegistered.current = true;
@@ -37,7 +35,6 @@ export function HomeScreen({ navigation }: Props) {
     }
   }, []);
 
-  // Refresh patrol status and unread count on focus
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => {
       void api.activePatrol().then(setActivePatrol).catch(() => setActivePatrol(null));
@@ -47,144 +44,247 @@ export function HomeScreen({ navigation }: Props) {
   }, [navigation]);
 
   if (!profile) return null;
+  const firstName = profile.name.split(" ")[0];
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Greeting */}
-        <View style={styles.greeting}>
-          <Text style={styles.greetName}>Hi, {profile.name.split(" ")[0]} 👋</Text>
-          <Text style={styles.greetSub}>{profile.sector} · {profile.call_sign}</Text>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <Text style={styles.hello}>Hi {firstName}</Text>
+          <Text style={styles.meta}>
+            {profile.call_sign}
+            <Text style={styles.metaSep}>  ·  </Text>
+            {profile.sector}
+          </Text>
         </View>
 
-        {/* Patrol action */}
-        <View style={styles.group}>
-          {!activePatrol ? (
-            <ActionButton
-              title="Commence Patrol"
-              subtitle="Start a new patrol session"
-              color={colors.warning}
-              icon="🚔"
-              onPress={() => navigation.navigate("CommencePatrol")}
-            />
-          ) : (
-            <ActionButton
-              title="Active Patrol"
-              subtitle="View / stand down"
-              color={colors.danger}
-              icon="🔴"
-              onPress={() => navigation.navigate("ActivePatrol", { patrolId: activePatrol.patrol_id })}
-            />
-          )}
-        </View>
-
-        {/* Maps */}
-        <View style={styles.group}>
-          <Text style={styles.groupLabel}>Maps</Text>
-          <View style={styles.row}>
-            <HalfButton title="Live Map" icon="📍" color={colors.primary} onPress={() => navigation.navigate("LivePatrollerMap")} />
-            <HalfButton title="Hotspots" icon="🔥" color="#F97316" onPress={() => navigation.navigate("HotspotsMap")} />
+        <Pressable
+          style={({ pressed }) => [
+            styles.cta,
+            activePatrol ? styles.ctaLive : null,
+            pressed && styles.pressed,
+          ]}
+          onPress={() =>
+            activePatrol
+              ? navigation.navigate("ActivePatrol", { patrolId: activePatrol.patrol_id })
+              : navigation.navigate("CommencePatrol")
+          }
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.ctaTitle, activePatrol && styles.ctaTitleLive]}>
+              {activePatrol ? "Active patrol" : "Commence patrol"}
+            </Text>
+            <Text style={[styles.ctaSub, activePatrol && styles.ctaSubLive]}>
+              {activePatrol ? "Tap to view or stand down" : "Where are you patrolling?"}
+            </Text>
           </View>
-        </View>
+          <View style={[styles.ctaIcon, activePatrol && styles.ctaIconLive]}>
+            <FontAwesome5 name="arrow-right" size={16} color={activePatrol ? colors.danger : colors.primary} solid />
+          </View>
+        </Pressable>
 
-        {/* Messaging shortcut */}
-        <View style={styles.group}>
-          <ActionButton
+        <Text style={styles.section}>Suggestions</Text>
+        <View style={styles.suggestCard}>
+          <SuggestRow
+            icon="map-marker-alt"
+            title="Live map"
+            subtitle="See who’s out now"
+            onPress={() => navigation.navigate("LivePatrollerMap")}
+          />
+          <View style={styles.divider} />
+          <SuggestRow
+            icon="fire"
+            title="Hotspots"
+            subtitle="Recent incidents nearby"
+            onPress={() => navigation.navigate("HotspotsMap")}
+          />
+          <View style={styles.divider} />
+          <SuggestRow
+            icon="comment"
             title="Messages"
-            subtitle={unreadCount > 0 ? `${unreadCount} unread message${unreadCount !== 1 ? "s" : ""}` : "Broadcast & sector channels"}
-            color={colors.info}
-            icon="💬"
+            subtitle={unreadCount > 0 ? `${unreadCount} unread` : "Sector & broadcast"}
+            badge={unreadCount > 0 ? unreadCount : undefined}
             onPress={() => navigation.navigate("Messaging")}
           />
         </View>
 
-        {/* Directories */}
-        <View style={styles.group}>
-          <Text style={styles.groupLabel}>Directory</Text>
-          <DirButton title="Residents" icon="🏠" onPress={() => navigation.navigate("Residents")} />
-          <DirButton title="Members" icon="👮" onPress={() => navigation.navigate("Members")} />
-          <DirButton title="Emergency Contacts" icon="🚨" onPress={() => navigation.navigate("EmergencyContacts")} />
+        <Text style={styles.section}>Directory</Text>
+        <View style={styles.quickRow}>
+          <Quick
+            icon="home"
+            label="Residents"
+            onPress={() => navigation.navigate("Residents")}
+          />
+          <Quick
+            icon="user-friends"
+            label="Members"
+            onPress={() => navigation.navigate("Members")}
+          />
+          <Quick
+            icon="phone-alt"
+            label="Emergency"
+            onPress={() => navigation.navigate("EmergencyContacts")}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function ActionButton({ title, subtitle, color, icon, onPress }: { title: string; subtitle: string; color: string; icon: string; onPress: () => void }) {
+function SuggestRow({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  badge,
+}: {
+  icon: IconName;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  badge?: number;
+}) {
   return (
-    <TouchableOpacity style={[styles.actionBtn, { backgroundColor: color }]} onPress={onPress} activeOpacity={0.85}>
-      <Text style={styles.actionIcon}>{icon}</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.actionTitle}>{title}</Text>
-        <Text style={styles.actionSub}>{subtitle}</Text>
+    <Pressable style={({ pressed }) => [styles.suggestRow, pressed && styles.pressedSoft]} onPress={onPress}>
+      <View style={styles.suggestIcon}>
+        <FontAwesome5 name={icon} size={15} color={colors.text} solid />
       </View>
-      <Text style={styles.chevron}>›</Text>
-    </TouchableOpacity>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.suggestTitle}>{title}</Text>
+        <Text style={styles.suggestSub}>{subtitle}</Text>
+      </View>
+      {badge != null && (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{badge > 99 ? "99+" : badge}</Text>
+        </View>
+      )}
+      <FontAwesome5 name="chevron-right" size={12} color="#B3B3B3" />
+    </Pressable>
   );
 }
 
-function HalfButton({ title, icon, color, onPress }: { title: string; icon: string; color: string; onPress: () => void }) {
+function Quick({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+}) {
   return (
-    <TouchableOpacity style={[styles.halfBtn, { backgroundColor: color }]} onPress={onPress} activeOpacity={0.85}>
-      <Text style={styles.halfIcon}>{icon}</Text>
-      <Text style={styles.halfTitle}>{title}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function DirButton({ title, icon, onPress }: { title: string; icon: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.dirBtn} onPress={onPress} activeOpacity={0.8}>
-      <Text style={styles.dirIcon}>{icon}</Text>
-      <Text style={styles.dirTitle}>{title}</Text>
-      <Text style={styles.chevron}>›</Text>
-    </TouchableOpacity>
+    <Pressable style={({ pressed }) => [styles.quick, pressed && styles.pressed]} onPress={onPress}>
+      <View style={styles.quickIcon}>
+        <FontAwesome5 name={icon} size={16} color={colors.text} solid />
+      </View>
+      <Text style={styles.quickLabel}>{label}</Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, gap: spacing.md },
-  greeting: { marginTop: spacing.sm },
-  greetName: { fontSize: 22, fontWeight: "800" },
-  greetSub: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xl },
 
-  group: { gap: spacing.sm },
-  groupLabel: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 1 },
+  hero: { marginBottom: spacing.lg, marginTop: spacing.sm },
+  hello: {
+    fontSize: 34,
+    fontWeight: "700",
+    color: colors.text,
+    letterSpacing: -0.8,
+  },
+  meta: { marginTop: 6, fontSize: 15, color: colors.textMuted, fontWeight: "500" },
+  metaSep: { color: "#D0D0D0" },
 
-  actionBtn: {
+  cta: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    paddingVertical: 22,
+    paddingHorizontal: 22,
     flexDirection: "row",
     alignItems: "center",
-    padding: spacing.md,
-    borderRadius: 12,
-    gap: spacing.sm,
+    justifyContent: "space-between",
+    marginBottom: spacing.xl,
   },
-  actionIcon: { fontSize: 28 },
-  actionTitle: { fontSize: 17, fontWeight: "800", color: "#fff" },
-  actionSub: { fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
+  ctaLive: { backgroundColor: colors.danger },
+  ctaTitle: { fontSize: 22, fontWeight: "700", color: colors.text, letterSpacing: -0.3 },
+  ctaTitleLive: { color: "#fff" },
+  ctaSub: { fontSize: 14, color: colors.textMuted, marginTop: 4, fontWeight: "500" },
+  ctaSubLive: { color: "rgba(255,255,255,0.85)" },
+  ctaIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ctaIconLive: { backgroundColor: "#fff" },
 
-  row: { flexDirection: "row", gap: spacing.sm },
-  halfBtn: {
+  section: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: spacing.md,
+    letterSpacing: -0.2,
+  },
+
+  suggestCard: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    overflow: "hidden",
+    marginBottom: spacing.xl,
+  },
+  suggestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  suggestIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  suggestTitle: { fontSize: 16, fontWeight: "600", color: colors.text },
+  suggestSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  divider: { height: 1, backgroundColor: "#EBEBEB", marginLeft: 72 },
+
+  quickRow: { flexDirection: "row", gap: 12 },
+  quick: {
     flex: 1,
-    padding: spacing.md,
-    borderRadius: 12,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    paddingVertical: 18,
     alignItems: "center",
-    gap: spacing.xs,
+    gap: 10,
   },
-  halfIcon: { fontSize: 28 },
-  halfTitle: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  quickIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickLabel: { fontSize: 13, fontWeight: "600", color: colors.text },
 
-  dirBtn: {
-    flexDirection: "row",
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 7,
+    backgroundColor: colors.danger,
     alignItems: "center",
-    padding: spacing.md,
-    backgroundColor: colors.cardBg,
-    borderRadius: 10,
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
+    justifyContent: "center",
+    marginRight: 4,
   },
-  dirIcon: { fontSize: 20 },
-  dirTitle: { flex: 1, fontSize: 15, fontWeight: "600" },
-  chevron: { fontSize: 20, color: colors.textMuted, fontWeight: "300" },
+  badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+
+  pressed: { opacity: 0.88 },
+  pressedSoft: { backgroundColor: "#EFEFEF" },
 });

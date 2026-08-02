@@ -1,24 +1,17 @@
 /**
- * LeafletMapView — embeds a Leaflet/OpenStreetMap map inside a WebView.
- * No Google Maps API key required. Communicates with the native layer via
- * injectedJavaScript so pins can be updated without reloading the WebView.
- *
- * Tile caching: cacheMode="LOAD_CACHE_ELSE_NETWORK" (Android) tells the WebView
- * to serve OSM tiles from the on-device HTTP disk cache whenever available,
- * only fetching from the network on a cache miss. OSM tile servers already send
- * proper Cache-Control / max-age headers (typically 1–7 days), so tiles that
- * have been displayed before load instantly and work partially offline.
+ * LeafletMapView — embeds a Leaflet/OpenStreetMap map.
+ * Native: WebView. Web: iframe. Pin updates via injectJavaScript.
  */
 
 import { useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
-import WebView from "react-native-webview";
+import { HtmlMapHost, type HtmlMapHostHandle } from "./HtmlMapHost";
 
 export interface LeafletPin {
   id: string;
   lat: number;
   lng: number;
-  color: string;   // CSS colour string
+  color: string;
   title: string;
   body: string;
 }
@@ -30,7 +23,6 @@ interface Props {
   style?: object;
 }
 
-/** Returns the full HTML page loaded once into the WebView. */
 function buildHtml(defaultCenter: [number, number], defaultZoom: number): string {
   return `<!DOCTYPE html>
 <html>
@@ -84,12 +76,10 @@ function buildHtml(defaultCenter: [number, number], defaultZoom: number): string
       }
     });
 
-    // Remove pins no longer in the list
     Object.keys(markers).forEach(function(id) {
       if (!seen[id]) { map.removeLayer(markers[id]); delete markers[id]; }
     });
 
-    // Fit bounds when we have pins (only on first real load)
     if (pins.length > 0 && window._firstFit !== false) {
       window._firstFit = false;
       var latlngs = pins.map(function(p){ return [p.lat, p.lng]; });
@@ -102,41 +92,32 @@ function buildHtml(defaultCenter: [number, number], defaultZoom: number): string
 }
 
 export function LeafletMapView({ pins, defaultCenter = [-25.842, 28.178], defaultZoom = 12, style }: Props) {
-  const webViewRef = useRef<WebView>(null);
+  const hostRef = useRef<HtmlMapHostHandle>(null);
   const initialised = useRef(false);
   const html = useRef(buildHtml(defaultCenter, defaultZoom));
 
-  // Push pin updates into the running WebView via injectedJavaScript.
   useEffect(() => {
-    if (!initialised.current) return; // wait for onLoad
-    webViewRef.current?.injectJavaScript(
-      `window.updatePins(${JSON.stringify(JSON.stringify(pins))}); true;`
+    if (!initialised.current) return;
+    hostRef.current?.injectJavaScript(
+      `window.updatePins(${JSON.stringify(JSON.stringify(pins))}); true;`,
     );
   }, [pins]);
 
   function handleLoad() {
     initialised.current = true;
-    webViewRef.current?.injectJavaScript(
-      `window.updatePins(${JSON.stringify(JSON.stringify(pins))}); true;`
+    hostRef.current?.injectJavaScript(
+      `window.updatePins(${JSON.stringify(JSON.stringify(pins))}); true;`,
     );
   }
 
   return (
     <View style={[styles.container, style]}>
-      <WebView
-        ref={webViewRef}
-        originWhitelist={["*"]}
-        source={{ html: html.current, baseUrl: "https://openstreetmap.org" }}
+      <HtmlMapHost
+        ref={hostRef}
+        html={html.current}
+        baseUrl="https://openstreetmap.org"
         style={styles.webview}
         onLoad={handleLoad}
-        javaScriptEnabled
-        domStorageEnabled
-        // Serve OSM tiles from disk cache first; only fetch from network on cache miss.
-        // Tiles already viewed load instantly and work offline.
-        cacheEnabled
-        cacheMode="LOAD_CACHE_ELSE_NETWORK"
-        startInLoadingState={false}
-        scalesPageToFit={false}
       />
     </View>
   );

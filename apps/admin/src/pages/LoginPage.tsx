@@ -21,13 +21,19 @@ export function LoginPage() {
         password,
         device_id: getOrCreateBrowserDeviceId(),
       });
-      if (res.patroller.access_level !== "admin" && res.patroller.access_level !== "sector_lead") {
-        setErr("This portal is for admins and sector leads only.");
+      const level = res.patroller.access_level;
+      if (
+        level !== "admin" &&
+        level !== "sector_lead" &&
+        level !== "call_centre_agent" &&
+        level !== "patroller"
+      ) {
+        setErr("This account cannot sign in to the portal.");
         return;
       }
       authStore.setToken(res.device_token);
       authStore.setProfile(res.patroller);
-      navigate("/", { replace: true });
+      navigate(level === "patroller" ? "/my-details" : "/", { replace: true });
     } catch (e: any) {
       setErr(e?.body?.message ?? e?.message ?? "Login failed");
     } finally {

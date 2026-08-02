@@ -69,7 +69,7 @@ export function requireAccessLevel(...levels: Array<AuthenticatedContext["patrol
   return async (c, next) => {
     const auth = c.get("auth");
     if (!auth) throw new AppError("LOGIN_INVALID_CREDENTIALS");
-    if (!levels.includes(auth.patroller.access_level)) throw new AppError("COMMENCE_UNAUTHORIZED");
+    if (!levels.includes(auth.patroller.access_level)) throw new AppError("ACCESS_FORBIDDEN");
     await next();
   };
 }

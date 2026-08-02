@@ -1,12 +1,13 @@
 // FDL: blueprints/workflow/stand-down-patrol.blueprint.yaml
 
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
+import { notify } from "../lib/notify";
 import { startHeartbeat, stopHeartbeat } from "../lib/heartbeat";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
@@ -19,6 +20,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   const [patrol, setPatrol] = useState<ActivePatrolResponse | null>(null);
   const [odometerEnd, setOdometerEnd] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const deviceToken = useAuthStore((s) => s.deviceToken);
 
   const refresh = useCallback(async () => {
@@ -46,17 +48,38 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
 
   async function standDownSelf() {
     if (!patrol) return;
+
+    const isVehicle = patrol.patrol_type === "vehicle";
+    const endOdo = odometerEnd.trim() === "" ? NaN : Number(odometerEnd);
+    if (isVehicle) {
+      if (!Number.isFinite(endOdo)) {
+        const msg = "Enter the end odometer reading before standing down.";
+        setError(msg);
+        notify("Stand down", msg);
+        return;
+      }
+      if (patrol.odometer_start != null && endOdo < patrol.odometer_start) {
+        const msg = `End odometer must be at least ${patrol.odometer_start.toLocaleString()} km.`;
+        setError(msg);
+        notify("Stand down", msg);
+        return;
+      }
+    }
+
     setBusy(true);
+    setError(null);
     try {
       const loc = await captureGps();
       await api.standDown(patrol.patrol_id, {
-        odometer_end: odometerEnd ? Number(odometerEnd) : undefined,
+        odometer_end: isVehicle ? endOdo : undefined,
         end_location: loc,
       });
       stopHeartbeat();
       navigation.replace("Home");
     } catch (err: any) {
-      Alert.alert("Stand down failed", err?.body?.message ?? "Unable to stand down.");
+      const msg = err?.body?.message ?? err?.message ?? "Unable to stand down.";
+      setError(msg);
+      notify("Stand down failed", msg);
     } finally {
       setBusy(false);
     }
@@ -85,19 +108,31 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
 
           {isVehicle && (
             <>
-              <Text style={[styles.cardLine, { marginTop: spacing.sm, fontWeight: "700" }]}>KM's Traveled</Text>
+              <View style={styles.odoHint}>
+                <Text style={styles.odoHintText}>
+                  Enter your end odometer reading before you can stand down.
+                  {patrol.odometer_start != null
+                    ? ` Started at ${patrol.odometer_start.toLocaleString()} km.`
+                    : ""}
+                </Text>
+              </View>
+              <Text style={[styles.cardLine, { marginTop: spacing.sm, fontWeight: "700" }]}>
+                End odometer (km)
+              </Text>
               <TextInput
                 style={styles.input}
                 value={odometerEnd}
-                onChangeText={setOdometerEnd}
-                placeholder="End odometer reading"
+                onChangeText={(v) => { setOdometerEnd(v); setError(null); }}
+                placeholder="Type end odometer reading"
                 keyboardType="numeric"
               />
             </>
           )}
 
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
           <TouchableOpacity style={[styles.standDownPrimary, busy && { opacity: 0.6 }]} onPress={standDownSelf} disabled={busy}>
-            <Text style={styles.standDownText}>Stand down</Text>
+            <Text style={styles.standDownText}>{busy ? "Standing down…" : "Stand down"}</Text>
           </TouchableOpacity>
         </View>
 
@@ -128,8 +163,19 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
 
 async function captureGps(): Promise<GeoPoint | undefined> {
   try {
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy ?? 9999, captured_at: new Date().toISOString() };
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (permission.status !== "granted") return undefined;
+    const pos = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+    ]);
+    if (!pos) return undefined;
+    return {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy_m: pos.coords.accuracy ?? 9999,
+      captured_at: new Date().toISOString(),
+    };
   } catch {
     return undefined;
   }
@@ -168,17 +214,25 @@ const styles = StyleSheet.create({
     marginVertical: spacing.sm,
   },
   standDownPrimary: {
-    backgroundColor: colors.danger,
-    padding: spacing.md,
-    borderRadius: 10,
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    borderRadius: 28,
     alignItems: "center",
   },
   standDownJoined: {
-    backgroundColor: colors.info,
+    backgroundColor: colors.surfaceMuted,
     padding: spacing.md,
-    borderRadius: 10,
+    borderRadius: 16,
     alignItems: "center",
     marginTop: spacing.sm,
   },
   standDownText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  errorText: { color: colors.danger, fontWeight: "600", fontSize: 14, marginBottom: spacing.sm },
+  odoHint: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 16,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  odoHintText: { color: colors.text, fontWeight: "600", fontSize: 14, lineHeight: 20 },
 });

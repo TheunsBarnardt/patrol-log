@@ -23,7 +23,7 @@ import { logAudit } from "../lib/audit.js";
 
 export const patrolRoutes = new Hono<AppContext>();
 
-patrolRoutes.post("/commence", requireAuth(), requireAccessLevel("patroller", "sector_lead", "admin"), async (c) => {
+patrolRoutes.post("/commence", requireAuth(), requireAccessLevel("patroller", "sector_lead", "admin", "call_centre_agent"), async (c) => {
   const auth = getAuth(c);
   const body = await c.req.json<CommencePatrolRequest>().catch(() => null);
   if (!body) throw new AppError("COMMENCE_INVALID_PATROL_TYPE");
@@ -136,7 +136,10 @@ patrolRoutes.post("/:patrol_id/stand-down", requireAuth(), async (c) => {
   const member = await db.query.patrolMembers.findFirst({
     where: (pm, { and, eq }) => and(eq(pm.patrolId, patrolId), eq(pm.patrollerId, auth.patroller.patroller_id)),
   });
-  const isElevated = auth.patroller.access_level === "sector_lead" || auth.patroller.access_level === "admin";
+  const isElevated =
+    auth.patroller.access_level === "sector_lead" ||
+    auth.patroller.access_level === "admin" ||
+    auth.patroller.access_level === "call_centre_agent";
   if (!member && !isElevated) throw new AppError("STAND_DOWN_NOT_ON_PATROL");
 
   if (member?.endTime) throw new AppError("STAND_DOWN_ALREADY_STOOD_DOWN");

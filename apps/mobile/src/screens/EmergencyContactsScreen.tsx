@@ -1,18 +1,28 @@
 // FDL: blueprints/data/emergency-contacts-directory.blueprint.yaml
 
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
-import { colors, spacing } from "../theme";
+import { colors, radii, spacing } from "../theme";
 import type { EmergencyServiceRecord } from "@patrol-log/shared";
+
+function formatType(type: string) {
+  return type.replace(/_/g, " ");
+}
 
 export function EmergencyContactsScreen() {
   const [results, setResults] = useState<EmergencyServiceRecord[]>([]);
   const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.emergencyContacts().then((r) => setResults(r.results)).catch(() => setResults([]));
+    api
+      .emergencyContacts()
+      .then((r) => setResults(r.results))
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = useMemo(() => {
@@ -22,7 +32,8 @@ export function EmergencyContactsScreen() {
       (s) =>
         s.name.toLowerCase().includes(term) ||
         s.service_type.toLowerCase().includes(term) ||
-        s.primary_number.includes(term),
+        s.primary_number.includes(term) ||
+        (s.secondary_number?.includes(term) ?? false),
     );
   }, [results, q]);
 
@@ -33,14 +44,14 @@ export function EmergencyContactsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
-      {/* Search bar */}
       <View style={styles.searchWrap}>
+        <FontAwesome5 name="search" size={14} color="#AFAFAF" />
         <TextInput
           style={styles.input}
           value={q}
           onChangeText={setQ}
-          placeholder="Search by name, type or number…"
-          placeholderTextColor={colors.textMuted}
+          placeholder="Search contacts"
+          placeholderTextColor="#AFAFAF"
           autoCorrect={false}
           clearButtonMode="while-editing"
         />
@@ -50,34 +61,43 @@ export function EmergencyContactsScreen() {
         data={filtered}
         keyExtractor={(s) => s.service_id}
         contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <View style={styles.divider} />}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={() => (
-          <Text style={styles.empty}>{results.length === 0 ? "Loading…" : "No results"}</Text>
+          <Text style={styles.empty}>{loading ? "Loading…" : "No contacts found"}</Text>
         )}
         renderItem={({ item }) => {
           const stale = Date.now() - new Date(item.verified_at).getTime() > 90 * 24 * 60 * 60 * 1000;
+          const numbers = [
+            { label: "Primary", num: item.primary_number },
+            ...(item.secondary_number ? [{ label: "Secondary", num: item.secondary_number }] : []),
+          ];
+
           return (
             <View style={styles.card}>
-              <View style={styles.cardHeader}>
+              <View style={styles.cardTop}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cardName}>{item.name}</Text>
-                  <Text style={styles.cardType}>{item.service_type.replace(/_/g, " ")}</Text>
+                  <Text style={styles.name}>{item.name}</Text>
+                  <Text style={styles.type}>{formatType(item.service_type)}</Text>
+                  {stale && <Text style={styles.stale}>Needs re-verification</Text>}
+                  {!!item.address && <Text style={styles.address}>{item.address}</Text>}
                 </View>
-                {stale && (
-                  <View style={styles.staleBadge}>
-                    <Text style={styles.staleText}>⚠ Unverified</Text>
-                  </View>
-                )}
               </View>
-              <TouchableOpacity style={[styles.callBtn, { backgroundColor: colors.danger }]} onPress={() => call(item, item.primary_number)}>
-                <Text style={styles.callText}>📞 {item.primary_number}</Text>
-              </TouchableOpacity>
-              {item.secondary_number && (
-                <TouchableOpacity style={[styles.callBtn, { backgroundColor: colors.info }]} onPress={() => call(item, item.secondary_number!)}>
-                  <Text style={styles.callText}>📞 {item.secondary_number}</Text>
-                </TouchableOpacity>
-              )}
-              {item.address && <Text style={styles.cardMeta}>📍 {item.address}</Text>}
+
+              {numbers.map((n) => (
+                <Pressable
+                  key={n.num}
+                  style={({ pressed }) => [styles.callRow, pressed && styles.pressed]}
+                  onPress={() => call(item, n.num)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.callLabel}>{n.label}</Text>
+                    <Text style={styles.callNumber}>{n.num}</Text>
+                  </View>
+                  <View style={styles.callBtn}>
+                    <FontAwesome5 name="phone-alt" size={14} color="#fff" solid />
+                  </View>
+                </Pressable>
+              ))}
             </View>
           );
         }}
@@ -88,30 +108,63 @@ export function EmergencyContactsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  searchWrap: { padding: spacing.md, paddingBottom: spacing.sm },
-  input: {
-    backgroundColor: colors.cardBg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: spacing.md,
-    fontSize: 15,
-  },
-  list: { padding: spacing.md, paddingTop: 0 },
-  divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
-  empty: { textAlign: "center", color: colors.textMuted, marginTop: spacing.xl },
-  card: { paddingVertical: spacing.sm },
-  cardHeader: { flexDirection: "row", alignItems: "flex-start", marginBottom: spacing.sm },
-  cardName: { fontSize: 16, fontWeight: "800" },
-  cardType: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", marginTop: 2 },
-  staleBadge: { backgroundColor: "#FEF3C7", borderRadius: 6, paddingHorizontal: spacing.sm, paddingVertical: 2 },
-  staleText: { fontSize: 10, fontWeight: "700", color: "#92400E" },
-  cardMeta: { fontSize: 13, color: colors.textMuted, marginTop: spacing.xs },
-  callBtn: {
-    padding: spacing.sm + 2,
-    borderRadius: 8,
+  searchWrap: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    paddingHorizontal: 18,
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: spacing.xs,
+    gap: 12,
   },
-  callText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  input: {
+    flex: 1,
+    paddingVertical: 16,
+    fontSize: 16,
+    fontWeight: "500",
+    color: colors.text,
+  },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: 12 },
+  empty: { textAlign: "center", color: colors.textMuted, marginTop: spacing.xl, fontWeight: "500" },
+
+  card: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    padding: 18,
+    gap: 10,
+  },
+  cardTop: { marginBottom: 4 },
+  name: { fontSize: 17, fontWeight: "700", color: colors.text, letterSpacing: -0.2 },
+  type: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.textMuted,
+    marginTop: 4,
+    textTransform: "capitalize",
+  },
+  stale: { fontSize: 12, fontWeight: "600", color: colors.textMuted, marginTop: 6 },
+  address: { fontSize: 13, color: colors.textMuted, marginTop: 6, fontWeight: "500" },
+
+  callRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.bg,
+    borderRadius: radii.xl,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 12,
+  },
+  callLabel: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
+  callNumber: { fontSize: 16, fontWeight: "700", color: colors.text, marginTop: 2 },
+  callBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pressed: { opacity: 0.88 },
 });

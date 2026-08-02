@@ -1,8 +1,8 @@
 // Admin portal CRUD routes.
 
 import { Hono } from "hono";
-import { and, desc, eq, gt, sql } from "drizzle-orm";
-import { AppError, type LiveMapPin } from "@patrol-log/shared";
+import { and, desc, eq, gte, gt, inArray, sql } from "drizzle-orm";
+import { AppError, type DashboardOverview, type LiveMapPin, type StatsPeriod } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, requireAccessLevel, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
@@ -13,6 +13,7 @@ import {
   incidents,
   livePins,
   nextOfKin,
+  patrolMembers,
   patrollers,
   patrols,
   residents,
@@ -21,9 +22,61 @@ import {
 import { hashPassword } from "../lib/hashing.js";
 import { logAudit } from "../lib/audit.js";
 
+function periodStartIso(period: StatsPeriod): string {
+  const now = new Date();
+  if (period === "today") {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  }
+  const days = period === "7d" ? 7 : 30;
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** SQLite `datetime('now')` style for lexicographic compare with stored start_time. */
+function toSqliteDateTime(iso: string): string {
+  return iso.slice(0, 19).replace("T", " ");
+}
+
+function parseDbTime(value: string): number {
+  const normalized = value.includes("T") ? value : value.replace(" ", "T") + (value.endsWith("Z") ? "" : "Z");
+  const ms = new Date(normalized).getTime();
+  return Number.isFinite(ms) ? ms : new Date(value).getTime();
+}
+
+function patrolHours(startTime: string, endTime: string | null): number {
+  if (!endTime) return 0;
+  const ms = parseDbTime(endTime) - parseDbTime(startTime);
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  return Math.round((ms / 3_600_000) * 10) / 10;
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+function dateKeyUtc(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return value.slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+
+function zeroFilledKmByDay(periodStart: string, kmByDayMap: Map<string, number>): { date: string; km: number }[] {
+  const start = new Date(periodStart);
+  const end = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  end.setUTCHours(0, 0, 0, 0);
+  const out: { date: string; km: number }[] = [];
+  for (let t = start.getTime(); t <= end.getTime(); t += 24 * 60 * 60 * 1000) {
+    const date = new Date(t).toISOString().slice(0, 10);
+    out.push({ date, km: kmByDayMap.get(date) ?? 0 });
+  }
+  return out;
+}
+
 export const admin = new Hono<AppContext>();
 
-admin.use("*", requireAuth(), requireAccessLevel("admin", "sector_lead"));
+// Admin + sector lead + call centre. Patrollers use the mobile app / My details only (no admin API).
+admin.use("*", requireAuth(), requireAccessLevel("admin", "sector_lead", "call_centre_agent"));
 
 const STALE_MS = 2 * 60_000;
 const WINDOW_MS = 30 * 60_000;
@@ -42,11 +95,17 @@ admin.get("/live-map", async (c) => {
   const pins: LiveMapPin[] = await Promise.all(
     rows.map(async (r) => {
       const patrol = await db.query.patrols.findFirst({ where: eq(patrols.id, r.patrolId) });
+      let vehicleRegistration: string | undefined;
+      if (patrol?.vehicleId) {
+        const vehicle = await db.query.vehicles.findFirst({ where: eq(vehicles.id, patrol.vehicleId) });
+        vehicleRegistration = vehicle?.registration;
+      }
       return {
         patrol_id: r.patrolId,
         call_sign: r.callSign,
         patrol_type: patrol?.patrolType ?? "foot",
         patrol_vehicle: patrol?.vehicleId ?? undefined,
+        vehicle_registration: vehicleRegistration,
         lat: r.lat,
         lng: r.lng,
         heading: r.heading ?? undefined,
@@ -74,6 +133,144 @@ admin.get("/stats", async (c) => {
     residents: registeredResidents.length,
     members: registeredMembers.length,
   });
+});
+
+admin.get("/stats/overview", async (c) => {
+  const auth = getAuth(c);
+  const rawPeriod = c.req.query("period") ?? "7d";
+  const period: StatsPeriod =
+    rawPeriod === "today" || rawPeriod === "7d" || rawPeriod === "30d" ? rawPeriod : "7d";
+  const periodStart = periodStartIso(period);
+  const periodStartDb = toSqliteDateTime(periodStart);
+  const db = getDb(c.env);
+  const cpfId = auth.patroller.cpf_id;
+
+  const [completed, activePatrols] = await Promise.all([
+    db
+      .select()
+      .from(patrols)
+      .where(
+        and(
+          eq(patrols.cpfId, cpfId),
+          eq(patrols.state, "stood_down"),
+          gte(patrols.startTime, periodStartDb),
+        ),
+      ),
+    db
+      .select({ id: patrols.id })
+      .from(patrols)
+      .where(and(eq(patrols.cpfId, cpfId), eq(patrols.state, "active"))),
+  ]);
+
+  let totalKm = 0;
+  let totalHours = 0;
+  const hoursByType = { foot: 0, vehicle: 0, static: 0 };
+  const kmByDayMap = new Map<string, number>();
+
+  for (const p of completed) {
+    const km = p.distanceKm ?? 0;
+    const hours = patrolHours(p.startTime, p.endTime);
+    totalKm += km;
+    totalHours += hours;
+    hoursByType[p.patrolType] = round1(hoursByType[p.patrolType] + hours);
+    if (km > 0) {
+      const day = dateKeyUtc(p.startTime);
+      kmByDayMap.set(day, (kmByDayMap.get(day) ?? 0) + km);
+    }
+  }
+  totalHours = round1(totalHours);
+
+  const memberAgg = new Map<
+    string,
+    { patrolCount: number; hours: number; km: number }
+  >();
+
+  if (completed.length) {
+    const patrolIds = completed.map((p) => p.id);
+    const memberships = await db
+      .select({
+        patrolId: patrolMembers.patrolId,
+        patrollerId: patrolMembers.patrollerId,
+      })
+      .from(patrolMembers)
+      .where(inArray(patrolMembers.patrolId, patrolIds));
+
+    const byPatrol = new Map<string, string[]>();
+    for (const m of memberships) {
+      const list = byPatrol.get(m.patrolId) ?? [];
+      list.push(m.patrollerId);
+      byPatrol.set(m.patrolId, list);
+    }
+
+    for (const p of completed) {
+      const hours = patrolHours(p.startTime, p.endTime);
+      const km = p.distanceKm ?? 0;
+      let memberIds = byPatrol.get(p.id) ?? [];
+      if (!memberIds.includes(p.primaryPatrollerId)) {
+        memberIds = [...memberIds, p.primaryPatrollerId];
+      }
+      for (const pid of memberIds) {
+        const cur = memberAgg.get(pid) ?? { patrolCount: 0, hours: 0, km: 0 };
+        cur.patrolCount += 1;
+        cur.hours = round1(cur.hours + hours);
+        memberAgg.set(pid, cur);
+      }
+      if (km > 0) {
+        const primary = memberAgg.get(p.primaryPatrollerId) ?? {
+          patrolCount: 0,
+          hours: 0,
+          km: 0,
+        };
+        primary.km += km;
+        memberAgg.set(p.primaryPatrollerId, primary);
+      }
+    }
+  }
+
+  const memberIds = [...memberAgg.keys()];
+  const patrollerRows = memberIds.length
+    ? await db
+        .select({
+          id: patrollers.id,
+          callSign: patrollers.callSign,
+          name: patrollers.name,
+        })
+        .from(patrollers)
+        .where(inArray(patrollers.id, memberIds))
+    : [];
+  const patrollerMap = new Map(patrollerRows.map((r) => [r.id, r]));
+
+  const members = memberIds
+    .map((id) => {
+      const agg = memberAgg.get(id)!;
+      const p = patrollerMap.get(id);
+      return {
+        patrollerId: id,
+        callSign: p?.callSign ?? "?",
+        name: p?.name ?? "Unknown",
+        patrolCount: agg.patrolCount,
+        hours: agg.hours,
+        km: agg.km,
+      };
+    })
+    .sort((a, b) => b.hours - a.hours || b.km - a.km || a.callSign.localeCompare(b.callSign));
+
+  const overview: DashboardOverview = {
+    period,
+    periodStart,
+    kpis: {
+      totalKm,
+      totalHours,
+      completedPatrols: completed.length,
+      activePatrols: activePatrols.length,
+      uniqueMembers: members.length,
+    },
+    hoursByType,
+    kmByDay: zeroFilledKmByDay(periodStart, kmByDayMap),
+    members,
+  };
+
+  return c.json(overview);
 });
 
 admin.get("/residents", async (c) => {

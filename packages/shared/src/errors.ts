@@ -12,6 +12,7 @@ export const ERROR_CODES = {
 
   // workflow/commence-patrol
   COMMENCE_UNAUTHORIZED: { status: 403, message: "Your access level does not permit commencing a patrol" },
+  ACCESS_FORBIDDEN: { status: 403, message: "You do not have permission for this action" },
   COMMENCE_INVALID_PATROL_TYPE: { status: 422, message: "Select a valid patrol type (foot, vehicle, or static)" },
   COMMENCE_VEHICLE_REQUIRED: { status: 422, message: "Vehicle patrols require a patrol vehicle" },
   COMMENCE_ALREADY_ON_PATROL: { status: 409, message: "You are already on an active patrol" },
@@ -19,6 +20,10 @@ export const ERROR_CODES = {
   COMMENCE_VEHICLE_IN_USE: { status: 409, message: "This vehicle is already on another active patrol" },
   COMMENCE_ODOMETER_START_INVALID: { status: 422, message: "Enter a valid odometer reading at or above the last recorded value" },
   COMMENCE_JOINED_PATROLLER_UNAVAILABLE: { status: 409, message: "One or more joined patrollers are unavailable" },
+
+  // vehicles
+  VEHICLE_REGISTRATION_REQUIRED: { status: 422, message: "Enter the vehicle registration" },
+  VEHICLE_DUPLICATE_REGISTRATION: { status: 409, message: "That registration is already registered to another patroller" },
 
   // workflow/stand-down-patrol
   STAND_DOWN_NOT_ON_PATROL: { status: 409, message: "You are not on any active patrol" },

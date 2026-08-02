@@ -1,61 +1,65 @@
 // FDL: blueprints/workflow/commence-patrol.blueprint.yaml
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome5 } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
+import { notify } from "../lib/notify";
 import { startHeartbeat } from "../lib/heartbeat";
 import { useAuthStore } from "../store/auth";
-import { colors, spacing } from "../theme";
+import { colors, radii, spacing } from "../theme";
 import type { GeoPoint, MemberRecord, PatrolType, VehicleRecord } from "@patrol-log/shared";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CommencePatrol">;
+type IconName = ComponentProps<typeof FontAwesome5>["name"];
 
-const PATROL_TYPES: { type: PatrolType; label: string; icon: string }[] = [
-  { type: "foot", label: "Foot", icon: "🚶" },
-  { type: "vehicle", label: "Vehicle", icon: "🚔" },
-  { type: "static", label: "Static", icon: "🏠" },
+const PATROL_TYPES: { type: PatrolType; label: string; icon: IconName }[] = [
+  { type: "foot", label: "Foot", icon: "walking" },
+  { type: "vehicle", label: "Vehicle", icon: "car" },
+  { type: "static", label: "Static", icon: "map-marker-alt" },
 ];
 
 export function CommencePatrolScreen({ navigation }: Props) {
-  // Joined members
   const [memberQuery, setMemberQuery] = useState("");
   const [memberResults, setMemberResults] = useState<MemberRecord[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<MemberRecord[]>([]);
   const [searchFocused, setSearchFocused] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Patrol type + vehicle
   const [patrolType, setPatrolType] = useState<PatrolType | null>(null);
   const [vehicles, setVehicles] = useState<VehicleRecord[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<VehicleRecord | null>(null);
   const [vehiclePickerOpen, setVehiclePickerOpen] = useState(false);
+  const [addOwnOpen, setAddOwnOpen] = useState(false);
+  const [ownReg, setOwnReg] = useState("");
+  const [ownDesc, setOwnDesc] = useState("");
+  const [ownOdo, setOwnOdo] = useState("");
+  const [addingOwn, setAddingOwn] = useState(false);
   const [odometerStart, setOdometerStart] = useState("");
   const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const profile = useAuthStore((s) => s.profile);
   const deviceToken = useAuthStore((s) => s.deviceToken);
 
-  // Fetch vehicles once (for vehicle patrol type)
   useEffect(() => {
     api.vehicles().then((r) => setVehicles(r.results)).catch(() => {});
   }, []);
 
-  // Debounced member search
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (!memberQuery || memberQuery.length < 2) {
@@ -65,7 +69,6 @@ export function CommencePatrolScreen({ navigation }: Props) {
     searchTimer.current = setTimeout(async () => {
       try {
         const r = await api.members(memberQuery);
-        // Exclude yourself and already-selected members
         setMemberResults(
           r.results.filter(
             (m) => m.call_sign !== profile?.call_sign && !selectedMembers.some((s) => s.member_id === m.member_id),
@@ -85,17 +88,54 @@ export function CommencePatrolScreen({ navigation }: Props) {
     setSelectedMembers((prev) => prev.filter((m) => m.member_id !== id));
   }
 
-  async function handleStart() {
-    if (!patrolType) {
-      Alert.alert("Missing", "Select a patrol type.");
+  async function handleAddOwnVehicle() {
+    const registration = ownReg.trim().toUpperCase();
+    if (registration.length < 2) {
+      notify("Missing", "Enter the vehicle registration.");
       return;
     }
-    if (patrolType === "vehicle" && (!selectedVehicle || !odometerStart)) {
-      Alert.alert("Missing", "Select a vehicle and enter the odometer reading.");
+    setAddingOwn(true);
+    try {
+      const created = await api.createOwnVehicle({
+        registration,
+        description: ownDesc.trim() || "Own vehicle",
+        last_odometer: ownOdo ? Number(ownOdo) : 0,
+      });
+      setVehicles((prev) => {
+        const without = prev.filter((v) => v.id !== created.id);
+        return [...without, created].sort((a, b) => a.registration.localeCompare(b.registration));
+      });
+      setSelectedVehicle(created);
+      if (ownOdo) setOdometerStart(ownOdo);
+      setAddOwnOpen(false);
+      setVehiclePickerOpen(false);
+      setOwnReg("");
+      setOwnDesc("");
+      setOwnOdo("");
+      setFormError(null);
+    } catch (err: any) {
+      notify("Could not add vehicle", err?.body?.message ?? "Something went wrong.");
+    } finally {
+      setAddingOwn(false);
+    }
+  }
+
+  async function handleStart() {
+    if (!patrolType) {
+      setFormError("Choose a patrol type.");
+      return;
+    }
+    if (patrolType === "vehicle" && !selectedVehicle) {
+      setFormError("Choose or add your vehicle.");
+      return;
+    }
+    if (patrolType === "vehicle" && !odometerStart.trim()) {
+      setFormError("Enter your starting odometer reading.");
       return;
     }
 
     setBusy(true);
+    setFormError(null);
     try {
       const startLocation = await captureGps();
       const res = await api.commencePatrol({
@@ -112,142 +152,227 @@ export function CommencePatrolScreen({ navigation }: Props) {
       }
       navigation.replace("ActivePatrol", { patrolId: res.patrol_id });
     } catch (err: any) {
-      Alert.alert("Could not start patrol", err?.body?.message ?? "Something went wrong.");
+      const msg = err?.body?.message ?? "Something went wrong.";
+      setFormError(msg);
+      notify("Could not start patrol", msg);
     } finally {
       setBusy(false);
     }
   }
 
   const availableVehicles = vehicles.filter((v) => v.status === "available");
+  const canStart = !!patrolType && !(patrolType === "vehicle" && (!selectedVehicle || !odometerStart.trim()));
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.headline}>How are you{"\n"}patrolling?</Text>
 
-        {/* Patrol type */}
-        <Text style={styles.label}>Type of patrol</Text>
-        <View style={styles.typeRow}>
-          {PATROL_TYPES.map(({ type, label, icon }) => (
-            <TouchableOpacity
-              key={type}
-              style={[styles.typeBtn, patrolType === type && styles.typeBtnActive]}
-              onPress={() => { setPatrolType(type); setSelectedVehicle(null); }}
-            >
-              <Text style={styles.typeIcon}>{icon}</Text>
-              <Text style={[styles.typeLabel, patrolType === type && styles.typeLabelActive]}>{label}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.typeList}>
+          {PATROL_TYPES.map(({ type, label, icon }) => {
+            const active = patrolType === type;
+            return (
+              <Pressable
+                key={type}
+                style={({ pressed }) => [styles.typeRow, active && styles.typeRowActive, pressed && styles.pressedSoft]}
+                onPress={() => {
+                  setPatrolType(type);
+                  setSelectedVehicle(null);
+                  setFormError(null);
+                }}
+              >
+                <View style={[styles.typeIcon, active && styles.typeIconActive]}>
+                  <FontAwesome5 name={icon} size={16} color={active ? "#fff" : colors.text} solid />
+                </View>
+                <Text style={[styles.typeLabel, active && styles.typeLabelActive]}>{label}</Text>
+                <View style={[styles.radio, active && styles.radioActive]}>
+                  {active && <View style={styles.radioDot} />}
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {/* Vehicle selection (only for vehicle patrol) */}
         {patrolType === "vehicle" && (
-          <>
-            <Text style={styles.label}>Patrol vehicle</Text>
-            <TouchableOpacity
-              style={styles.dropdown}
-              onPress={() => setVehiclePickerOpen(true)}
-            >
-              <Text style={selectedVehicle ? styles.dropdownValue : styles.dropdownPlaceholder}>
+          <View style={styles.block}>
+            <Text style={styles.blockTitle}>Vehicle</Text>
+            <Pressable style={styles.fieldBtn} onPress={() => setVehiclePickerOpen(true)}>
+              <Text style={selectedVehicle ? styles.fieldValue : styles.fieldPlaceholder}>
                 {selectedVehicle
-                  ? `${selectedVehicle.registration}${selectedVehicle.description ? ` · ${selectedVehicle.description}` : ""}`
-                  : availableVehicles.length === 0 ? "No vehicles available" : "Select vehicle…"}
+                  ? selectedVehicle.registration
+                  : availableVehicles.length === 0
+                    ? "Add your vehicle"
+                    : "Choose vehicle"}
               </Text>
-              <Text style={styles.dropdownChevron}>⌄</Text>
-            </TouchableOpacity>
+              <FontAwesome5 name="chevron-right" size={12} color="#B3B3B3" />
+            </Pressable>
+            {!!selectedVehicle?.description && (
+              <Text style={styles.fieldHint}>{selectedVehicle.description}</Text>
+            )}
 
-            <Text style={styles.label}>Odometer start (km)</Text>
+            <Text style={[styles.blockTitle, { marginTop: spacing.lg }]}>Odometer start</Text>
             <TextInput
-              style={styles.input}
+              style={styles.fieldInput}
               value={odometerStart}
-              onChangeText={setOdometerStart}
+              onChangeText={(v) => { setOdometerStart(v); setFormError(null); }}
               keyboardType="numeric"
-              placeholder="Current reading"
-              placeholderTextColor={colors.textMuted}
+              placeholder={
+                selectedVehicle
+                  ? `Last ${selectedVehicle.lastOdometer.toLocaleString()} km`
+                  : "Enter reading"
+              }
+              placeholderTextColor="#AFAFAF"
             />
-          </>
-        )}
-
-        {/* Joining members search */}
-        <Text style={styles.label}>Patrollers joining you</Text>
-        <TextInput
-          style={styles.input}
-          value={memberQuery}
-          onChangeText={setMemberQuery}
-          placeholder="Search by name or call sign…"
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-        />
-
-        {/* Search results dropdown */}
-        {searchFocused && memberResults.length > 0 && (
-          <View style={styles.searchResults}>
-            {memberResults.slice(0, 6).map((m) => (
-              <TouchableOpacity key={m.member_id} style={styles.searchItem} onPress={() => addMember(m)}>
-                <Text style={styles.searchCallSign}>{m.call_sign}</Text>
-                <Text style={styles.searchName}>{m.name}</Text>
-              </TouchableOpacity>
-            ))}
+            <Text style={styles.fieldHint}>Required before you can start.</Text>
           </View>
         )}
 
-        {/* Selected member badges */}
-        {selectedMembers.length > 0 && (
-          <View style={styles.badgeRow}>
-            {selectedMembers.map((m) => (
-              <View key={m.member_id} style={styles.badge}>
-                <Text style={styles.badgeText}>{m.call_sign}</Text>
-                <TouchableOpacity onPress={() => removeMember(m.member_id)} hitSlop={8}>
-                  <Text style={styles.badgeRemove}>✕</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>Who’s joining?</Text>
+          <View style={styles.searchField}>
+            <FontAwesome5 name="search" size={14} color="#AFAFAF" />
+            <TextInput
+              style={styles.searchInput}
+              value={memberQuery}
+              onChangeText={setMemberQuery}
+              placeholder="Search name or call sign"
+              placeholderTextColor="#AFAFAF"
+              autoCapitalize="none"
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+            />
           </View>
-        )}
 
-        <View style={{ height: spacing.xl }} />
+          {searchFocused && memberResults.length > 0 && (
+            <View style={styles.results}>
+              {memberResults.slice(0, 6).map((m) => (
+                <Pressable key={m.member_id} style={styles.resultRow} onPress={() => addMember(m)}>
+                  <Text style={styles.resultCs}>{m.call_sign}</Text>
+                  <Text style={styles.resultName}>{m.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
 
-        {/* Start button */}
-        <TouchableOpacity
-          style={[styles.startBtn, busy && { opacity: 0.6 }]}
+          {selectedMembers.length > 0 && (
+            <View style={styles.chipRow}>
+              {selectedMembers.map((m) => (
+                <Pressable key={m.member_id} style={styles.chip} onPress={() => removeMember(m.member_id)}>
+                  <Text style={styles.chipText}>{m.call_sign}</Text>
+                  <FontAwesome5 name="times" size={11} color={colors.text} />
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
+      </ScrollView>
+
+      <View style={styles.footer}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.startBtn,
+            (!canStart || busy) && styles.startBtnDisabled,
+            pressed && canStart && !busy && { opacity: 0.9 },
+          ]}
           onPress={handleStart}
-          disabled={busy || !patrolType}
-          activeOpacity={0.85}
+          disabled={busy || !canStart}
         >
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.startBtnText}>Start Patrol</Text>
+            <Text style={styles.startBtnText}>Confirm and start</Text>
           )}
-        </TouchableOpacity>
-      </ScrollView>
+        </Pressable>
+      </View>
 
-      {/* Vehicle picker modal */}
       <Modal visible={vehiclePickerOpen} transparent animationType="slide" onRequestClose={() => setVehiclePickerOpen(false)}>
-        <TouchableOpacity style={styles.pickerBackdrop} activeOpacity={1} onPress={() => setVehiclePickerOpen(false)} />
-        <View style={styles.pickerSheet}>
-          <Text style={styles.pickerTitle}>Select vehicle</Text>
+        <Pressable style={styles.sheetBackdrop} onPress={() => setVehiclePickerOpen(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Choose a vehicle</Text>
+          <Pressable style={styles.addRow} onPress={() => { setVehiclePickerOpen(false); setAddOwnOpen(true); }}>
+            <View style={styles.addIcon}>
+              <FontAwesome5 name="plus" size={14} color="#fff" solid />
+            </View>
+            <Text style={styles.addText}>Add own vehicle</Text>
+          </Pressable>
           {availableVehicles.length === 0 ? (
-            <Text style={{ color: colors.textMuted, textAlign: "center", padding: spacing.md }}>
-              No available vehicles in your CPF. Add them in the admin portal.
-            </Text>
+            <Text style={styles.empty}>No vehicles yet. Add yours to continue.</Text>
           ) : (
             <FlatList
               data={availableVehicles}
               keyExtractor={(v) => v.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.pickerItem, selectedVehicle?.id === item.id && styles.pickerItemSelected]}
-                  onPress={() => { setSelectedVehicle(item); setVehiclePickerOpen(false); }}
-                >
-                  <Text style={styles.pickerReg}>{item.registration}</Text>
-                  {item.description && <Text style={styles.pickerDesc}>{item.description}</Text>}
-                  <Text style={styles.pickerOdo}>{item.lastOdometer.toLocaleString()} km</Text>
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                const selected = selectedVehicle?.id === item.id;
+                return (
+                  <Pressable
+                    style={[styles.vehicleRow, selected && styles.vehicleRowSelected]}
+                    onPress={() => {
+                      setSelectedVehicle(item);
+                      setVehiclePickerOpen(false);
+                      setFormError(null);
+                      if (!odometerStart) setOdometerStart(String(item.lastOdometer));
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.vehicleReg}>{item.registration}</Text>
+                      <Text style={styles.vehicleMeta}>
+                        {[item.description, `${item.lastOdometer.toLocaleString()} km`].filter(Boolean).join(" · ")}
+                      </Text>
+                    </View>
+                    {selected && <FontAwesome5 name="check" size={14} color={colors.text} solid />}
+                  </Pressable>
+                );
+              }}
             />
           )}
+        </View>
+      </Modal>
+
+      <Modal visible={addOwnOpen} transparent animationType="slide" onRequestClose={() => setAddOwnOpen(false)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => setAddOwnOpen(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Add own vehicle</Text>
+          <Text style={styles.sheetLabel}>Registration</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={ownReg}
+            onChangeText={setOwnReg}
+            autoCapitalize="characters"
+            placeholder="ABC123GP"
+            placeholderTextColor="#AFAFAF"
+          />
+          <Text style={styles.sheetLabel}>Description</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={ownDesc}
+            onChangeText={setOwnDesc}
+            placeholder="Optional"
+            placeholderTextColor="#AFAFAF"
+          />
+          <Text style={styles.sheetLabel}>Odometer</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={ownOdo}
+            onChangeText={setOwnOdo}
+            keyboardType="numeric"
+            placeholder="0"
+            placeholderTextColor="#AFAFAF"
+          />
+          <Pressable
+            style={[styles.startBtn, { marginTop: spacing.lg }, addingOwn && styles.startBtnDisabled]}
+            onPress={handleAddOwnVehicle}
+            disabled={addingOwn}
+          >
+            {addingOwn ? <ActivityIndicator color="#fff" /> : <Text style={styles.startBtnText}>Save</Text>}
+          </Pressable>
         </View>
       </Modal>
     </SafeAreaView>
@@ -258,8 +383,17 @@ async function captureGps(): Promise<GeoPoint | undefined> {
   try {
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== "granted") return undefined;
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy_m: pos.coords.accuracy ?? 9999, captured_at: new Date().toISOString() };
+    const pos = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+    ]);
+    if (!pos) return undefined;
+    return {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy_m: pos.coords.accuracy ?? 9999,
+      captured_at: new Date().toISOString(),
+    };
   } catch {
     return undefined;
   }
@@ -277,117 +411,196 @@ function decodeJti(jwt: string): string | null {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, gap: spacing.xs },
-  label: { fontSize: 13, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: spacing.md, marginBottom: spacing.xs },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 140 },
 
-  // Patrol type
-  typeRow: { flexDirection: "row", gap: spacing.sm },
-  typeBtn: {
-    flex: 1,
-    padding: spacing.md,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.cardBg,
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  typeBtnActive: { borderColor: colors.warning, backgroundColor: "#FFF8EC" },
-  typeIcon: { fontSize: 24 },
-  typeLabel: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
-  typeLabelActive: { color: colors.warning },
-
-  // Input
-  input: {
-    backgroundColor: colors.cardBg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: spacing.md,
-    fontSize: 15,
+  headline: {
+    fontSize: 34,
+    fontWeight: "700",
+    color: colors.text,
+    letterSpacing: -0.9,
+    lineHeight: 40,
+    marginBottom: spacing.xl,
   },
 
-  // Dropdown
-  dropdown: {
+  typeList: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    overflow: "hidden",
+    marginBottom: spacing.xl,
+  },
+  typeRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.cardBg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: spacing.md,
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EBEBEB",
   },
-  dropdownValue: { flex: 1, fontSize: 15, fontWeight: "600" },
-  dropdownPlaceholder: { flex: 1, fontSize: 15, color: colors.textMuted },
-  dropdownChevron: { fontSize: 18, color: colors.textMuted },
-
-  // Search results
-  searchResults: {
+  typeRowActive: { backgroundColor: "#EFEFEF" },
+  typeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    marginTop: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  typeIconActive: { backgroundColor: colors.primary },
+  typeLabel: { flex: 1, fontSize: 17, fontWeight: "600", color: colors.text },
+  typeLabelActive: { fontWeight: "700" },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: "#C7C7C7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioActive: { borderColor: colors.primary },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+
+  block: { marginBottom: spacing.xl },
+  blockTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: spacing.md,
+    letterSpacing: -0.2,
+  },
+  fieldBtn: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  fieldValue: { fontSize: 17, fontWeight: "600", color: colors.text },
+  fieldPlaceholder: { fontSize: 17, fontWeight: "500", color: "#AFAFAF" },
+  fieldInput: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    fontSize: 17,
+    fontWeight: "500",
+    color: colors.text,
+  },
+  fieldHint: { marginTop: 8, fontSize: 13, color: colors.textMuted, fontWeight: "500" },
+
+  searchField: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    paddingHorizontal: 18,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  searchInput: { flex: 1, paddingVertical: 14, fontSize: 16, color: colors.text },
+  results: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
     overflow: "hidden",
   },
-  searchItem: {
-    padding: spacing.md,
+  resultRow: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: "#EBEBEB",
+  },
+  resultCs: { fontSize: 15, fontWeight: "700", color: colors.text, minWidth: 56 },
+  resultName: { fontSize: 15, color: colors.textMuted, fontWeight: "500" },
+
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: spacing.md },
+  chip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: 8,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  searchCallSign: { fontSize: 14, fontWeight: "800", color: colors.primary, minWidth: 50 },
-  searchName: { fontSize: 14, color: colors.text },
+  chipText: { fontSize: 14, fontWeight: "700", color: colors.text },
 
-  // Badges
-  badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm },
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 20,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    gap: spacing.sm,
-  },
-  badgeText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  badgeRemove: { color: "rgba(255,255,255,0.8)", fontWeight: "700", fontSize: 12 },
+  errorText: { color: colors.danger, fontWeight: "600", fontSize: 14, marginBottom: spacing.md },
 
-  // Start button
-  startBtn: {
-    backgroundColor: colors.warning,
-    borderRadius: 12,
-    padding: spacing.md + 2,
-    alignItems: "center",
-  },
-  startBtnText: { color: "#fff", fontWeight: "800", fontSize: 17 },
-
-  // Vehicle picker modal
-  pickerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.4)" },
-  pickerSheet: {
+  footer: {
     position: "absolute",
-    bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: colors.bg,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    bottom: 0,
     padding: spacing.lg,
-    maxHeight: "60%",
+    backgroundColor: colors.bg,
   },
-  pickerTitle: { fontSize: 17, fontWeight: "800", marginBottom: spacing.md },
-  pickerItem: {
-    padding: spacing.md,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.cardBg,
-    marginBottom: spacing.sm,
+  startBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 28,
+    paddingVertical: 17,
+    alignItems: "center",
   },
-  pickerItemSelected: { borderColor: colors.primary, backgroundColor: "#E8FAF5" },
-  pickerReg: { fontSize: 16, fontWeight: "800" },
-  pickerDesc: { fontSize: 13, color: colors.textMuted },
-  pickerOdo: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  startBtnDisabled: { backgroundColor: "#C6C6C6" },
+  startBtnText: { color: "#fff", fontWeight: "700", fontSize: 17 },
+
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
+  sheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: spacing.lg,
+    maxHeight: "75%",
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 48,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#D8D8D8",
+    marginBottom: spacing.md,
+  },
+  sheetTitle: { fontSize: 22, fontWeight: "700", color: colors.text, marginBottom: spacing.lg, letterSpacing: -0.3 },
+  sheetLabel: { fontSize: 13, fontWeight: "600", color: colors.textMuted, marginBottom: 8, marginTop: spacing.md },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    padding: 16,
+    marginBottom: spacing.md,
+  },
+  addIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addText: { fontSize: 16, fontWeight: "600", color: colors.text },
+  empty: { color: colors.textMuted, textAlign: "center", padding: spacing.lg, lineHeight: 20 },
+  vehicleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EBEBEB",
+  },
+  vehicleRowSelected: {},
+  vehicleReg: { fontSize: 17, fontWeight: "700", color: colors.text },
+  vehicleMeta: { fontSize: 13, color: colors.textMuted, marginTop: 3, fontWeight: "500" },
+
+  pressedSoft: { backgroundColor: "#EFEFEF" },
 });

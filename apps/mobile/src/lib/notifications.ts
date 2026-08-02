@@ -5,16 +5,16 @@
 
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
-import { api } from "./api";
 
-// Configure how notifications appear when the app is in foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+}
 
 /**
  * Request notification permissions.
@@ -22,6 +22,7 @@ Notifications.setNotificationHandler({
  * The backend still accepts push tokens for potential future use.
  */
 export async function registerPushToken(): Promise<void> {
+  if (Platform.OS === "web") return;
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -36,8 +37,6 @@ export async function registerPushToken(): Promise<void> {
       return;
     }
 
-    // Store token locally for potential future use
-    // The backend no longer sends FCM pushes — messages are in-app only
     console.log("[notifications] Permission granted. Local notifications enabled.");
   } catch (err) {
     console.warn("[notifications] Failed to register push token:", err);
@@ -49,10 +48,16 @@ export async function registerPushToken(): Promise<void> {
  * Used for out-of-sector alerts, urgent messages, etc.
  */
 export async function showLocalNotification(title: string, body: string): Promise<void> {
+  if (Platform.OS === "web") {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification(title, { body });
+    }
+    return;
+  }
   try {
     await Notifications.scheduleNotificationAsync({
       content: { title, body, sound: true },
-      trigger: null, // fire immediately
+      trigger: null,
     });
   } catch (err) {
     console.warn("[notifications] Failed to show local notification:", err);

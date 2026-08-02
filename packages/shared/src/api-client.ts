@@ -13,6 +13,7 @@ import type {
   MemberRecord,
   Message,
   MessageChannel,
+  MessageChannelMember,
   ResidentRecord,
   ResumeRequest,
   StandDownRequest,
@@ -90,6 +91,8 @@ export function createApiClient(opts: ApiClientOptions) {
 
     // vehicles (available to any authenticated patroller)
     vehicles: () => request<{ results: VehicleRecord[] }>("/vehicles"),
+    createOwnVehicle: (body: { registration: string; description?: string; last_odometer?: number }) =>
+      request<VehicleRecord>("/vehicles", { method: "POST", body: JSON.stringify(body) }),
 
     // auth extras
     changePassword: (body: { current_password: string; new_password: string }) =>
@@ -107,6 +110,26 @@ export function createApiClient(opts: ApiClientOptions) {
       request<Message>(`/messages/${channelId}`, { method: "POST", body: JSON.stringify(body) }),
     markChannelRead: (channelId: string) =>
       request<{ ok: true; marked: number }>(`/messages/${channelId}/read`, { method: "POST" }),
+    openDirectChannel: (targetPatrollerId: string) =>
+      request<{ id: string; type: string; kind: "chat" | "group"; name: string; sectorId: string | null; memberCount: number }>(
+        "/messages/direct",
+        {
+          method: "POST",
+          body: JSON.stringify({ target_patroller_id: targetPatrollerId }),
+        },
+      ),
+    createGroup: (body: { name: string; member_ids: string[] }) =>
+      request<{ id: string; type: string; kind: "chat" | "group"; name: string; sectorId: string | null; memberCount: number }>(
+        "/messages/groups",
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    channelMembers: (channelId: string) =>
+      request<{
+        channelId: string;
+        kind: "chat" | "group";
+        name: string;
+        members: MessageChannelMember[];
+      }>(`/messages/${channelId}/members`),
   };
 }
 

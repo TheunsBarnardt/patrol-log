@@ -10,6 +10,7 @@
   "scripts": {
     "dev:api": "pnpm --filter @patrol-log/api dev",
     "dev:mobile": "pnpm --filter @patrol-log/mobile start",
+    "dev:mobile:web": "pnpm --filter @patrol-log/mobile web",
     "dev:admin": "pnpm --filter @patrol-log/admin dev",
     "build:api": "pnpm --filter @patrol-log/api build",
     "build:admin": "pnpm --filter @patrol-log/admin build",

@@ -17,6 +17,7 @@ import { EmergencyContactsScreen } from "../screens/EmergencyContactsScreen";
 import { LivePatrollerMapScreen } from "../screens/LivePatrollerMapScreen";
 import { MessagingScreen } from "../screens/MessagingScreen";
 import { ChannelScreen } from "../screens/ChannelScreen";
+import { NewGroupScreen } from "../screens/NewGroupScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -29,53 +30,50 @@ export type RootStackParamList = {
   EmergencyContacts: undefined;
   LivePatrollerMap: undefined;
   Messaging: undefined;
-  Channel: { channelId: string; channelName: string };
+  NewGroup: undefined;
+  Channel: {
+    channelId: string;
+    channelName: string;
+    kind?: "chat" | "group";
+    memberCount?: number;
+  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-/** Hamburger icon — three horizontal bars */
 function HamburgerIcon({ onPress }: { onPress: () => void }) {
   return (
-    <TouchableOpacity onPress={onPress} hitSlop={12} style={{ padding: 4, gap: 5, justifyContent: "center" }}>
-      {[0, 1, 2].map((i) => (
-        <View
-          key={i}
-          style={{ width: 22, height: 2, backgroundColor: colors.primary, borderRadius: 1 }}
-        />
-      ))}
+    <TouchableOpacity onPress={onPress} hitSlop={12} style={{ padding: 6 }}>
+      <FontAwesome name="bars" size={18} color={colors.text} />
     </TouchableOpacity>
   );
 }
 
-/** Bell icon with unread badge — navigates to Messaging */
 function BellIcon({ navigation }: { navigation: any }) {
   const unreadCount = useMessagingStore((s) => s.unreadCount);
   return (
     <TouchableOpacity
       onPress={() => navigation.navigate("Messaging")}
       hitSlop={12}
-      style={{ padding: 4, marginRight: 8, width: 32, height: 32, justifyContent: "center", alignItems: "center" }}
+      style={{ padding: 6, marginRight: 4, width: 34, height: 34, justifyContent: "center", alignItems: "center" }}
     >
-      <FontAwesome name="bell-o" size={24} color={colors.text} />
+      <FontAwesome name="bell-o" size={18} color={colors.text} />
       {unreadCount > 0 && (
         <View
           style={{
             position: "absolute",
-            top: 0,
-            right: 0,
+            top: 2,
+            right: 2,
             backgroundColor: colors.danger,
-            borderRadius: 9,
-            minWidth: 18,
-            height: 18,
+            borderRadius: 6,
+            minWidth: 16,
+            height: 16,
             alignItems: "center",
             justifyContent: "center",
-            paddingHorizontal: 4,
-            borderWidth: 1.5,
-            borderColor: "#fff",
+            paddingHorizontal: 3,
           }}
         >
-          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "800" }}>
+          <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>
             {unreadCount > 99 ? "99+" : unreadCount}
           </Text>
         </View>
@@ -94,9 +92,11 @@ export function RootNavigator() {
       <Stack.Navigator
         screenOptions={{
           headerTitleAlign: "center",
-          headerTitleStyle: { fontSize: 15, fontWeight: "700" },
+          headerTitleStyle: { fontSize: 17, fontWeight: "700", color: colors.text },
           headerStyle: { backgroundColor: colors.bg },
-          headerShadowVisible: true,
+          headerShadowVisible: false,
+          headerTintColor: colors.text,
+          contentStyle: { backgroundColor: colors.bg },
         }}
       >
         {status === "unauthenticated" ? (
@@ -107,27 +107,54 @@ export function RootNavigator() {
               name="Home"
               component={HomeScreen}
               options={({ navigation }) => ({
-                title: "PATROL LOG",
+                title: "Patrol Log",
                 headerRight: () => (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
                     <BellIcon navigation={navigation} />
                     <HamburgerIcon onPress={() => setDrawerOpen(true)} />
                   </View>
                 ),
               })}
             />
-            <Stack.Screen name="CommencePatrol" component={CommencePatrolScreen} options={{ title: "Commence Patrol" }} />
-            <Stack.Screen name="ActivePatrol" component={ActivePatrolScreen} options={{ title: "Active Patrol" }} />
-            <Stack.Screen name="HotspotsMap" component={HotspotsMapScreen} options={{ title: "Hotspot Map" }} />
+            <Stack.Screen name="CommencePatrol" component={CommencePatrolScreen} options={{ title: "Commence patrol" }} />
+            <Stack.Screen name="ActivePatrol" component={ActivePatrolScreen} options={{ title: "Active patrol" }} />
+            <Stack.Screen name="HotspotsMap" component={HotspotsMapScreen} options={{ title: "Hotspots" }} />
             <Stack.Screen name="Residents" component={ResidentsScreen} options={{ title: "Residents" }} />
             <Stack.Screen name="Members" component={MembersScreen} options={{ title: "Members" }} />
-            <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ title: "Emergency Contacts" }} />
-            <Stack.Screen name="LivePatrollerMap" component={LivePatrollerMapScreen} options={{ title: "Live Patroller Map" }} />
-            <Stack.Screen name="Messaging" component={MessagingScreen} options={{ title: "Messages" }} />
+            <Stack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} options={{ title: "Emergency contacts" }} />
+            <Stack.Screen name="LivePatrollerMap" component={LivePatrollerMapScreen} options={{ title: "Live map" }} />
+            <Stack.Screen
+              name="Messaging"
+              component={MessagingScreen}
+              options={{
+                title: "Chats",
+                headerStyle: { backgroundColor: "#008069" },
+                headerTintColor: "#fff",
+                headerTitleStyle: { fontSize: 17, fontWeight: "700", color: "#fff" },
+                contentStyle: { backgroundColor: "#fff" },
+              }}
+            />
+            <Stack.Screen
+              name="NewGroup"
+              component={NewGroupScreen}
+              options={{
+                title: "New group",
+                headerStyle: { backgroundColor: "#008069" },
+                headerTintColor: "#fff",
+                headerTitleStyle: { fontSize: 17, fontWeight: "700", color: "#fff" },
+                contentStyle: { backgroundColor: "#fff" },
+              }}
+            />
             <Stack.Screen
               name="Channel"
               component={ChannelScreen}
-              options={({ route }) => ({ title: route.params.channelName })}
+              options={({ route }) => ({
+                title: route.params.channelName,
+                headerStyle: { backgroundColor: "#008069" },
+                headerTintColor: "#fff",
+                headerTitleStyle: { fontSize: 17, fontWeight: "700", color: "#fff" },
+                contentStyle: { backgroundColor: "#efeae2" },
+              })}
             />
           </>
         )}

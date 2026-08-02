@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import WebView from "react-native-webview";
+import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
 import { colors, spacing } from "../theme";
 import type { HotspotPeriod, HotspotPin } from "@patrol-log/shared";
@@ -78,13 +78,13 @@ export function HotspotsMapScreen() {
   const [pins, setPins] = useState<HotspotPin[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const webViewRef = useRef<WebView>(null);
+  const hostRef = useRef<HtmlMapHostHandle>(null);
   const loaded = useRef(false);
 
   function pushPins(p: HotspotPin[]) {
     // Attach severity config to each pin before serialising
     const enriched = p.map((pin) => ({ ...pin, _cfg: SEVERITY_MAP[pin.severity] ?? SEVERITY_MAP.low }));
-    webViewRef.current?.injectJavaScript(
+    hostRef.current?.injectJavaScript(
       `window.renderPins(${JSON.stringify(JSON.stringify(enriched))}); true;`,
     );
   }
@@ -137,18 +137,12 @@ export function HotspotsMapScreen() {
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ flex: 1 }} />
       ) : (
-        <WebView
-          ref={webViewRef}
-          originWhitelist={["*"]}
-          source={{ html: MAP_HTML, baseUrl: "https://carto.com" }}
+        <HtmlMapHost
+          ref={hostRef}
+          html={MAP_HTML}
+          baseUrl="https://carto.com"
           style={styles.map}
           onLoad={handleLoad}
-          javaScriptEnabled
-          domStorageEnabled
-          cacheEnabled
-          cacheMode="LOAD_CACHE_ELSE_NETWORK"
-          startInLoadingState={false}
-          scalesPageToFit={false}
         />
       )}
 

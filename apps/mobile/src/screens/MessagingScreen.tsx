@@ -1,29 +1,31 @@
-// Channel inbox — lists all channels the patroller can see.
-// Polls every 15s for new messages / unread counts.
+// WhatsApp-style chats inbox: 1:1 chats + groups.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
+  Platform,
+  Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome5 } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
+import { showLocalNotification } from "../lib/notifications";
+import { useMessagingStore } from "../store/messaging";
 import type { MessageChannel } from "@patrol-log/shared";
-import { colors, spacing } from "../theme";
+import { radii, spacing } from "../theme";
+
+const POLL_MS = 5_000;
 
 type Props = NativeStackScreenProps<RootStackParamList, "Messaging">;
-
-function channelIcon(type: string): string {
-  if (type === "broadcast") return "📢";
-  if (type === "sector") return "📍";
-  return "💬";
-}
+type Filter = "all" | "chats" | "groups";
 
 function formatTime(iso: string | null): string {
   if (!iso) return "";
@@ -35,117 +37,316 @@ function formatTime(iso: string | null): string {
   return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 export function MessagingScreen({ navigation }: Props) {
   const [channels, setChannels] = useState<MessageChannel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [menuOpen, setMenuOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevUnreadRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const res = await api.messageChannels();
       setChannels(res.channels);
+      const unread = res.channels.reduce((sum, ch) => sum + ch.unreadCount, 0);
+      useMessagingStore.getState().setUnreadCount(unread);
+      if (
+        navigation.isFocused() &&
+        prevUnreadRef.current !== null &&
+        unread > prevUnreadRef.current
+      ) {
+        const hottest = [...res.channels].sort((a, b) => b.unreadCount - a.unreadCount)[0];
+        if (hottest?.lastMessage) {
+          void showLocalNotification(hottest.name, hottest.lastMessage);
+        }
+      }
+      prevUnreadRef.current = unread;
     } catch (err) {
       console.warn("[messaging] failed to fetch channels", err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [navigation]);
 
   useEffect(() => {
     void refresh();
-    timer.current = setInterval(() => void refresh(), 15_000);
+    timer.current = setInterval(() => void refresh(), POLL_MS);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
   }, [refresh]);
 
-  // Refresh on focus
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => void refresh());
     return unsub;
   }, [navigation, refresh]);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => setMenuOpen(true)}
+          hitSlop={12}
+          style={{ paddingHorizontal: 10, paddingVertical: 6 }}
+        >
+          <FontAwesome5 name="plus" size={16} color="#fff" />
+        </Pressable>
+      ),
+    });
+  }, [navigation]);
+
+  const filtered = useMemo(() => {
+    return channels.filter((ch) => {
+      if (filter === "chats" && ch.kind !== "chat") return false;
+      if (filter === "groups" && ch.kind !== "group") return false;
+      const term = q.trim().toLowerCase();
+      if (!term) return true;
+      return ch.name.toLowerCase().includes(term) || (ch.lastMessage?.toLowerCase().includes(term) ?? false);
+    });
+  }, [channels, filter, q]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center} edges={["bottom"]}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color="#008069" />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
-      {channels.length === 0 ? (
+      <View style={styles.searchWrap}>
+        <FontAwesome5 name="search" size={14} color="#667781" />
+        <TextInput
+          style={styles.searchInput}
+          value={q}
+          onChangeText={setQ}
+          placeholder="Search or start a new chat"
+          placeholderTextColor="#667781"
+        />
+      </View>
+
+      <View style={styles.filters}>
+        {([
+          ["all", "All"],
+          ["chats", "Chats"],
+          ["groups", "Groups"],
+        ] as const).map(([id, label]) => (
+          <Pressable
+            key={id}
+            onPress={() => setFilter(id)}
+            style={[styles.chip, filter === id && styles.chipOn]}
+          >
+            <Text style={[styles.chipText, filter === id && styles.chipTextOn]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {filtered.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.emptyIcon}>💬</Text>
-          <Text style={styles.emptyText}>No channels available yet.</Text>
+          <Text style={styles.emptyTitle}>
+            {filter === "groups" ? "No groups yet" : filter === "chats" ? "No chats yet" : "No conversations"}
+          </Text>
+          <Text style={styles.emptyText}>
+            Tap + to message a member or create a group.
+          </Text>
         </View>
       ) : (
         <FlatList
-          data={channels}
+          data={filtered}
           keyExtractor={(ch) => ch.id}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          renderItem={({ item: ch }) => (
-            <TouchableOpacity
-              style={styles.channelRow}
-              activeOpacity={0.75}
-              onPress={() => navigation.navigate("Channel", { channelId: ch.id, channelName: ch.name })}
-            >
-              <Text style={styles.channelIcon}>{channelIcon(ch.type)}</Text>
-              <View style={styles.channelBody}>
-                <View style={styles.channelHeader}>
-                  <Text style={styles.channelName} numberOfLines={1}>{ch.name}</Text>
-                  {ch.lastMessageAt && (
-                    <Text style={styles.timeLabel}>{formatTime(ch.lastMessageAt)}</Text>
+          renderItem={({ item: ch }) => {
+            const isGroup = ch.kind === "group";
+            return (
+              <Pressable
+                style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+                onPress={() =>
+                  navigation.navigate("Channel", {
+                    channelId: ch.id,
+                    channelName: ch.name,
+                    kind: ch.kind,
+                    memberCount: ch.memberCount,
+                  })
+                }
+              >
+                <View style={[styles.avatar, isGroup && styles.avatarGroup]}>
+                  {isGroup ? (
+                    <FontAwesome5 name="users" size={18} color="#54656f" solid />
+                  ) : (
+                    <Text style={styles.avatarText}>{initials(ch.name) || "CH"}</Text>
                   )}
                 </View>
-                {ch.lastMessage && (
-                  <Text style={styles.preview} numberOfLines={1}>{ch.lastMessage}</Text>
-                )}
-              </View>
-              {ch.unreadCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{ch.unreadCount > 99 ? "99+" : ch.unreadCount}</Text>
+                <View style={styles.body}>
+                  <View style={styles.topLine}>
+                    <Text style={styles.name} numberOfLines={1}>{ch.name}</Text>
+                    <Text style={[styles.time, ch.unreadCount > 0 && styles.timeUnread]}>
+                      {formatTime(ch.lastMessageAt)}
+                    </Text>
+                  </View>
+                  <View style={styles.bottomLine}>
+                    <Text style={styles.preview} numberOfLines={1}>
+                      {ch.lastMessage || (isGroup ? "Group" : "Chat")}
+                    </Text>
+                    {ch.unreadCount > 0 && (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{ch.unreadCount > 99 ? "99+" : ch.unreadCount}</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
-              )}
-            </TouchableOpacity>
-          )}
+              </Pressable>
+            );
+          }}
         />
       )}
+
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
+          <View style={styles.menuCard}>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuOpen(false);
+                navigation.navigate("Members");
+              }}
+            >
+              <FontAwesome5 name="comment" size={16} color="#008069" solid />
+              <Text style={styles.menuText}>New chat</Text>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuOpen(false);
+                navigation.navigate("NewGroup");
+              }}
+            >
+              <FontAwesome5 name="users" size={16} color="#008069" solid />
+              <Text style={styles.menuText}>New group</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  emptyIcon: { fontSize: 48, marginBottom: spacing.sm },
-  emptyText: { color: colors.textMuted, fontSize: 14 },
+  container: { flex: 1, backgroundColor: "#fff" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg },
+  emptyTitle: { fontSize: 18, fontWeight: "600", color: "#41525d" },
+  emptyText: { marginTop: 6, fontSize: 14, color: "#667781", textAlign: "center" },
 
-  separator: { height: 1, backgroundColor: colors.border, marginLeft: 64 },
-
-  channelRow: {
+  searchWrap: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    backgroundColor: "#f0f2f5",
+    borderRadius: radii.xl,
+    paddingHorizontal: 14,
+    minHeight: 42,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 4,
-    gap: spacing.sm,
+    gap: 10,
   },
-  channelIcon: { fontSize: 28, width: 36, textAlign: "center" },
-  channelBody: { flex: 1 },
-  channelHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  channelName: { fontSize: 15, fontWeight: "700", color: colors.text, flex: 1, marginRight: spacing.sm },
-  timeLabel: { fontSize: 12, color: colors.textMuted },
-  preview: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 0,
+    fontSize: 15,
+    lineHeight: 20,
+    color: "#111b21",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null),
+  },
+  filters: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: "#f0f2f5",
+  },
+  chipOn: { backgroundColor: "#dff3ea" },
+  chipText: { fontSize: 13, fontWeight: "600", color: "#54656f" },
+  chipTextOn: { color: "#008069" },
 
-  badge: {
-    backgroundColor: colors.danger,
-    borderRadius: 12,
-    minWidth: 22,
-    height: 22,
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  pressed: { backgroundColor: "#f5f6f6" },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#dfe5e7",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 5,
+  },
+  avatarGroup: { backgroundColor: "#cfe9de" },
+  avatarText: { fontSize: 16, fontWeight: "700", color: "#54656f" },
+  body: {
+    flex: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e9edef",
+    paddingBottom: 12,
+  },
+  topLine: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8 },
+  name: { flex: 1, fontSize: 16, fontWeight: "600", color: "#111b21" },
+  time: { fontSize: 12, color: "#667781" },
+  timeUnread: { color: "#25d366", fontWeight: "600" },
+  bottomLine: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 3 },
+  preview: { flex: 1, fontSize: 14, color: "#667781" },
+  badge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    backgroundColor: "#25d366",
+    alignItems: "center",
+    justifyContent: "center",
   },
   badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+    paddingTop: 56,
+    paddingRight: 12,
+  },
+  menuCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    minWidth: 200,
+    paddingVertical: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  menuText: { fontSize: 15, fontWeight: "600", color: "#111b21" },
 });

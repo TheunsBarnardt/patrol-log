@@ -173,15 +173,21 @@ export interface HeartbeatRequest {
   signature: string;
 }
 
+/** Uber-style map glyph: driving, on foot, or standing still. */
+export type LiveMapMovement = "car" | "walk" | "stationary";
+
 export interface LiveMapPin {
   patrol_id: string;
   call_sign: string;
   patrol_type: PatrolType;
+  /** Vehicle id when on a vehicle patrol (internal). */
   patrol_vehicle?: string;
+  /** Plate / registration for map labels (when known). */
+  vehicle_registration?: string;
   lat: number;
   lng: number;
   heading?: number;
-  speed?: number;
+  speed?: number; // m/s
   last_update: string;
   duration_on_patrol_min: number;
   stale: boolean;
@@ -218,11 +224,20 @@ export interface HeartbeatResponse {
 export interface MessageChannel {
   id: string;
   type: "broadcast" | "sector" | "direct";
+  /** WhatsApp-style: 1:1 chat vs multi-member group */
+  kind: "chat" | "group";
   name: string;
   sectorId: string | null;
+  memberCount: number;
   unreadCount: number;
   lastMessage: string | null;
   lastMessageAt: string | null;
+}
+
+export interface MessageChannelMember {
+  patrollerId: string;
+  callSign: string;
+  name: string;
 }
 
 export interface Message {
@@ -234,4 +249,31 @@ export interface Message {
   priority: "normal" | "urgent";
   createdAt: string;
   isRead: boolean;
+}
+
+// ── Admin dashboard analytics ────────────────────────────
+export type StatsPeriod = "today" | "7d" | "30d";
+
+export interface DashboardMemberStats {
+  patrollerId: string;
+  callSign: string;
+  name: string;
+  patrolCount: number;
+  hours: number;
+  km: number;
+}
+
+export interface DashboardOverview {
+  period: StatsPeriod;
+  periodStart: string;
+  kpis: {
+    totalKm: number;
+    totalHours: number;
+    completedPatrols: number;
+    activePatrols: number;
+    uniqueMembers: number;
+  };
+  hoursByType: { foot: number; vehicle: number; static: number };
+  kmByDay: { date: string; km: number }[];
+  members: DashboardMemberStats[];
 }

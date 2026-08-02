@@ -8,7 +8,7 @@ import { AppError, type HeartbeatRequest, type LiveMapPin } from "@patrol-log/sh
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
-import { livePins, patrols, patrolMembers, sectors } from "../db/schema.js";
+import { livePins, patrols, patrolMembers, sectors, vehicles } from "../db/schema.js";
 import { verifyHeartbeat } from "../lib/tokens.js";
 import { logAudit } from "../lib/audit.js";
 import { pointInPolygon } from "../lib/geo.js";
@@ -127,11 +127,17 @@ liveMap.get("/snapshot", requireAuth(), async (c) => {
   const pins: LiveMapPin[] = await Promise.all(
     rows.map(async (r) => {
       const patrol = await db.query.patrols.findFirst({ where: eq(patrols.id, r.patrolId) });
+      let vehicleRegistration: string | undefined;
+      if (patrol?.vehicleId) {
+        const vehicle = await db.query.vehicles.findFirst({ where: eq(vehicles.id, patrol.vehicleId) });
+        vehicleRegistration = vehicle?.registration;
+      }
       return {
         patrol_id: r.patrolId,
         call_sign: r.callSign,
         patrol_type: patrol?.patrolType ?? "foot",
         patrol_vehicle: patrol?.vehicleId ?? undefined,
+        vehicle_registration: vehicleRegistration,
         lat: r.lat,
         lng: r.lng,
         heading: r.heading ?? undefined,

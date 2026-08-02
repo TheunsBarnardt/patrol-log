@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../lib/api";
+import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
 
@@ -41,21 +41,21 @@ export function ProfileDrawer({ visible, onClose }: Props) {
 
   async function handleChangePassword() {
     if (newPw.length < 8) {
-      Alert.alert("Too short", "New password must be at least 8 characters.");
+      notify("Too short", "New password must be at least 8 characters.");
       return;
     }
     if (newPw !== confirmPw) {
-      Alert.alert("Mismatch", "New passwords do not match.");
+      notify("Mismatch", "New passwords do not match.");
       return;
     }
     setBusy(true);
     try {
       await api.changePassword({ current_password: currentPw, new_password: newPw });
-      Alert.alert("Done", "Password changed successfully.");
+      notify("Done", "Password changed successfully.");
       setChangingPw(false);
       setCurrentPw(""); setNewPw(""); setConfirmPw("");
     } catch (err: any) {
-      Alert.alert("Failed", err?.body?.message ?? "Could not change password.");
+      notify("Failed", err?.body?.message ?? "Could not change password.");
     } finally {
       setBusy(false);
     }

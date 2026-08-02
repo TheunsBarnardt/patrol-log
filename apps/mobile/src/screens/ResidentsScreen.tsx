@@ -1,10 +1,11 @@
-// FDL: blueprints/data/residents-directory.blueprint.yaml
+// WhatsApp-style residents directory.
 
 import { useEffect, useState } from "react";
-import { FlatList, Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
-import { colors, spacing } from "../theme";
+import { radii, spacing } from "../theme";
 import type { ResidentRecord } from "@patrol-log/shared";
 
 export function ResidentsScreen() {
@@ -26,17 +27,41 @@ export function ResidentsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <TextInput style={styles.input} value={q} onChangeText={setQ} placeholder="Search by name, phone or address…" placeholderTextColor={colors.textMuted} />
+      <View style={styles.searchWrap}>
+        <FontAwesome5 name="search" size={14} color="#667781" />
+        <TextInput
+          style={styles.searchInput}
+          value={q}
+          onChangeText={setQ}
+          placeholder="Search name, phone or address"
+          placeholderTextColor="#667781"
+        />
+      </View>
       <FlatList
         data={results}
         keyExtractor={(r) => r.resident_id}
-        ItemSeparatorComponent={() => <View style={styles.divider} />}
+        ListEmptyComponent={() => (
+          <Text style={styles.empty}>
+            {q.length > 0 && q.length < 2 ? "Type at least 2 characters" : "No residents found"}
+          </Text>
+        )}
         renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => call(item)}>
-            <Text style={styles.cardName}>{item.name}</Text>
-            <Text style={styles.cardMeta}>{item.phone}</Text>
-            <Text style={styles.cardMeta}>{item.address}</Text>
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            onPress={() => call(item)}
+          >
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{item.name.slice(0, 1).toUpperCase()}</Text>
+            </View>
+            <View style={styles.body}>
+              <View style={styles.topLine}>
+                <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+                <FontAwesome5 name="phone-alt" size={14} color="#008069" solid />
+              </View>
+              <Text style={styles.preview} numberOfLines={1}>{item.phone}</Text>
+              <Text style={styles.preview} numberOfLines={1}>{item.address}</Text>
+            </View>
+          </Pressable>
         )}
       />
     </SafeAreaView>
@@ -44,16 +69,43 @@ export function ResidentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg, padding: spacing.md },
-  input: {
-    backgroundColor: colors.cardBg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 6,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+  container: { flex: 1, backgroundColor: "#fff" },
+  searchWrap: {
+    marginHorizontal: spacing.md,
+    marginVertical: spacing.sm,
+    backgroundColor: "#f0f2f5",
+    borderRadius: radii.xl,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
-  cardName: { fontSize: 16, fontWeight: "800" },
-  cardMeta: { fontSize: 14, fontWeight: "600" },
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: "#111b21" },
+  empty: { textAlign: "center", color: "#667781", marginTop: 40, fontWeight: "500" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: spacing.md,
+    paddingTop: 12,
+  },
+  pressed: { backgroundColor: "#f5f6f6" },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#dfe5e7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { fontSize: 18, fontWeight: "700", color: "#54656f" },
+  body: {
+    flex: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e9edef",
+    paddingBottom: 12,
+  },
+  topLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  name: { flex: 1, fontSize: 16, fontWeight: "600", color: "#111b21" },
+  preview: { marginTop: 2, fontSize: 14, color: "#667781" },
 });
