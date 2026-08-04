@@ -1,8 +1,25 @@
 // Shared TypeScript types for Patrol Log.
 // FDL: derived from blueprints/{auth,workflow,data}/*.blueprint.yaml
 
-export type AccessLevel = "call_centre_agent" | "patroller" | "sector_lead" | "admin";
-export type PatrolType = "foot" | "vehicle" | "static";
+export type AccessLevel =
+  | "call_centre_agent"
+  | "patroller"
+  | "sector_lead"
+  | "admin"
+  | "system_admin";
+export type PatrolType =
+  | "foot"
+  | "vehicle"
+  | "static"
+  | "sector_monitoring"
+  | "ops"
+  | "responding";
+
+/** Vehicle + odometer required: Vehicle, Monitoring, OPS, Responding. */
+export function patrolTypeRequiresVehicle(type: PatrolType): boolean {
+  return type === "vehicle" || type === "sector_monitoring" || type === "ops" || type === "responding";
+}
+
 export type PatrolState = "active" | "stood_down";
 export type PatrolRole = "primary" | "joined";
 export type StandDownReason = "shift_end" | "emergency" | "vehicle_issue" | "personal";
@@ -59,7 +76,7 @@ export interface ResumeRequest {
 export interface CommencePatrolRequest {
   joined_patroller_call_signs: string[];
   patrol_type: PatrolType;
-  patrol_vehicle?: string; // required when patrol_type === "vehicle"
+  patrol_vehicle?: string; // required for vehicle / monitoring / ops / responding
   odometer_start?: number; // required when patrol_vehicle present
   start_location?: GeoPoint;
 }
@@ -106,13 +123,23 @@ export interface StandDownResponse {
 }
 
 // ── Hotspots ────────────────────────────────────────────────
+/** Managed hotspot (admin-defined). Rating 1–5; diameter in km. */
 export interface HotspotPin {
-  incident_id: string;
+  hotspot_id: string;
+  title: string;
+  description: string;
+  rating: number;
+  diameter_km: number;
   lat: number;
   lng: number;
-  type: string;
-  severity: "low" | "medium" | "high";
-  occurred_at: string;
+  created_at: string;
+  sector_id: string;
+  /** @deprecated mapped from rating for older clients */
+  severity?: "low" | "medium" | "high" | "critical";
+  /** @deprecated use hotspot_id */
+  incident_id?: string;
+  type?: string;
+  occurred_at?: string;
 }
 
 export interface HotspotsResponse {
@@ -120,6 +147,19 @@ export interface HotspotsResponse {
   from: string;
   to: string;
   pins: HotspotPin[];
+}
+
+export interface HotspotRecord {
+  id: string;
+  title: string;
+  description: string;
+  rating: number;
+  diameterKm: number;
+  lat: number;
+  lng: number;
+  sectorId: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ── Directories ─────────────────────────────────────────────
@@ -252,7 +292,7 @@ export interface Message {
 }
 
 // ── Admin dashboard analytics ────────────────────────────
-export type StatsPeriod = "today" | "7d" | "30d";
+export type StatsPeriod = "today" | "7d" | "30d" | "month" | "custom";
 
 export interface DashboardMemberStats {
   patrollerId: string;
@@ -266,6 +306,9 @@ export interface DashboardMemberStats {
 export interface DashboardOverview {
   period: StatsPeriod;
   periodStart: string;
+  periodEnd: string;
+  patrolType: PatrolType | null;
+  sector?: { id: string; code: string | null; name: string } | null;
   kpis: {
     totalKm: number;
     totalHours: number;
@@ -273,7 +316,60 @@ export interface DashboardOverview {
     activePatrols: number;
     uniqueMembers: number;
   };
-  hoursByType: { foot: number; vehicle: number; static: number };
+  hoursByType: Record<PatrolType, number>;
   kmByDay: { date: string; km: number }[];
   members: DashboardMemberStats[];
+}
+
+/** Personal patrol totals for the logged-in patroller (mobile dashboard). */
+export interface PatrollerStats {
+  period: StatsPeriod;
+  periodStart: string;
+  totalKm: number;
+  totalHours: number;
+  completedPatrols: number;
+}
+
+// ── Patrol report exports ────────────────────────────────
+export interface PatrolReportFilters {
+  from: string;
+  to: string;
+  patrolType?: PatrolType | null;
+}
+
+export interface PatrolDetailReportRow {
+  callSign: string;
+  name: string;
+  sector: string;
+  patrolType: PatrolType;
+  commencedAt: string;
+  stoodDownAt: string | null;
+  durationHours: number;
+  durationLabel: string;
+  distanceKm: number;
+  vehicleRegistration: string | null;
+  vehicleDescription: string | null;
+}
+
+export interface PatrolDetailReport {
+  from: string;
+  to: string;
+  patrolType: PatrolType | null;
+  rows: PatrolDetailReportRow[];
+}
+
+export interface PatrolSummaryMemberRow {
+  callSign: string;
+  name: string;
+  totalKm: number;
+  totalHours: number;
+}
+
+export interface PatrolSummaryReport {
+  from: string;
+  to: string;
+  patrolType: PatrolType | null;
+  members: PatrolSummaryMemberRow[];
+  topHours: PatrolSummaryMemberRow[];
+  topKm: PatrolSummaryMemberRow[];
 }

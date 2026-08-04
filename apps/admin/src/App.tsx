@@ -7,13 +7,18 @@ import { MembersPage } from "./pages/MembersPage";
 import { EmergencyServicesPage } from "./pages/EmergencyServicesPage";
 import { VehiclesPage } from "./pages/VehiclesPage";
 import { PatrolsPage } from "./pages/PatrolsPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { DevicesPage } from "./pages/DevicesPage";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { LiveMapPage } from "./pages/LiveMapPage";
-import { SectorsPage } from "./pages/SectorsPage";
 import { MessagingPage } from "./pages/MessagingPage";
 import { MyDetailsPage } from "./pages/MyDetailsPage";
+import { SystemBackupPage } from "./pages/SystemBackupPage";
+import { HotspotsPage } from "./pages/HotspotsPage";
+import { SectorsPage } from "./pages/SectorsPage";
 import { authStore } from "./lib/api";
+
+type Role = "system_admin" | "admin" | "sector_lead" | "call_centre_agent" | "patroller";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const token = authStore.getToken();
@@ -25,13 +30,16 @@ function RequireRoles({
   roles,
   children,
 }: {
-  roles: Array<"admin" | "sector_lead" | "call_centre_agent" | "patroller">;
+  roles: Role[];
   children: JSX.Element;
 }) {
   const level = authStore.getProfile()?.access_level;
   if (!level || !roles.includes(level)) return <RoleHomeRedirect />;
   return children;
 }
+
+const OPS: Role[] = ["system_admin", "admin", "sector_lead", "call_centre_agent"];
+const SYS: Role[] = ["system_admin"];
 
 export function App() {
   return (
@@ -46,7 +54,7 @@ export function App() {
                 <Route
                   index
                   element={
-                    <RequireRoles roles={["admin", "sector_lead", "call_centre_agent"]}>
+                    <RequireRoles roles={OPS}>
                       <DashboardPage />
                     </RequireRoles>
                   }
@@ -54,7 +62,7 @@ export function App() {
                 <Route
                   path="my-details"
                   element={
-                    <RequireRoles roles={["patroller", "admin", "sector_lead", "call_centre_agent"]}>
+                    <RequireRoles roles={["patroller", "system_admin", "admin", "sector_lead", "call_centre_agent"]}>
                       <MyDetailsPage />
                     </RequireRoles>
                   }
@@ -62,7 +70,7 @@ export function App() {
                 <Route
                   path="residents"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead", "call_centre_agent"]}>
+                    <RequireRoles roles={OPS}>
                       <ResidentsPage />
                     </RequireRoles>
                   }
@@ -70,7 +78,7 @@ export function App() {
                 <Route
                   path="members"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead", "call_centre_agent"]}>
+                    <RequireRoles roles={OPS}>
                       <MembersPage />
                     </RequireRoles>
                   }
@@ -78,7 +86,7 @@ export function App() {
                 <Route
                   path="emergency-services"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead", "call_centre_agent"]}>
+                    <RequireRoles roles={OPS}>
                       <EmergencyServicesPage />
                     </RequireRoles>
                   }
@@ -86,7 +94,7 @@ export function App() {
                 <Route
                   path="vehicles"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead"]}>
+                    <RequireRoles roles={OPS}>
                       <VehiclesPage />
                     </RequireRoles>
                   }
@@ -94,15 +102,39 @@ export function App() {
                 <Route
                   path="patrols"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead", "call_centre_agent"]}>
+                    <RequireRoles roles={OPS}>
                       <PatrolsPage />
+                    </RequireRoles>
+                  }
+                />
+                <Route
+                  path="reports"
+                  element={
+                    <RequireRoles roles={OPS}>
+                      <ReportsPage />
+                    </RequireRoles>
+                  }
+                />
+                <Route
+                  path="hotspots"
+                  element={
+                    <RequireRoles roles={OPS}>
+                      <HotspotsPage />
+                    </RequireRoles>
+                  }
+                />
+                <Route
+                  path="sectors"
+                  element={
+                    <RequireRoles roles={SYS}>
+                      <SectorsPage />
                     </RequireRoles>
                   }
                 />
                 <Route
                   path="devices"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead"]}>
+                    <RequireRoles roles={SYS}>
                       <DevicesPage />
                     </RequireRoles>
                   }
@@ -110,7 +142,7 @@ export function App() {
                 <Route
                   path="audit-log"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead"]}>
+                    <RequireRoles roles={SYS}>
                       <AuditLogPage />
                     </RequireRoles>
                   }
@@ -118,23 +150,23 @@ export function App() {
                 <Route
                   path="live-map"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead", "call_centre_agent"]}>
+                    <RequireRoles roles={OPS}>
                       <LiveMapPage />
                     </RequireRoles>
                   }
                 />
                 <Route
-                  path="sectors"
+                  path="system-backup"
                   element={
-                    <RequireRoles roles={["admin"]}>
-                      <SectorsPage />
+                    <RequireRoles roles={SYS}>
+                      <SystemBackupPage />
                     </RequireRoles>
                   }
                 />
                 <Route
                   path="messaging"
                   element={
-                    <RequireRoles roles={["admin", "sector_lead", "call_centre_agent"]}>
+                    <RequireRoles roles={OPS}>
                       <MessagingPage />
                     </RequireRoles>
                   }

@@ -107,7 +107,7 @@ export function CsvImportButton({ onFile, loading, label = "Import CSV", templat
         type="button"
         disabled={loading}
         onClick={() => inputRef.current?.click()}
-        className="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+        className="flex items-center gap-1.5 rounded-xl border border-brand-line px-4 py-2 text-sm font-semibold text-brand-ink transition-colors hover:bg-brand-primarySoft disabled:opacity-50"
       >
         {/* Upload arrow icon */}
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -121,7 +121,7 @@ export function CsvImportButton({ onFile, loading, label = "Import CSV", templat
           type="button"
           onClick={handleTemplate}
           title={`Download ${template.filename}`}
-          className="px-2 py-2 rounded-lg text-xs text-brand-primary hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors flex items-center gap-1 font-medium"
+          className="flex items-center gap-1 rounded-xl border border-transparent px-2 py-2 text-xs font-semibold text-brand-primary transition-colors hover:border-brand-primary/20 hover:bg-brand-primarySoft"
         >
           {/* Download arrow icon */}
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

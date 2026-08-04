@@ -6,33 +6,36 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
 }
 
 export function Modal({ open, onClose, title, children, footer, size = "md" }: ModalProps) {
   if (!open) return null;
-  const widthClass = size === "sm" ? "max-w-sm" : size === "lg" ? "max-w-2xl" : "max-w-lg";
+  const widthClass =
+    size === "sm" ? "max-w-sm" : size === "xl" ? "max-w-4xl" : size === "lg" ? "max-w-2xl" : "max-w-lg";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      {/* Sheet */}
-      <div className={`relative bg-white rounded-xl shadow-xl w-full ${widthClass} flex flex-col max-h-[90vh]`}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-base font-semibold">{title}</h2>
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <div className="absolute inset-0 bg-brand-ink/45 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className={`relative flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-soft sm:rounded-2xl ${widthClass}`}
+      >
+        <div className="brand-stripe h-1 w-full rounded-t-2xl" />
+        <div className="flex items-center justify-between border-b border-brand-line px-5 py-4 sm:px-6">
+          <h2 className="text-base font-bold text-brand-ink">{title}</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-brand-muted transition hover:bg-brand-primarySoft hover:text-brand-primary"
             aria-label="Close"
           >
             ✕
           </button>
         </div>
-        {/* Body */}
-        <div className="overflow-y-auto px-6 py-5 flex-1">{children}</div>
-        {/* Footer */}
-        {footer && <div className="px-6 py-4 border-t flex justify-end gap-2">{footer}</div>}
+        <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div>
+        {footer && (
+          <div className="safe-pb flex justify-end gap-2 border-t border-brand-line px-5 py-4 sm:px-6">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -50,8 +53,8 @@ export function Field({
 }) {
   return (
     <div className="mb-4">
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        {label} {required && <span className="text-red-500">*</span>}
+      <label className="mb-1.5 block text-sm font-semibold text-brand-ink">
+        {label} {required && <span className="text-brand-accent">*</span>}
       </label>
       {children}
     </div>
@@ -59,8 +62,10 @@ export function Field({
 }
 
 /** Shared input styles */
-export const inputCls = "w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent";
-export const selectCls = "w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-primary";
+export const inputCls =
+  "w-full rounded-xl border border-brand-line bg-white px-3 py-2.5 text-sm text-brand-ink shadow-sm focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/25";
+export const selectCls =
+  "w-full rounded-xl border border-brand-line bg-white px-3 py-2.5 text-sm text-brand-ink shadow-sm focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/25";
 
 /** Primary action button */
 export function Btn({
@@ -76,11 +81,12 @@ export function Btn({
   variant?: "primary" | "danger" | "ghost";
   type?: "button" | "submit";
 }) {
-  const base = "px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50";
+  const base =
+    "min-h-[42px] px-4 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 active:scale-[0.98]";
   const variants = {
-    primary: "bg-brand-primary text-white hover:opacity-90",
-    danger: "bg-red-600 text-white hover:bg-red-700",
-    ghost: "border border-gray-200 text-gray-700 hover:bg-gray-50",
+    primary: "bg-brand-primary text-white hover:bg-brand-primaryDark shadow-sm",
+    danger: "bg-brand-accent text-white hover:bg-red-700 shadow-sm",
+    ghost: "border border-brand-line text-brand-ink hover:bg-brand-primarySoft",
   };
   return (
     <button type={type} className={`${base} ${variants[variant]}`} onClick={onClick} disabled={disabled}>
