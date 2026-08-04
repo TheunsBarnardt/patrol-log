@@ -2,53 +2,5 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-  --brand-blue: #0b3d8c;
-  --brand-red: #e30613;
-  --brand-yellow: #f5c518;
-  --brand-green: #1e7a3a;
-  --brand-canvas: #f3f6fb;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  font-family: "Plus Jakarta Sans", "Segoe UI", sans-serif;
-  color: #0b1220;
-  background: var(--brand-canvas);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
-
-:focus-visible {
-  outline: 2px solid rgba(11, 61, 140, 0.45);
-  outline-offset: 2px;
-}
-
-.app-shell {
-  background:
-    radial-gradient(1200px 480px at 0% -10%, rgba(11, 61, 140, 0.10), transparent 55%),
-    radial-gradient(900px 420px at 100% 0%, rgba(245, 197, 24, 0.12), transparent 50%),
-    radial-gradient(700px 360px at 85% 100%, rgba(30, 122, 58, 0.08), transparent 45%),
-    var(--brand-canvas);
-}
-
-.brand-stripe {
-  background: linear-gradient(90deg, #0b3d8c 0%, #e30613 35%, #f5c518 68%, #1e7a3a 100%);
-}
-
-@layer utilities {
-  .safe-pb {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-  .safe-pt {
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-}
+html, body, #root { height: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
