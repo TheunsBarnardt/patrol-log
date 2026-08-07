@@ -4,6 +4,7 @@
 -- ============================================================
 
 -- ── Wipe existing data ──────────────────────────────────
+-- NEVER delete system_backups — protected from seed so restore remains available.
 DELETE FROM message_channel_members;
 DELETE FROM message_reads;
 DELETE FROM messages;
@@ -25,6 +26,7 @@ DELETE FROM live_pins;
 DELETE FROM patrollers;
 DELETE FROM sectors;
 DELETE FROM cpfs;
+-- system_backups intentionally NOT deleted
 
 -- ── Organisation ────────────────────────────────────────
 INSERT INTO cpfs (id, name, province) VALUES ('cpf000000000001', 'Wierdabrug CPF', 'Gauteng');

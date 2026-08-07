@@ -1,6 +1,5 @@
 // FDL: blueprints/data/hotspots-map.blueprint.yaml
-// Incidents are rendered as translucent circle overlays sized by severity —
-// overlapping circles create a visual heat-density effect.
+// Managed hotspots: translucent circles sized by diameter_km, coloured by rating.
 
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -17,13 +16,13 @@ const PERIODS: Array<{ label: string; value: HotspotPeriod }> = [
   { label: "90 days", value: "90d" },
 ];
 
-// Severity → {color, radius in metres}
-const SEVERITY_MAP: Record<string, { color: string; radius: number }> = {
-  critical: { color: "#DC2626", radius: 300 },
-  high:     { color: "#F97316", radius: 200 },
-  medium:   { color: "#EAB308", radius: 130 },
-  low:      { color: "#6B7280", radius: 80 },
-};
+function ratingColor(rating: number): string {
+  if (rating >= 5) return colors.danger;
+  if (rating >= 4) return "#F97316";
+  if (rating >= 3) return colors.warning;
+  if (rating >= 2) return colors.success;
+  return colors.textMuted;
+}
 
 const MAP_HTML = `<!DOCTYPE html>
 <html>
@@ -41,8 +40,11 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r
 var circles=[];
 var fitted=false;
 
+function esc(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 window.renderPins=function(json){
-  // Remove old circles
   circles.forEach(function(c){map.removeLayer(c);});
   circles=[];
   fitted=false;
@@ -51,15 +53,23 @@ window.renderPins=function(json){
   if(pins.length===0)return;
 
   pins.forEach(function(p){
-    var cfg=p._cfg;
+    var radiusM=Math.max(25, (Number(p.diameter_km)||0.5)*500); // diameter km → radius metres
+    var color=p._color||'#EAB308';
+    var title=esc(p.title||p.type||'Hotspot');
+    var desc=esc(p.description||'');
+    var rating=p.rating!=null?p.rating:'—';
+    var diam=p.diameter_km!=null?p.diameter_km:'—';
     var c=L.circle([p.lat,p.lng],{
-      radius:cfg.radius,
-      color:cfg.color,
-      fillColor:cfg.color,
+      radius:radiusM,
+      color:color,
+      fillColor:color,
       fillOpacity:0.25,
       weight:1.5,
-      opacity:0.6
-    }).bindPopup('<b>'+p.type+'</b><br/>Severity: '+p.severity+'<br/>'+new Date(p.occurred_at).toLocaleDateString()).addTo(map);
+      opacity:0.65
+    }).bindPopup(
+      '<b>'+title+'</b><br/>Rating: '+rating+'/5<br/>Diameter: '+diam+' km'+
+      (desc?'<br/><br/>'+desc:'')
+    ).addTo(map);
     circles.push(c);
   });
 
@@ -82,8 +92,10 @@ export function HotspotsMapScreen() {
   const loaded = useRef(false);
 
   function pushPins(p: HotspotPin[]) {
-    // Attach severity config to each pin before serialising
-    const enriched = p.map((pin) => ({ ...pin, _cfg: SEVERITY_MAP[pin.severity] ?? SEVERITY_MAP.low }));
+    const enriched = p.map((pin) => ({
+      ...pin,
+      _color: ratingColor(pin.rating ?? 3),
+    }));
     hostRef.current?.injectJavaScript(
       `window.renderPins(${JSON.stringify(JSON.stringify(enriched))}); true;`,
     );
@@ -112,7 +124,6 @@ export function HotspotsMapScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
-      {/* Period pills */}
       <View style={styles.pillRow}>
         {PERIODS.map((p) => (
           <TouchableOpacity
@@ -123,40 +134,30 @@ export function HotspotsMapScreen() {
             <Text style={[styles.pillText, period === p.value && styles.pillTextActive]}>{p.label}</Text>
           </TouchableOpacity>
         ))}
-        {!loading && (
-          <Text style={styles.count}>{pins.length} incident{pins.length !== 1 ? "s" : ""}</Text>
-        )}
       </View>
 
+      {loading && (
+        <View style={styles.banner}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.bannerText}>Loading hotspots…</Text>
+        </View>
+      )}
       {error && (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>⚠ {error}</Text>
+        <View style={[styles.banner, styles.bannerErr]}>
+          <Text style={styles.bannerText}>{error}</Text>
+        </View>
+      )}
+      {!loading && !error && (
+        <View style={styles.banner}>
+          <Text style={styles.bannerText}>
+            {pins.length} hotspot{pins.length === 1 ? "" : "s"} · circle size = diameter (km)
+          </Text>
         </View>
       )}
 
-      {loading ? (
-        <ActivityIndicator color={colors.primary} style={{ flex: 1 }} />
-      ) : (
-        <HtmlMapHost
-          ref={hostRef}
-          html={MAP_HTML}
-          baseUrl="https://carto.com"
-          style={styles.map}
-          onLoad={handleLoad}
-        />
-      )}
-
-      {/* Severity legend */}
-      {!loading && (
-        <View style={styles.legend}>
-          {Object.entries(SEVERITY_MAP).map(([sev, cfg]) => (
-            <View key={sev} style={styles.legendItem}>
-              <View style={[styles.dot, { backgroundColor: cfg.color }]} />
-              <Text style={styles.legendLabel}>{sev}</Text>
-            </View>
-          ))}
-        </View>
-      )}
+      <View style={styles.map}>
+        <HtmlMapHost ref={hostRef} html={MAP_HTML} onLoad={handleLoad} style={StyleSheet.absoluteFill} />
+      </View>
     </SafeAreaView>
   );
 }
@@ -166,35 +167,28 @@ const styles = StyleSheet.create({
   pillRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
-    padding: spacing.md,
-    paddingBottom: spacing.sm,
-    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
   },
   pill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.cardBg,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceMuted,
   },
-  pillActive: { backgroundColor: colors.danger, borderColor: colors.danger },
-  pillText: { color: colors.text, fontWeight: "600", fontSize: 13 },
+  pillActive: { backgroundColor: colors.primary },
+  pillText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
   pillTextActive: { color: "#fff" },
-  count: { marginLeft: "auto", fontSize: 12, color: colors.textMuted },
-  errorBanner: { backgroundColor: "#FEF2F2", margin: spacing.sm, borderRadius: 6, padding: spacing.sm },
-  errorText: { color: "#991B1B", fontSize: 12, textAlign: "center" },
-  map: { flex: 1 },
-  legend: {
+  banner: {
     flexDirection: "row",
-    justifyContent: "center",
-    gap: spacing.md,
-    padding: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
   },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  legendLabel: { fontSize: 11, color: colors.textMuted, textTransform: "capitalize" },
+  bannerErr: { backgroundColor: "#FEF2F2" },
+  bannerText: { fontSize: 12, color: colors.textMuted, fontWeight: "500" },
+  map: { flex: 1, marginTop: 4 },
 });

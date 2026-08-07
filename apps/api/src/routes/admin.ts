@@ -390,6 +390,7 @@ admin.get("/reports/detail", async (c) => {
 
   const rows = await db
     .select({
+      patrolId: patrols.id,
       callSign: patrollers.callSign,
       name: patrollers.name,
       sectorCode: sectors.code,
@@ -408,26 +409,89 @@ admin.get("/reports/detail", async (c) => {
     .where(and(...filters))
     .orderBy(desc(patrols.startTime));
 
+  const patrolIds = rows.map((r) => r.patrolId);
+  const joinedByPatrol = new Map<
+    string,
+    Array<{
+      callSign: string;
+      name: string;
+      startTime: string;
+      endTime: string | null;
+    }>
+  >();
+
+  if (patrolIds.length) {
+    const joinedRows = await db
+      .select({
+        patrolId: patrolMembers.patrolId,
+        callSign: patrollers.callSign,
+        name: patrollers.name,
+        startTime: patrolMembers.startTime,
+        endTime: patrolMembers.endTime,
+      })
+      .from(patrolMembers)
+      .innerJoin(patrollers, eq(patrollers.id, patrolMembers.patrollerId))
+      .where(and(inArray(patrolMembers.patrolId, patrolIds), eq(patrolMembers.role, "joined")))
+      .orderBy(patrollers.callSign);
+
+    for (const j of joinedRows) {
+      const list = joinedByPatrol.get(j.patrolId) ?? [];
+      list.push({
+        callSign: j.callSign,
+        name: j.name,
+        startTime: j.startTime,
+        endTime: j.endTime,
+      });
+      joinedByPatrol.set(j.patrolId, list);
+    }
+  }
+
+  const reportRows: PatrolDetailReport["rows"] = [];
+  for (const r of rows) {
+    const hours = patrolHours(r.startTime, r.endTime);
+    const sector = formatSectorLabel(r.sectorCode, r.sectorName);
+    const vehicleRegistration = r.vehicleRegistration ?? null;
+    const vehicleDescription = r.vehicleDescription ?? null;
+
+    reportRows.push({
+      callSign: r.callSign ?? "?",
+      name: r.name ?? "Unknown",
+      sector,
+      role: "primary",
+      patrolType: r.patrolType,
+      commencedAt: r.startTime,
+      stoodDownAt: r.endTime,
+      durationHours: hours,
+      durationLabel: durationLabel(hours),
+      distanceKm: r.distanceKm ?? 0,
+      vehicleRegistration,
+      vehicleDescription,
+    });
+
+    for (const j of joinedByPatrol.get(r.patrolId) ?? []) {
+      const jHours = patrolHours(j.startTime, j.endTime ?? r.endTime);
+      reportRows.push({
+        callSign: j.callSign,
+        name: j.name,
+        sector,
+        role: "joined",
+        patrolType: r.patrolType,
+        commencedAt: j.startTime,
+        stoodDownAt: j.endTime ?? r.endTime,
+        durationHours: jHours,
+        durationLabel: durationLabel(jHours),
+        distanceKm: 0,
+        vehicleRegistration,
+        vehicleDescription,
+      });
+    }
+  }
+
   const report: PatrolDetailReport = {
     from,
     to,
     patrolType,
-    rows: rows.map((r) => {
-      const hours = patrolHours(r.startTime, r.endTime);
-      return {
-        callSign: r.callSign ?? "?",
-        name: r.name ?? "Unknown",
-        sector: formatSectorLabel(r.sectorCode, r.sectorName),
-        patrolType: r.patrolType,
-        commencedAt: r.startTime,
-        stoodDownAt: r.endTime,
-        durationHours: hours,
-        durationLabel: durationLabel(hours),
-        distanceKm: r.distanceKm ?? 0,
-        vehicleRegistration: r.vehicleRegistration ?? null,
-        vehicleDescription: r.vehicleDescription ?? null,
-      };
-    }),
+    rows: reportRows,
   };
 
   return c.json(report);

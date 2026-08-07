@@ -1,6 +1,7 @@
 // Thin typed fetch wrapper used by the mobile app and admin portal.
 import type {
   ActivePatrolResponse,
+  AddPatrolMembersRequest,
   CommencePatrolRequest,
   EmergencyServiceRecord,
   HeartbeatRequest,
@@ -14,10 +15,12 @@ import type {
   Message,
   MessageChannel,
   MessageChannelMember,
+  PatrollerStats,
   ResidentRecord,
   ResumeRequest,
   StandDownRequest,
   StandDownResponse,
+  StatsPeriod,
   VehicleRecord,
 } from "./types";
 import type { ErrorCode } from "./errors";
@@ -42,6 +45,17 @@ export class ApiError extends Error {
   get code(): ErrorCode { return this.body.error; }
 }
 
+/**
+ * True only for real session failures.
+ * Requires both the right HTTP status and API error code — never treat HTML/502/etc as logout.
+ */
+function isSessionAuthFailure(status: number, code?: string): boolean {
+  if (status === 401 && code === "LOGIN_INVALID_CREDENTIALS") return true;
+  if (status === 403 && code === "LOGIN_DEVICE_REVOKED") return true;
+  if (status === 403 && code === "LOGIN_ACCOUNT_INACTIVE") return true;
+  return false;
+}
+
 export function createApiClient(opts: ApiClientOptions) {
   const base = opts.baseUrl.replace(/\/$/, "");
 
@@ -53,11 +67,33 @@ export function createApiClient(opts: ApiClientOptions) {
 
     const res = await fetch(`${base}${path}`, { ...init, headers });
     const text = await res.text();
-    const body = text ? JSON.parse(text) : null;
+    let body: unknown = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        // Do NOT invent LOGIN_* codes here — that previously forced logout on HTML 502s etc.
+        body = { error: "API_UNAVAILABLE", message: text.slice(0, 160) || `HTTP ${res.status}` };
+      }
+    }
 
     if (!res.ok) {
-      if (res.status === 401 && opts.onUnauthorized) opts.onUnauthorized();
-      throw new ApiError(res.status, body as ApiErrorBody);
+      const errBody = body as ApiErrorBody | null;
+      // Only clear session when we actually sent a token and the API rejected it as a session failure.
+      if (
+        token &&
+        opts.onUnauthorized &&
+        isSessionAuthFailure(res.status, errBody?.error)
+      ) {
+        opts.onUnauthorized();
+      }
+      throw new ApiError(
+        res.status,
+        (errBody ?? {
+          error: "API_UNAVAILABLE",
+          message: `HTTP ${res.status}`,
+        }) as ApiErrorBody,
+      );
     }
     return body as T;
   }
@@ -72,7 +108,11 @@ export function createApiClient(opts: ApiClientOptions) {
     // patrols
     commencePatrol: (body: CommencePatrolRequest) => request<ActivePatrolResponse>("/patrols/commence", { method: "POST", body: JSON.stringify(body) }),
     activePatrol: () => request<ActivePatrolResponse | null>("/patrols/active/me"),
+    myPatrolStats: (period: StatsPeriod = "month") =>
+      request<PatrollerStats>(`/patrols/stats/me?period=${period}`),
     standDown: (patrolId: string, body: StandDownRequest) => request<StandDownResponse>(`/patrols/${patrolId}/stand-down`, { method: "POST", body: JSON.stringify(body) }),
+    addPatrolMembers: (patrolId: string, body: AddPatrolMembersRequest) =>
+      request<ActivePatrolResponse>(`/patrols/${patrolId}/members`, { method: "POST", body: JSON.stringify(body) }),
 
     // hotspots
     hotspots: (period: HotspotPeriod) => request<HotspotsResponse>(`/hotspots?period=${period}`),

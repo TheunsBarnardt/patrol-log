@@ -1,0 +1,65 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start API",
+      "type": "shell",
+      "command": "pnpm run dev:api",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {}
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "typescript",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "(Ready on|Listening|localhost:8787|http://127\\.0\\.0\\.1:8787)"
+        }
+      },
+      "presentation": { "group": "patrol-log", "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Start Admin",
+      "type": "shell",
+      "command": "pnpm run dev:admin",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "(Local:|localhost:5173)"
+        }
+      },
+      "presentation": { "group": "patrol-log", "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Start Mobile Web",
+      "type": "shell",
+      "command": "pnpm run dev:mobile:web",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "expo",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "(localhost:8082|exp://|Web Bundled|Waiting on)"
+        }
+      },
+      "presentation": { "group": "patrol-log", "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Start API + Admin + Mobile",
+      "dependsOn": ["Start API", "Start Admin", "Start Mobile Web"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -65,7 +65,7 @@ export function LoginScreen() {
           <View style={styles.sheet}>
             <View style={styles.brand}>
               {logo ? (
-                <Image source={logo} style={styles.logoImg} resizeMode="cover" />
+                <Image source={logo} style={styles.logoImg} resizeMode="contain" />
               ) : (
                 <View style={styles.logoFallback}>
                   <Text style={styles.logoFallbackText}>PL</Text>
@@ -120,7 +120,7 @@ export function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1, backgroundColor: colors.surfaceMuted },
   flex: { flex: 1 },
   scroll: {
     flexGrow: 1,
@@ -139,11 +139,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   logoImg: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
     marginBottom: spacing.md,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: "#fff",
+    borderWidth: 3,
+    borderColor: colors.accent,
   },
   logoFallback: {
     width: 88,

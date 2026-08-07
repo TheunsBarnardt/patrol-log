@@ -45,8 +45,7 @@ async function countUnreadForPatroller(
   return Number(row?.count ?? 0);
 }
 
-/** For 1:1 DMs, each viewer should see the other member's call sign — not their own.
- *  Staff observing a chat they're not in see both call signs. */
+/** For 1:1 DMs, each viewer sees the other member's call sign — not their own. */
 async function directChannelDisplayName(
   db: Db,
   channelId: string,
@@ -62,20 +61,14 @@ async function directChannelDisplayName(
     .innerJoin(patrollers, eq(patrollers.id, messageChannelMembers.patrollerId))
     .where(eq(messageChannelMembers.channelId, channelId));
 
-  const viewerInChat = members.some((m) => m.patrollerId === viewerId);
-  if (!viewerInChat) {
-    const labels = members.map((m) => m.callSign).filter(Boolean);
-    return labels.length ? labels.join(" · ") : fallback;
-  }
   const others = members.filter((m) => m.patrollerId !== viewerId);
   if (others.length === 1) return others[0].callSign;
   if (others.length > 1) return others.map((o) => o.callSign).join(" · ");
   return fallback;
 }
 
-function isStaff(auth: AuthenticatedContext): boolean {
-  const level = auth.patroller.access_level;
-  return level === "admin" || level === "sector_lead" || level === "call_centre_agent";
+function isSystemAdmin(auth: AuthenticatedContext): boolean {
+  return auth.patroller.access_level === "system_admin";
 }
 
 async function enrichChannelForPatroller(
@@ -148,17 +141,17 @@ async function countChannelMembers(db: Db, ch: ChannelRow): Promise<number> {
     return Number(cnt?.count ?? 0);
   }
   if (ch.type === "sector" && ch.sectorId) {
-    const rows = await db
-      .select({ id: patrollers.id, accessLevel: patrollers.accessLevel, sectorId: patrollers.sectorId })
+    const [cnt] = await db
+      .select({ count: sql<number>`count(*)` })
       .from(patrollers)
-      .where(and(eq(patrollers.cpfId, ch.cpfId), eq(patrollers.status, "active")));
-    return rows.filter(
-      (r) =>
-        r.sectorId === ch.sectorId ||
-        r.accessLevel === "admin" ||
-        r.accessLevel === "sector_lead" ||
-        r.accessLevel === "call_centre_agent",
-    ).length;
+      .where(
+        and(
+          eq(patrollers.cpfId, ch.cpfId),
+          eq(patrollers.sectorId, ch.sectorId),
+          eq(patrollers.status, "active"),
+        ),
+      );
+    return Number(cnt?.count ?? 0);
   }
   const [cnt] = await db
     .select({ count: sql<number>`count(*)` })
@@ -202,25 +195,42 @@ async function ensureDefaultChannels(
 
 // ── Can patroller see channel? ────────────────────────────
 
+/**
+ * Access rules (WhatsApp-style):
+ * - sector chat: only that sector (system_admin may open any sector channel)
+ * - DM (exactly 2 people): ONLY those two — not admin, not system_admin, not sector lead
+ * - group: only people in message_channel_members
+ * - broadcast: system_admin only
+ */
+async function isChannelMember(db: Db, channelId: string, patrollerId: string): Promise<boolean> {
+  const membership = await db.query.messageChannelMembers.findFirst({
+    where: and(
+      eq(messageChannelMembers.channelId, channelId),
+      eq(messageChannelMembers.patrollerId, patrollerId),
+    ),
+  });
+  return !!membership;
+}
+
 async function canAccessChannel(
   db: Db,
   auth: AuthenticatedContext,
   channel: { id: string; cpfId: string; type: string; sectorId: string | null },
 ): Promise<boolean> {
   if (channel.cpfId !== auth.patroller.cpf_id) return false;
-  // Staff can open any CPF chat/group (admin inbox / moderation).
-  if (isStaff(auth)) return true;
-  if (channel.type === "broadcast") return true;
+
+  if (channel.type === "broadcast") {
+    return isSystemAdmin(auth);
+  }
+
   if (channel.type === "sector") {
+    if (isSystemAdmin(auth)) return true;
     return channel.sectorId === auth.patroller.sector_id;
   }
-  const membership = await db.query.messageChannelMembers.findFirst({
-    where: and(
-      eq(messageChannelMembers.channelId, channel.id),
-      eq(messageChannelMembers.patrollerId, auth.patroller.patroller_id),
-    ),
-  });
-  return !!membership;
+
+  // type === "direct" (1:1 chat OR group): membership is the only key.
+  // No role bypass — same as WhatsApp private chats.
+  return isChannelMember(db, channel.id, auth.patroller.patroller_id);
 }
 
 // ── Exported helper for heartbeat out-of-sector alert ────
@@ -318,6 +328,10 @@ messagesRoute.post("/direct", async (c) => {
     where: and(eq(patrollers.id, targetId), eq(patrollers.cpfId, auth.patroller.cpf_id)),
   });
   if (!target || target.status !== "active") return c.json({ error: "Member not found" }, 404);
+  // DMs stay inside the sector (system_admin may message anyone in the CPF).
+  if (!isSystemAdmin(auth) && target.sectorId !== auth.patroller.sector_id) {
+    return c.json({ error: "Direct messages are only within your sector" }, 403);
+  }
 
   const directs = await db.query.messageChannels.findMany({
     where: and(eq(messageChannels.cpfId, auth.patroller.cpf_id), eq(messageChannels.type, "direct")),
@@ -347,7 +361,7 @@ messagesRoute.post("/direct", async (c) => {
       cpfId: auth.patroller.cpf_id,
       type: "direct",
       name: [auth.patroller.call_sign, target.callSign].sort().join(" · "),
-      sectorId: null,
+      sectorId: auth.patroller.sector_id,
     })
     .returning();
 
@@ -379,12 +393,22 @@ messagesRoute.post("/groups", async (c) => {
   const db = getDb(c.env);
 
   const targets = await db
-    .select({ id: patrollers.id, callSign: patrollers.callSign, status: patrollers.status })
+    .select({
+      id: patrollers.id,
+      callSign: patrollers.callSign,
+      status: patrollers.status,
+      sectorId: patrollers.sectorId,
+    })
     .from(patrollers)
     .where(and(eq(patrollers.cpfId, auth.patroller.cpf_id), inArray(patrollers.id, memberIds)));
 
-  const activeIds = targets.filter((t) => t.status === "active").map((t) => t.id);
-  if (!activeIds.length) return c.json({ error: "No valid members" }, 400);
+  const activeSameSector = targets.filter(
+    (t) =>
+      t.status === "active" &&
+      (isSystemAdmin(auth) || t.sectorId === auth.patroller.sector_id),
+  );
+  const activeIds = activeSameSector.map((t) => t.id);
+  if (!activeIds.length) return c.json({ error: "No valid members in your sector" }, 400);
 
   const allIds = new Set([meId, ...activeIds]);
 
@@ -394,7 +418,7 @@ messagesRoute.post("/groups", async (c) => {
       cpfId: auth.patroller.cpf_id,
       type: "direct",
       name,
-      sectorId: null,
+      sectorId: auth.patroller.sector_id,
     })
     .returning();
 
@@ -444,26 +468,21 @@ messagesRoute.get("/:channelId/members", async (c) => {
       .where(and(eq(patrollers.cpfId, channel.cpfId), eq(patrollers.status, "active")))
       .orderBy(patrollers.callSign);
   } else if (channel.type === "sector" && channel.sectorId) {
-    const rows = await db
+    members = await db
       .select({
         patrollerId: patrollers.id,
         callSign: patrollers.callSign,
         name: patrollers.name,
-        accessLevel: patrollers.accessLevel,
-        sectorId: patrollers.sectorId,
       })
       .from(patrollers)
-      .where(and(eq(patrollers.cpfId, channel.cpfId), eq(patrollers.status, "active")))
-      .orderBy(patrollers.callSign);
-    members = rows
-      .filter(
-        (r) =>
-          r.sectorId === channel.sectorId ||
-          r.accessLevel === "admin" ||
-          r.accessLevel === "sector_lead" ||
-          r.accessLevel === "call_centre_agent",
+      .where(
+        and(
+          eq(patrollers.cpfId, channel.cpfId),
+          eq(patrollers.sectorId, channel.sectorId),
+          eq(patrollers.status, "active"),
+        ),
       )
-      .map(({ patrollerId, callSign, name }) => ({ patrollerId, callSign, name }));
+      .orderBy(patrollers.callSign);
   }
 
   return c.json({
@@ -545,6 +564,7 @@ messagesRoute.post("/:channelId", async (c) => {
       senderCallSign: auth.patroller.call_sign,
       body: body.body.trim(),
       priority: body.priority ?? "normal",
+      createdAt: new Date().toISOString(),
     })
     .returning();
 
@@ -610,7 +630,7 @@ export const adminMessagesRoute = new Hono<AppContext>();
 adminMessagesRoute.use(
   "*",
   requireAuth(),
-  requireAccessLevel("admin", "sector_lead", "call_centre_agent"),
+  requireAccessLevel("system_admin", "admin", "sector_lead", "call_centre_agent"),
 );
 
 adminMessagesRoute.get("/channels", async (c) => {
@@ -620,13 +640,29 @@ adminMessagesRoute.get("/channels", async (c) => {
   const sector = await db.query.sectors.findFirst({ where: eq(sectors.id, auth.patroller.sector_id) });
   await ensureDefaultChannels(db, auth.patroller.cpf_id, auth.patroller.sector_id, sector?.name ?? "Sector");
 
+  // system_admin: ensure a sector channel exists for every sector
+  if (isSystemAdmin(auth)) {
+    const allSectors = await db
+      .select()
+      .from(sectors)
+      .where(eq(sectors.cpfId, auth.patroller.cpf_id));
+    for (const s of allSectors) {
+      await ensureDefaultChannels(db, auth.patroller.cpf_id, s.id, s.code || s.name);
+    }
+  }
+
   const rows = await db.query.messageChannels.findMany({
     where: eq(messageChannels.cpfId, auth.patroller.cpf_id),
     orderBy: [messageChannels.type, messageChannels.name],
   });
 
+  const accessible: typeof rows = [];
+  for (const ch of rows) {
+    if (await canAccessChannel(db, auth, ch)) accessible.push(ch);
+  }
+
   const enriched = await Promise.all(
-    rows.map(async (ch) => {
+    accessible.map(async (ch) => {
       const memberCount = await countChannelMembers(db, ch);
       return enrichChannelForPatroller(db, ch, auth.patroller.patroller_id, memberCount);
     }),
@@ -645,11 +681,31 @@ adminMessagesRoute.post("/channels", async (c) => {
   }>();
   if (!body.name?.trim()) return c.json({ error: "Name required" }, 400);
   if (!["broadcast", "sector", "direct"].includes(body.type)) return c.json({ error: "Invalid type" }, 400);
-  if (body.type === "sector" && !body.sector_id) {
+
+  const sectorId =
+    body.type === "sector"
+      ? body.sector_id ?? auth.patroller.sector_id
+      : body.type === "direct"
+        ? auth.patroller.sector_id
+        : null;
+
+  if (body.type === "sector" && !sectorId) {
     return c.json({ error: "sector_id required for sector channels" }, 400);
   }
-  if (body.type === "direct" && !body.target_patroller_ids?.length) {
-    return c.json({ error: "target_patroller_ids required for direct channels" }, 400);
+  if (body.type === "sector" && !isSystemAdmin(auth) && sectorId !== auth.patroller.sector_id) {
+    return c.json({ error: "You can only create channels for your sector" }, 403);
+  }
+  if (body.type === "broadcast" && !isSystemAdmin(auth)) {
+    return c.json({ error: "Only system admin can create broadcast channels" }, 403);
+  }
+  if (body.type === "direct") {
+    const others = [...new Set((body.target_patroller_ids ?? []).filter(Boolean))];
+    if (others.length !== 1) {
+      return c.json(
+        { error: "Direct chat must be with exactly one other person (use a group for more)" },
+        400,
+      );
+    }
   }
 
   const db = getDb(c.env);
@@ -659,16 +715,19 @@ adminMessagesRoute.post("/channels", async (c) => {
       cpfId: auth.patroller.cpf_id,
       type: body.type,
       name: body.name.trim(),
-      sectorId: body.type === "sector" ? body.sector_id! : null,
+      sectorId,
     })
     .returning();
 
   if (body.type === "direct") {
-    const memberIds = new Set(body.target_patroller_ids ?? []);
-    memberIds.add(auth.patroller.patroller_id);
+    const otherId = body.target_patroller_ids![0]!;
+    // Exactly two members — creator + one other. Nobody else can join or see this chat.
     await db
       .insert(messageChannelMembers)
-      .values([...memberIds].map((pid) => ({ channelId: channel.id, patrollerId: pid })))
+      .values([
+        { channelId: channel.id, patrollerId: auth.patroller.patroller_id },
+        { channelId: channel.id, patrollerId: otherId },
+      ])
       .onConflictDoNothing();
   }
 
@@ -684,9 +743,9 @@ adminMessagesRoute.delete("/channels/:channelId", async (c) => {
     where: and(eq(messageChannels.id, channelId), eq(messageChannels.cpfId, auth.patroller.cpf_id)),
   });
   if (!channel) return c.json({ error: "Channel not found" }, 404);
+  if (!(await canAccessChannel(db, auth, channel))) return c.json({ error: "Forbidden" }, 403);
 
-  // Keep system defaults unless explicitly allowed — staff can still delete custom groups/DMs.
-  // Broadcast/sector defaults can be recreated by ensureDefaultChannels on next list.
+  // Sector defaults recreate via ensureDefaultChannels; DMs/groups only deletable by members.
   await db.delete(messageChannels).where(eq(messageChannels.id, channelId));
   return c.json({ ok: true, id: channelId });
 });

@@ -98,9 +98,14 @@ function stamp(from: string, to: string): string {
   return `${from}_to_${to}`;
 }
 
+function roleLabel(role: "primary" | "joined" | undefined): string {
+  return role === "joined" ? "Passenger" : "Primary";
+}
+
 export function downloadDetailCsv(report: PatrolDetailReport) {
   const headers = [
     "Call Sign / Name",
+    "Role",
     "Sector",
     "Patrol Type",
     "Commenced At",
@@ -111,6 +116,7 @@ export function downloadDetailCsv(report: PatrolDetailReport) {
   ];
   const rows = report.rows.map((r) => [
     callSignName(r.callSign, r.name),
+    roleLabel(r.role),
     r.sector,
     patrolTypeLabel(r.patrolType),
     formatDisplayTime(r.commencedAt),
@@ -129,6 +135,7 @@ export function downloadDetailCsv(report: PatrolDetailReport) {
 export function downloadDetailExcel(report: PatrolDetailReport) {
   const headers = [
     "Call Sign / Name",
+    "Role",
     "Sector",
     "Patrol Type",
     "Commenced At",
@@ -139,6 +146,7 @@ export function downloadDetailExcel(report: PatrolDetailReport) {
   ];
   const rows = report.rows.map((r) => [
     callSignName(r.callSign, r.name),
+    roleLabel(r.role),
     r.sector,
     patrolTypeLabel(r.patrolType),
     formatDisplayTime(r.commencedAt),

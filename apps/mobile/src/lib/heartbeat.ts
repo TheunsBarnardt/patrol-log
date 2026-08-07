@@ -1,9 +1,9 @@
 // POC heartbeat loop. Every 30s while an active patrol exists, grab GPS and POST to the API.
-// We use a simple setInterval — good enough for foreground use. For production you'd use
-// expo-task-manager + expo-background-fetch for true background execution.
+// Uses a dedicated fetch path so heartbeat failures never force logout.
 
 import * as Location from "expo-location";
-import { api } from "./api";
+import { API_BASE_URL } from "../config";
+import { storage } from "./storage";
 import { showLocalNotification } from "./notifications";
 
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -39,18 +39,37 @@ async function sendOnce() {
     const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const timestamp = new Date().toISOString();
     const signature = await signHeartbeat(currentJti, currentPatrolId, timestamp);
-    const result = await api.heartbeat({
-      patrol_id: currentPatrolId,
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude,
-      heading: pos.coords.heading ?? undefined,
-      speed: pos.coords.speed ?? undefined,
-      accuracy_m: pos.coords.accuracy ?? 9999,
-      timestamp,
-      signature,
+    const token = await storage.getDeviceToken();
+    if (!token) {
+      console.warn("[heartbeat] skipped — no device token");
+      return;
+    }
+
+    const res = await fetch(`${API_BASE_URL.replace(/\/$/, "")}/live-map/heartbeat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        patrol_id: currentPatrolId,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        heading: pos.coords.heading ?? undefined,
+        speed: pos.coords.speed ?? undefined,
+        accuracy_m: pos.coords.accuracy ?? 9999,
+        timestamp,
+        signature,
+      }),
     });
 
-    // If the API reports out-of-sector, fire an immediate local notification
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.warn("[heartbeat] failed", res.status, text.slice(0, 160));
+      return;
+    }
+
+    const result = (await res.json()) as { ok?: boolean; out_of_sector?: boolean };
     if (result.out_of_sector) {
       await showLocalNotification(
         "⚠ Outside sector boundary",
@@ -62,12 +81,15 @@ async function sendOnce() {
   }
 }
 
-// HMAC-SHA256 in React Native — expo-crypto doesn't ship HMAC in SDK 51, so we use
-// a tiny WebCrypto polyfill path. Since Expo SDK 51 has globalThis.crypto.subtle,
-// this works directly.
 async function signHeartbeat(jti: string, patrolId: string, timestamp: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey("raw", enc.encode(jti), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const mac = await crypto.subtle.sign("HMAC", key, enc.encode(`${patrolId}|${timestamp}`));
-  return btoa(String.fromCharCode(...new Uint8Array(mac))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return bytesToBase64Url(new Uint8Array(mac));
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

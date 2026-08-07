@@ -17,7 +17,7 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
-import { radii, spacing } from "../theme";
+import { colors, radii, spacing } from "../theme";
 import type { MemberRecord } from "@patrol-log/shared";
 
 type Props = NativeStackScreenProps<RootStackParamList, "NewGroup">;
@@ -77,20 +77,20 @@ export function NewGroupScreen({ navigation }: Props) {
       {step === "members" ? (
         <>
           <View style={styles.searchWrap}>
-            <FontAwesome5 name="search" size={14} color="#667781" />
+            <FontAwesome5 name="search" size={14} color={colors.textMuted} />
             <TextInput
               style={styles.searchInput}
               value={q}
               onChangeText={setQ}
               placeholder="Search members"
-              placeholderTextColor="#667781"
+              placeholderTextColor={colors.textMuted}
             />
           </View>
           {selected.size > 0 && (
             <Text style={styles.selectedCount}>{selected.size} selected</Text>
           )}
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 40 }} color="#008069" />
+            <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
           ) : (
             <FlatList
               data={members}
@@ -125,14 +125,14 @@ export function NewGroupScreen({ navigation }: Props) {
       ) : (
         <View style={styles.nameStep}>
           <View style={styles.groupAvatar}>
-            <FontAwesome5 name="users" size={22} color="#54656f" solid />
+            <FontAwesome5 name="users" size={22} color={colors.textMuted} solid />
           </View>
           <TextInput
             style={styles.nameInput}
             value={groupName}
             onChangeText={setGroupName}
             placeholder="Group subject"
-            placeholderTextColor="#667781"
+            placeholderTextColor={colors.textMuted}
             autoFocus
             maxLength={60}
           />
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
   searchWrap: {
     marginHorizontal: spacing.md,
     marginVertical: spacing.sm,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
     paddingHorizontal: 14,
     minHeight: 42,
@@ -175,13 +175,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  searchInput: { flex: 1, fontSize: 15, color: "#111b21", paddingVertical: 10 },
+  searchInput: { flex: 1, fontSize: 15, color: colors.text, paddingVertical: 10 },
   selectedCount: {
     paddingHorizontal: spacing.md,
     paddingBottom: 8,
     fontSize: 13,
     fontWeight: "600",
-    color: "#008069",
+    color: colors.primary,
   },
   row: {
     flexDirection: "row",
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  checkOn: { backgroundColor: "#008069", borderColor: "#008069" },
+  checkOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   avatar: {
     width: 48,
     height: 48,
@@ -208,9 +208,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { fontSize: 14, fontWeight: "700", color: "#54656f" },
-  name: { fontSize: 16, fontWeight: "600", color: "#111b21" },
-  sub: { marginTop: 2, fontSize: 13, color: "#667781" },
+  avatarText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+  name: { fontSize: 16, fontWeight: "600", color: colors.text },
+  sub: { marginTop: 2, fontSize: 13, color: colors.textMuted },
   fab: {
     position: "absolute",
     right: 20,
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#008069",
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
     elevation: 3,
@@ -237,27 +237,27 @@ const styles = StyleSheet.create({
   nameInput: {
     alignSelf: "stretch",
     borderBottomWidth: 2,
-    borderBottomColor: "#008069",
+    borderBottomColor: colors.primary,
     fontSize: 17,
-    color: "#111b21",
+    color: colors.text,
     paddingVertical: 10,
   },
-  hint: { alignSelf: "stretch", marginTop: 12, fontSize: 13, color: "#667781", lineHeight: 18 },
+  hint: { alignSelf: "stretch", marginTop: 12, fontSize: 13, color: colors.textMuted, lineHeight: 18 },
   nameActions: { marginTop: 28, flexDirection: "row", gap: 12, alignSelf: "stretch" },
   secondaryBtn: {
     flex: 1,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
-  secondaryText: { fontWeight: "600", color: "#111b21" },
+  secondaryText: { fontWeight: "600", color: colors.text },
   primaryBtn: {
     flex: 1,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#008069",
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },

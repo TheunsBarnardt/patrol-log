@@ -167,7 +167,7 @@ async function hydrateProfile(db: ReturnType<typeof getDb>, p: typeof patrollers
     name: p.name,
     access_level: p.accessLevel,
     organization: "CPF",
-    sector: sector?.name ?? "",
+    sector: sector?.code || sector?.name || "",
     province: cpf?.province ?? "",
     cpf_id: p.cpfId,
     sector_id: p.sectorId,

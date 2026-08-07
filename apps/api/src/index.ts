@@ -7,12 +7,13 @@ import type { AppContext } from "./lib/middleware.js";
 import { corsMiddleware, errorHandler } from "./lib/middleware.js";
 import { auth } from "./routes/auth.js";
 import { patrolRoutes } from "./routes/patrols.js";
-import { hotspots } from "./routes/hotspots.js";
+import { hotspotsRoute } from "./routes/hotspots.js";
 import { directory } from "./routes/directory.js";
 import { liveMap } from "./routes/live-map.js";
 import { admin } from "./routes/admin.js";
 import { vehiclesRoute } from "./routes/vehicles.js";
 import { sectorsRoute } from "./routes/sectors.js";
+import { systemRoute } from "./routes/system.js";
 import { pushTokensRoute, messagesRoute, adminMessagesRoute } from "./routes/messages.js";
 
 const app = new Hono<AppContext>();
@@ -22,16 +23,24 @@ app.use("*", corsMiddleware());
 app.onError(errorHandler);
 
 app.get("/", (c) => c.json({ name: c.env.APP_NAME ?? "Patrol Log API", env: c.env.ENV ?? "dev", ok: true }));
-app.get("/health", (c) => c.json({ ok: true, ts: new Date().toISOString() }));
+app.get("/health", (c) =>
+  c.json({
+    ok: true,
+    ts: new Date().toISOString(),
+    env: c.env.ENV ?? "dev",
+    name: c.env.APP_NAME ?? "Patrol Log API",
+  }),
+);
 
 app.route("/auth", auth);
 app.route("/patrols", patrolRoutes);
-app.route("/hotspots", hotspots);
+app.route("/hotspots", hotspotsRoute);
 app.route("/directory", directory);
 app.route("/live-map", liveMap);
 app.route("/admin", admin);
 app.route("/vehicles", vehiclesRoute);
 app.route("/admin", sectorsRoute);        // adds /admin/sectors
+app.route("/admin/system", systemRoute);  // system_admin backup/restore/csv
 app.route("/push-tokens", pushTokensRoute);
 app.route("/messages", messagesRoute);
 app.route("/admin/messages", adminMessagesRoute);

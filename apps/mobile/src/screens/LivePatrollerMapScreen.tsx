@@ -39,7 +39,7 @@ function esc(s){
 }
 function movementOf(p){
   if(p.patrol_type==='vehicle') return 'car';
-  if(p.patrol_type==='static') return 'stationary';
+  if(p.patrol_type==='static'||p.patrol_type==='sector_monitoring'||p.patrol_type==='ops'||p.patrol_type==='responding') return 'stationary';
   return 'walk';
 }
 function movementLabel(m){
@@ -52,7 +52,7 @@ function makeIcon(p){
   var stale=!!p.stale;
   var moving=p.speed!=null && p.speed>=MOVING;
   var heading=(m==='car' && moving && p.heading!=null)?p.heading:0;
-  var fill=stale?'#9CA3AF':(m==='car'?'#2563EB':m==='walk'?'#059669':'#D97706');
+  var fill=stale?'#9CA3AF':(m==='car'?'#0B3D8C':m==='walk'?'#1E7A3A':'#F5C518');
   var ring=stale?'#6B7280':'#fff';
   var glyph;
   if(m==='car'){
@@ -152,7 +152,13 @@ export function LivePatrollerMapScreen() {
   const stale = pins.filter((p) => p.stale).length;
   const cars = pins.filter((p) => p.patrol_type === "vehicle").length;
   const walks = pins.filter((p) => p.patrol_type === "foot").length;
-  const stationary = pins.filter((p) => p.patrol_type === "static").length;
+  const other = pins.filter(
+    (p) =>
+      p.patrol_type === "static" ||
+      p.patrol_type === "sector_monitoring" ||
+      p.patrol_type === "ops" ||
+      p.patrol_type === "responding",
+  ).length;
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
@@ -161,7 +167,7 @@ export function LivePatrollerMapScreen() {
         <Text style={styles.statusText}>
           {loading
             ? "Connecting…"
-            : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${cars} car · ${walks} walk · ${stationary} stationary`}
+            : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${cars} car · ${walks} walk · ${other} other`}
         </Text>
         {error && <Text style={styles.errorText}>⚠ {error}</Text>}
       </View>

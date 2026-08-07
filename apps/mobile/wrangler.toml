@@ -1,0 +1,5 @@
+# Cloudflare Pages — mobile web client
+# Deploy: pnpm run deploy:web
+name = "patrol-log-mobile"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-11-06"

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { PatrollerProfile } from "@patrol-log/shared";
 import { storage } from "../lib/storage";
+import { stopHeartbeat } from "../lib/heartbeat";
 
 interface AuthState {
   status: "bootstrapping" | "unauthenticated" | "authenticated";
@@ -24,6 +25,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   setUnauthenticated() {
+    stopHeartbeat();
     set({ status: "unauthenticated", profile: null, deviceToken: null });
   },
 
@@ -39,6 +41,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   async signOut() {
+    stopHeartbeat();
     await storage.clearDeviceToken();
     await storage.clearProfile();
     set({ status: "unauthenticated", profile: null, deviceToken: null });

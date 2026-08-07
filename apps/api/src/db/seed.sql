@@ -3,7 +3,8 @@
 -- OR locally:
 --   npx wrangler d1 execute patrol-log-db --local -f seed.sql
 
--- First truncate all tables (dependency order)
+-- First truncate all tables (dependency order).
+-- NEVER delete system_backups — protected from seed.
 DELETE FROM message_channel_members;
 DELETE FROM message_reads;
 DELETE FROM messages;
@@ -25,6 +26,7 @@ DELETE FROM patrollers;
 DELETE FROM sectors;
 DELETE FROM cpfs;
 DELETE FROM live_pins;
+-- system_backups intentionally NOT deleted
 
 -- Insert CPF + sector
 INSERT INTO cpfs (id, name, province) VALUES (

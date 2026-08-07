@@ -5,8 +5,14 @@ import { useAuthStore } from "../store/auth";
 
 export const api = createApiClient({
   baseUrl: API_BASE_URL,
-  getDeviceToken: () => storage.getDeviceToken(),
+  // Prefer in-memory token so a SecureStore hiccup during live-map polling
+  // can't send an unauthenticated request and bounce the user to login.
+  getDeviceToken: async () => {
+    const fromStore = useAuthStore.getState().deviceToken;
+    if (fromStore) return fromStore;
+    return storage.getDeviceToken();
+  },
   onUnauthorized: () => {
-    useAuthStore.getState().signOut();
+    void useAuthStore.getState().signOut();
   },
 });

@@ -16,9 +16,14 @@
     "build:admin": "pnpm --filter @patrol-log/admin build",
     "deploy:api": "pnpm --filter @patrol-log/api deploy",
     "deploy:admin": "pnpm --filter @patrol-log/admin deploy",
+    "deploy:mobile:web": "pnpm --filter @patrol-log/mobile deploy:web",
     "db:generate": "pnpm --filter @patrol-log/api db:generate",
     "db:push": "pnpm --filter @patrol-log/api db:push",
     "db:seed": "pnpm --filter @patrol-log/api db:seed",
+    "db:seed:remote": "pnpm --filter @patrol-log/api db:seed:remote",
+    "db:sync:pull": "pnpm --filter @patrol-log/api db:sync:pull",
+    "db:sync:push": "pnpm --filter @patrol-log/api db:sync:push",
+    "deploy:all": "pnpm run deploy:api && pnpm run deploy:admin && pnpm run deploy:mobile:web",
     "fdl:check": "npx ai-fdl-kit check"
   },
   "devDependencies": {

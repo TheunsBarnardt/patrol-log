@@ -6,7 +6,7 @@ import { adminFetch, api, authStore } from "../lib/api";
 import { Btn, Field, Modal, inputCls } from "../components/Modal";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import type { Message as ChatMessage, MessageChannel } from "@patrol-log/shared";
+import { parseSqliteUtc, type Message as ChatMessage, type MessageChannel } from "@patrol-log/shared";
 
 function IconSearch({ className }: { className?: string }) {
   return (
@@ -59,8 +59,9 @@ function IconTrash({ className }: { className?: string }) {
   );
 }
 
+/** Same membership rules as mobile — DMs only appear for the two participants. */
 function fetchChannels() {
-  return adminFetch<{ channels: MessageChannel[] }>("/admin/messages/channels");
+  return api.messageChannels();
 }
 function fetchMessages(channelId: string) {
   return adminFetch<{ messages: ChatMessage[] }>(`/messages/${channelId}`);
@@ -82,7 +83,7 @@ function deleteChannel(channelId: string) {
 
 function formatTime(iso: string | null | undefined): string {
   if (!iso) return "";
-  const d = new Date(iso);
+  const d = parseSqliteUtc(iso) ?? new Date(iso);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -402,7 +403,7 @@ function ThreadPanel({
           <p className="truncate text-[12.5px] leading-4 text-white/80">
             {channel.kind === "group"
               ? `Group · ${channel.memberCount || "—"} participants`
-              : "Direct message"}
+              : "Private · only you two"}
           </p>
         </div>
         <button

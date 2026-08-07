@@ -3,16 +3,16 @@
     "name": "Patrol Log",
     "slug": "cpf-patrol-log",
     "owner": "cpf-patrol-log",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "patrollog",
     "icon": "./assets/app-icon.png",
     "newArchEnabled": false,
     "splash": {
-      "image": "./assets/app-icon.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1D4ED8"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": false,
@@ -28,7 +28,7 @@
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1D4ED8"
+        "backgroundColor": "#FFFFFF"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
@@ -51,7 +51,7 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#1D4ED8",
+          "color": "#0B3D8C",
           "androidMode": "default",
           "androidCollapsedTitle": "Patrol Log"
         }

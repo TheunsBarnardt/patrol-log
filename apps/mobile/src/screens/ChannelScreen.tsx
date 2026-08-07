@@ -21,8 +21,8 @@ import { api } from "../lib/api";
 import { showLocalNotification } from "../lib/notifications";
 import { useAuthStore } from "../store/auth";
 import { useMessagingStore } from "../store/messaging";
-import type { Message, MessageChannelMember } from "@patrol-log/shared";
-import { spacing } from "../theme";
+import { parseSqliteUtc, type Message, type MessageChannelMember } from "@patrol-log/shared";
+import { colors, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Channel">;
 
@@ -30,7 +30,8 @@ const POLL_MS = 2_500;
 const COMPOSE_H = 44;
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const d = parseSqliteUtc(iso) ?? new Date(iso);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function MessageBubble({
@@ -82,7 +83,8 @@ async function refreshUnreadBadge() {
 }
 
 export function ChannelScreen({ navigation, route }: Props) {
-  const { channelId, channelName, kind: kindParam, memberCount: countParam } = route.params;
+  const { channelId, kind: kindParam, memberCount: countParam } = route.params;
+  const channelName = route.params.channelName || "Chat";
   const profile = useAuthStore((s) => s.profile);
   const myId = profile?.patroller_id ?? "";
 
@@ -124,7 +126,7 @@ export function ChannelScreen({ navigation, route }: Props) {
             {channelName}
           </Text>
           <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 12 }} numberOfLines={1}>
-            {kind === "group" ? subtitle || "Group" : "Direct message"}
+            {kind === "group" ? subtitle || "Group" : "Private · only you two"}
           </Text>
         </Pressable>
       ),
@@ -201,7 +203,7 @@ export function ChannelScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <SafeAreaView style={styles.center} edges={["bottom"]}>
-        <ActivityIndicator color="#008069" />
+        <ActivityIndicator color={colors.primary} />
       </SafeAreaView>
     );
   }
@@ -237,7 +239,7 @@ export function ChannelScreen({ navigation, route }: Props) {
               <View style={styles.infoHeader}>
                 <Text style={styles.infoTitle}>{channelName}</Text>
                 <Text style={styles.infoSub}>
-                  {kind === "group" ? `Group · ${members.length} participants` : "Direct message"}
+                  {kind === "group" ? `Group · ${members.length} participants` : "Private · only you two"}
                 </Text>
               </View>
               <FlatList
@@ -275,7 +277,7 @@ export function ChannelScreen({ navigation, route }: Props) {
             style={[styles.sideBtn, urgent && styles.urgentBtnOn]}
           >
             <View style={styles.sideBtnIcon}>
-              <FontAwesome5 name="exclamation" size={14} color={urgent ? "#fff" : "#54656f"} solid />
+              <FontAwesome5 name="exclamation" size={14} color={urgent ? "#fff" : colors.textMuted} solid />
             </View>
           </Pressable>
           <TextInput
@@ -286,7 +288,7 @@ export function ChannelScreen({ navigation, route }: Props) {
               if (!v.trim()) setInputHeight(COMPOSE_H);
             }}
             placeholder="Type a message"
-            placeholderTextColor="#667781"
+            placeholderTextColor={colors.textMuted}
             // RN-web multiline (textarea) cannot vertically center glyphs reliably.
             multiline={Platform.OS !== "web"}
             maxLength={1000}
@@ -328,8 +330,8 @@ export function ChannelScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#efeae2" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#efeae2" },
+  container: { flex: 1, backgroundColor: colors.primarySoft },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.primarySoft },
   list: { padding: spacing.md, flexGrow: 1 },
   emptyWrap: {
     alignSelf: "center",
@@ -340,7 +342,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     maxWidth: 320,
   },
-  emptyText: { color: "#54656f", fontSize: 13, textAlign: "center", lineHeight: 18 },
+  emptyText: { color: colors.textMuted, fontSize: 13, textAlign: "center", lineHeight: 18 },
 
   systemRow: { alignItems: "center", marginVertical: 8 },
   systemPill: {
@@ -350,7 +352,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     maxWidth: "90%",
   },
-  systemText: { fontSize: 12.5, color: "#54656f", textAlign: "center" },
+  systemText: { fontSize: 12.5, color: colors.textMuted, textAlign: "center" },
 
   bubbleRow: { width: "100%", marginBottom: 4, flexDirection: "row" },
   bubble: {
@@ -360,21 +362,21 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     borderRadius: 8,
   },
-  bubbleMe: { backgroundColor: "#d9fdd3", borderTopRightRadius: 2 },
+  bubbleMe: { backgroundColor: colors.successSoft, borderTopRightRadius: 2 },
   bubbleThem: { backgroundColor: "#fff", borderTopLeftRadius: 2 },
   bubbleUrgent: { borderWidth: 1.5, borderColor: "#e11900" },
-  sender: { fontSize: 12.5, fontWeight: "700", color: "#008069", marginBottom: 2 },
+  sender: { fontSize: 12.5, fontWeight: "700", color: colors.primary, marginBottom: 2 },
   urgent: { fontSize: 11, fontWeight: "800", color: "#e11900", marginBottom: 2 },
-  body: { fontSize: 15, color: "#111b21", lineHeight: 20 },
+  body: { fontSize: 15, color: colors.text, lineHeight: 20 },
   metaRow: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", marginTop: 3 },
-  time: { fontSize: 11, color: "#667781" },
+  time: { fontSize: 11, color: colors.textMuted },
 
   compose: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 8,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: colors.surfaceMuted,
     gap: 8,
   },
   sideBtn: {
@@ -411,7 +413,7 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     fontSize: 15,
     lineHeight: 20,
-    color: "#111b21",
+    color: colors.text,
     includeFontPadding: false,
     textAlignVertical: "center",
   },
@@ -425,7 +427,7 @@ const styles = StyleSheet.create({
     outlineWidth: 0,
     boxSizing: "border-box",
   } as object,
-  sendBtn: { backgroundColor: "#008069" },
+  sendBtn: { backgroundColor: colors.primary },
   sendBtnDisabled: { opacity: 0.4 },
 
   infoBackdrop: {
@@ -447,9 +449,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#e9edef",
   },
-  infoTitle: { fontSize: 18, fontWeight: "700", color: "#111b21" },
-  infoSub: { marginTop: 4, fontSize: 13, color: "#667781" },
-  infoEmpty: { textAlign: "center", color: "#667781", padding: 24 },
+  infoTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
+  infoSub: { marginTop: 4, fontSize: 13, color: colors.textMuted },
+  infoEmpty: { textAlign: "center", color: colors.textMuted, padding: 24 },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -465,18 +467,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  infoAvatarText: { fontSize: 13, fontWeight: "700", color: "#54656f" },
-  infoName: { fontSize: 15, fontWeight: "600", color: "#111b21" },
-  infoCall: { fontSize: 12.5, color: "#667781", marginTop: 1 },
-  youTag: { fontSize: 12, fontWeight: "600", color: "#008069" },
+  infoAvatarText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
+  infoName: { fontSize: 15, fontWeight: "600", color: colors.text },
+  infoCall: { fontSize: 12.5, color: colors.textMuted, marginTop: 1 },
+  youTag: { fontSize: 12, fontWeight: "600", color: colors.primary },
   infoClose: {
     marginTop: 8,
     marginHorizontal: 20,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
-  infoCloseText: { fontWeight: "700", color: "#111b21" },
+  infoCloseText: { fontWeight: "700", color: colors.text },
 });

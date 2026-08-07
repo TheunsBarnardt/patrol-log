@@ -33,7 +33,7 @@ export type RootStackParamList = {
   NewGroup: undefined;
   Channel: {
     channelId: string;
-    channelName: string;
+    channelName?: string;
     kind?: "chat" | "group";
     memberCount?: number;
   };
@@ -128,10 +128,10 @@ export function RootNavigator() {
               component={MessagingScreen}
               options={{
                 title: "Chats",
-                headerStyle: { backgroundColor: "#008069" },
+                headerStyle: { backgroundColor: colors.primary },
                 headerTintColor: "#fff",
                 headerTitleStyle: { fontSize: 17, fontWeight: "700", color: "#fff" },
-                contentStyle: { backgroundColor: "#fff" },
+                contentStyle: { backgroundColor: colors.bg },
               }}
             />
             <Stack.Screen
@@ -139,21 +139,21 @@ export function RootNavigator() {
               component={NewGroupScreen}
               options={{
                 title: "New group",
-                headerStyle: { backgroundColor: "#008069" },
+                headerStyle: { backgroundColor: colors.primary },
                 headerTintColor: "#fff",
                 headerTitleStyle: { fontSize: 17, fontWeight: "700", color: "#fff" },
-                contentStyle: { backgroundColor: "#fff" },
+                contentStyle: { backgroundColor: colors.bg },
               }}
             />
             <Stack.Screen
               name="Channel"
               component={ChannelScreen}
               options={({ route }) => ({
-                title: route.params.channelName,
-                headerStyle: { backgroundColor: "#008069" },
+                title: route.params.channelName || "Chat",
+                headerStyle: { backgroundColor: colors.primary },
                 headerTintColor: "#fff",
                 headerTitleStyle: { fontSize: 17, fontWeight: "700", color: "#fff" },
-                contentStyle: { backgroundColor: "#efeae2" },
+                contentStyle: { backgroundColor: colors.primarySoft },
               })}
             />
           </>

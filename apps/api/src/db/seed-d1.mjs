@@ -54,8 +54,9 @@ async function main() {
 
   const db = drizzle(mf.d1("patrol-log-local"), { schema });
 
-  console.log("[seed] wipping existing demo data...");
-  // Delete in reverse dependency order
+  console.log("[seed] wiping existing demo data...");
+  // Delete in reverse dependency order.
+  // NEVER delete systemBackups — seed must not destroy restore points.
   await db.delete(schema.messageChannelMembers);
   await db.delete(schema.messageReads);
   await db.delete(schema.messages);
@@ -77,6 +78,7 @@ async function main() {
   await db.delete(schema.patrollers);
   await db.delete(schema.sectors);
   await db.delete(schema.cpfs);
+  // schema.systemBackups intentionally NOT deleted
 
   console.log("[seed] inserting CPF + sector...");
   const cpfId = uuid();

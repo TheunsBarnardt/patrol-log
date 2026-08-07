@@ -35,13 +35,16 @@ export const sectors = sqliteTable("sectors", {
     .notNull()
     .references(() => cpfs.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  // Store as TEXT in SQLite; parsed as GeoJSONPolygon in app logic
+  /** Short tenant code e.g. WBS1 / WBS2 / WBS3 */
+  code: text("code"),
+  /** Legacy column — unused (boundary drawing removed). Kept for D1 compatibility. */
   boundaries: text("boundaries", { mode: "json" }).$type<GeoJSONPolygon | null>().default(null),
   createdAt: text("created_at")
     .notNull()
     .default(sql`datetime('now')`),
 }, (t) => ({
   cpfIdx: index("sectors_cpf_idx").on(t.cpfId),
+  codeCpfIdx: uniqueIndex("sectors_code_cpf_idx").on(t.cpfId, t.code),
 }));
 
 // ── Patrollers ───────────────────────────────────────────
@@ -55,7 +58,7 @@ export const patrollers = sqliteTable("patrollers", {
   accessLevel: text("access_level")
     .notNull()
     .default("patroller")
-    .$type<"call_centre_agent" | "patroller" | "sector_lead" | "admin">(),
+    .$type<"call_centre_agent" | "patroller" | "sector_lead" | "admin" | "system_admin">(),
   status: text("status")
     .notNull()
     .default("active")
@@ -170,7 +173,7 @@ export const patrols = sqliteTable("patrols", {
     .references(() => patrollers.id),
   patrolType: text("patrol_type")
     .notNull()
-    .$type<"foot" | "vehicle" | "static">(),
+    .$type<"foot" | "vehicle" | "static" | "sector_monitoring" | "ops" | "responding">(),
   vehicleId: text("vehicle_id").references(() => vehicles.id),
   odometerStart: integer("odometer_start"),
   odometerEnd: integer("odometer_end"),
@@ -332,7 +335,35 @@ export const emergencyServices = sqliteTable("emergency_services", {
   cpfIdx: index("emergency_services_cpf_idx").on(t.cpfId),
 }));
 
-// ── Incidents (for hotspots) ─────────────────────────────
+// ── Managed hotspots (admin-defined risk areas) ──────────
+export const hotspots = sqliteTable("hotspots", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  sectorId: text("sector_id")
+    .notNull()
+    .references(() => sectors.id),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  /** Risk rating 1 (low) – 5 (critical) */
+  rating: integer("rating").notNull().default(3),
+  /** Circle diameter in kilometres */
+  diameterKm: real("diameter_km").notNull().default(0.5),
+  lat: real("lat").notNull(),
+  lng: real("lng").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  cpfIdx: index("hotspots_cpf_idx").on(t.cpfId),
+  sectorIdx: index("hotspots_sector_idx").on(t.sectorId),
+}));
+
+// ── Incidents (legacy / seed demo pins) ──────────────────
 export const incidents = sqliteTable("incidents", {
   id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
   cpfId: text("cpf_id")
@@ -445,4 +476,24 @@ export const messageChannelMembers = sqliteTable("message_channel_members", {
     .references(() => patrollers.id, { onDelete: "cascade" }),
 }, (t) => ({
   pk: primaryKey({ columns: [t.channelId, t.patrollerId] }),
+}));
+
+/**
+ * System backups — NEVER wiped by seed scripts.
+ * Seed and demo resets must leave this table untouched.
+ */
+export const systemBackups = sqliteTable("system_backups", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+  createdByCallSign: text("created_by_call_sign").notNull(),
+  createdByPatrollerId: text("created_by_patroller_id"),
+  label: text("label"),
+  byteSize: integer("byte_size").notNull().default(0),
+  tableCounts: text("table_counts", { mode: "json" }).$type<Record<string, number>>(),
+  /** Full JSON backup payload. Seed must never DELETE this table. */
+  payload: text("payload").notNull(),
+}, (t) => ({
+  createdIdx: index("system_backups_created_idx").on(t.createdAt),
 }));

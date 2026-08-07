@@ -10,6 +10,9 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "wrangler d1 push patrol-log-db --local",
     "db:seed": "node src/db/seed-d1.mjs",
+    "db:seed:remote": "node src/db/seed-remote.mjs",
+    "db:sync:pull": "node src/db/sync-d1.mjs pull",
+    "db:sync:push": "node src/db/sync-d1.mjs push",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

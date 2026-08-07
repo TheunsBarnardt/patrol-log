@@ -5,7 +5,7 @@ import { FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
-import { radii, spacing } from "../theme";
+import { colors, radii, spacing } from "../theme";
 import type { ResidentRecord } from "@patrol-log/shared";
 
 export function ResidentsScreen() {
@@ -28,13 +28,13 @@ export function ResidentsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={styles.searchWrap}>
-        <FontAwesome5 name="search" size={14} color="#667781" />
+        <FontAwesome5 name="search" size={14} color={colors.textMuted} />
         <TextInput
           style={styles.searchInput}
           value={q}
           onChangeText={setQ}
           placeholder="Search name, phone or address"
-          placeholderTextColor="#667781"
+          placeholderTextColor={colors.textMuted}
         />
       </View>
       <FlatList
@@ -56,7 +56,7 @@ export function ResidentsScreen() {
             <View style={styles.body}>
               <View style={styles.topLine}>
                 <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
-                <FontAwesome5 name="phone-alt" size={14} color="#008069" solid />
+                <FontAwesome5 name="phone-alt" size={14} color={colors.primary} solid />
               </View>
               <Text style={styles.preview} numberOfLines={1}>{item.phone}</Text>
               <Text style={styles.preview} numberOfLines={1}>{item.address}</Text>
@@ -73,15 +73,15 @@ const styles = StyleSheet.create({
   searchWrap: {
     marginHorizontal: spacing.md,
     marginVertical: spacing.sm,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
     paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: "#111b21" },
-  empty: { textAlign: "center", color: "#667781", marginTop: 40, fontWeight: "500" },
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text },
+  empty: { textAlign: "center", color: colors.textMuted, marginTop: 40, fontWeight: "500" },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { fontSize: 18, fontWeight: "700", color: "#54656f" },
+  avatarText: { fontSize: 18, fontWeight: "700", color: colors.textMuted },
   body: {
     flex: 1,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -106,6 +106,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   topLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  name: { flex: 1, fontSize: 16, fontWeight: "600", color: "#111b21" },
-  preview: { marginTop: 2, fontSize: 14, color: "#667781" },
+  name: { flex: 1, fontSize: 16, fontWeight: "600", color: colors.text },
+  preview: { marginTop: 2, fontSize: 14, color: colors.textMuted },
 });

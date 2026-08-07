@@ -1,8 +1,18 @@
 // FDL: blueprints/workflow/stand-down-patrol.blueprint.yaml
 
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome5 } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
@@ -11,7 +21,12 @@ import { notify } from "../lib/notify";
 import { startHeartbeat, stopHeartbeat } from "../lib/heartbeat";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
-import type { ActivePatrolResponse, GeoPoint } from "@patrol-log/shared";
+import {
+  patrolTypeRequiresVehicle,
+  type ActivePatrolResponse,
+  type GeoPoint,
+  type MemberRecord,
+} from "@patrol-log/shared";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ActivePatrol">;
 
@@ -19,9 +34,16 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   const { patrolId } = route.params;
   const [patrol, setPatrol] = useState<ActivePatrolResponse | null>(null);
   const [odometerEnd, setOdometerEnd] = useState("");
+  const [distanceKm, setDistanceKm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [memberQuery, setMemberQuery] = useState("");
+  const [memberResults, setMemberResults] = useState<MemberRecord[]>([]);
+  const [addingMember, setAddingMember] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deviceToken = useAuthStore((s) => s.deviceToken);
+  const profile = useAuthStore((s) => s.profile);
 
   const refresh = useCallback(async () => {
     try {
@@ -36,9 +58,6 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     void refresh();
   }, [refresh]);
 
-  // Re-start the heartbeat loop whenever this screen mounts with an active patrol.
-  // This matters when the app was killed/backgrounded — the in-memory setInterval
-  // from startHeartbeat() dies, so the live-map pin freezes until we re-arm it.
   useEffect(() => {
     if (!deviceToken) return;
     const jti = decodeJti(deviceToken);
@@ -46,12 +65,61 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     void startHeartbeat(patrolId, jti);
   }, [patrolId, deviceToken]);
 
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!memberQuery || memberQuery.length < 2) {
+      setMemberResults([]);
+      return;
+    }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const r = await api.members(memberQuery);
+        const joinedSigns = new Set((patrol?.joined_patrollers ?? []).map((j) => j.call_sign));
+        setMemberResults(
+          r.results.filter(
+            (m) =>
+              m.call_sign !== profile?.call_sign &&
+              m.call_sign !== patrol?.primary_patroller_call_sign &&
+              !joinedSigns.has(m.call_sign),
+          ),
+        );
+      } catch {
+        setMemberResults([]);
+      }
+    }, 300);
+  }, [memberQuery, patrol, profile]);
+
+  async function addPassenger(m: MemberRecord) {
+    if (!patrol) return;
+    setAddingMember(true);
+    setError(null);
+    try {
+      const updated = await api.addPatrolMembers(patrol.patrol_id, { call_signs: [m.call_sign] });
+      setPatrol(updated);
+      setMemberQuery("");
+      setMemberResults([]);
+      notify("Passenger added", `${m.call_sign} joined this patrol.`);
+    } catch (err: any) {
+      const msg = err?.body?.message ?? err?.message ?? "Unable to add passenger.";
+      setError(msg);
+      notify("Could not add", msg);
+    } finally {
+      setAddingMember(false);
+    }
+  }
+
   async function standDownSelf() {
     if (!patrol) return;
 
-    const isVehicle = patrol.patrol_type === "vehicle";
+    const isPrimary = patrol.my_role === "primary";
+    const isVehicle = patrolTypeRequiresVehicle(patrol.patrol_type);
+    const useOdometer = isPrimary && isVehicle && patrol.odometer_start != null;
+    const useDistance = isPrimary && isVehicle && patrol.odometer_start == null;
+
     const endOdo = odometerEnd.trim() === "" ? NaN : Number(odometerEnd);
-    if (isVehicle) {
+    const dist = distanceKm.trim() === "" ? NaN : Number(distanceKm);
+
+    if (useOdometer) {
       if (!Number.isFinite(endOdo)) {
         const msg = "Enter the end odometer reading before standing down.";
         setError(msg);
@@ -66,12 +134,22 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
       }
     }
 
+    if (useDistance) {
+      if (!Number.isFinite(dist) || dist < 0) {
+        const msg = "Enter kilometres travelled before standing down.";
+        setError(msg);
+        notify("Stand down", msg);
+        return;
+      }
+    }
+
     setBusy(true);
     setError(null);
     try {
       const loc = await captureGps();
       await api.standDown(patrol.patrol_id, {
-        odometer_end: isVehicle ? endOdo : undefined,
+        odometer_end: useOdometer ? endOdo : undefined,
+        distance_km: useDistance ? Math.round(dist) : undefined,
         end_location: loc,
       });
       stopHeartbeat();
@@ -93,20 +171,24 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     );
   }
 
-  const isVehicle = patrol.patrol_type === "vehicle";
+  const isPrimary = patrol.my_role === "primary";
+  const isVehicle = patrolTypeRequiresVehicle(patrol.patrol_type);
+  const useOdometer = isPrimary && isVehicle && patrol.odometer_start != null;
+  const useDistance = isPrimary && isVehicle && patrol.odometer_start == null;
+  const activeJoined = patrol.joined_patrollers.filter((jp) => !jp.end_time);
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
         <Text style={styles.section}>Patrollers</Text>
         <View style={styles.divider} />
 
         <View style={styles.card}>
           <Text style={styles.cardHead}>{patrol.primary_patroller_call_sign}</Text>
-          <Text style={styles.cardLine}>Primary</Text>
+          <Text style={styles.cardLine}>Primary{isPrimary ? " (you)" : ""}</Text>
           <Text style={styles.cardLine}>Start Time: {formatTime(patrol.start_time)}</Text>
 
-          {isVehicle && (
+          {useOdometer && (
             <>
               <View style={styles.odoHint}>
                 <Text style={styles.odoHintText}>
@@ -129,6 +211,34 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
             </>
           )}
 
+          {useDistance && (
+            <>
+              <View style={styles.odoHint}>
+                <Text style={styles.odoHintText}>
+                  No start odometer was recorded. Enter kilometres travelled on this patrol.
+                </Text>
+              </View>
+              <Text style={[styles.cardLine, { marginTop: spacing.sm, fontWeight: "700" }]}>
+                Km travelled
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={distanceKm}
+                onChangeText={(v) => { setDistanceKm(v); setError(null); }}
+                placeholder="e.g. 12"
+                keyboardType="numeric"
+              />
+            </>
+          )}
+
+          {!isPrimary && (
+            <View style={styles.odoHint}>
+              <Text style={styles.odoHintText}>
+                You are a passenger on this patrol. Stand down when you leave — no kilometres needed.
+              </Text>
+            </View>
+          )}
+
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity style={[styles.standDownPrimary, busy && { opacity: 0.6 }]} onPress={standDownSelf} disabled={busy}>
@@ -136,24 +246,76 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
 
-        {patrol.joined_patrollers.length > 0 && (
+        {isPrimary && (
+          <>
+            <Text style={styles.section}>Add passenger</Text>
+            <View style={styles.divider} />
+            <View style={styles.searchField}>
+              <FontAwesome5 name="search" size={14} color={colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                value={memberQuery}
+                onChangeText={setMemberQuery}
+                placeholder="Search name or call sign"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+              />
+            </View>
+            {searchFocused && memberResults.length > 0 && (
+              <View style={styles.results}>
+                {memberResults.slice(0, 6).map((m) => (
+                  <Pressable
+                    key={m.member_id}
+                    style={[styles.resultRow, addingMember && { opacity: 0.5 }]}
+                    onPress={() => void addPassenger(m)}
+                    disabled={addingMember}
+                  >
+                    <Text style={styles.resultCs}>{m.call_sign}</Text>
+                    <Text style={styles.resultName}>{m.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </>
+        )}
+
+        {activeJoined.length > 0 && (
           <>
             <Text style={styles.section}>Joined Patrollers</Text>
             <View style={styles.divider} />
-            {patrol.joined_patrollers.map((jp) => (
+            {activeJoined.map((jp) => (
               <View style={styles.card} key={jp.call_sign}>
                 <Text style={styles.cardHead}>{jp.call_sign}</Text>
                 <Text style={styles.cardLine}>{jp.name}</Text>
                 <Text style={styles.cardLine}>Start Time: {formatTime(jp.start_time)}</Text>
-                {jp.end_time ? (
-                  <Text style={[styles.cardLine, { color: colors.textMuted }]}>Stood down at {formatTime(jp.end_time)}</Text>
-                ) : (
-                  <View style={[styles.standDownJoined]}>
-                    <Text style={styles.standDownText}>(joined patroller stands down from their own device)</Text>
-                  </View>
-                )}
+                <View style={styles.standDownJoined}>
+                  <Text style={styles.joinedHint}>
+                    {jp.call_sign === profile?.call_sign
+                      ? "Stand down with the button above"
+                      : "(stands down from their own device)"}
+                  </Text>
+                </View>
               </View>
             ))}
+          </>
+        )}
+
+        {patrol.joined_patrollers.some((jp) => jp.end_time) && (
+          <>
+            <Text style={[styles.section, { color: colors.textMuted }]}>Stood down</Text>
+            <View style={styles.divider} />
+            {patrol.joined_patrollers
+              .filter((jp) => jp.end_time)
+              .map((jp) => (
+                <View style={styles.card} key={`${jp.call_sign}-done`}>
+                  <Text style={[styles.cardHead, { color: colors.textMuted }]}>{jp.call_sign}</Text>
+                  <Text style={[styles.cardLine, { color: colors.textMuted }]}>
+                    Stood down at {formatTime(jp.end_time!)}
+                  </Text>
+                </View>
+              ))}
           </>
         )}
       </ScrollView>
@@ -182,7 +344,7 @@ async function captureGps(): Promise<GeoPoint | undefined> {
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
+  const d = new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + (iso.endsWith("Z") ? "" : "Z"));
   return `${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${d.toISOString().slice(0, 10)}`;
 }
 
@@ -198,7 +360,6 @@ function decodeJti(jwt: string): string | null {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  title: { fontSize: 24, fontWeight: "800", textAlign: "center", marginBottom: spacing.md },
   section: { fontSize: 18, fontWeight: "700", marginTop: spacing.md },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
   card: { paddingVertical: spacing.sm, marginBottom: spacing.sm },
@@ -218,6 +379,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 28,
     alignItems: "center",
+    marginTop: spacing.sm,
   },
   standDownJoined: {
     backgroundColor: colors.surfaceMuted,
@@ -227,6 +389,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   standDownText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  joinedHint: { color: colors.textMuted, fontWeight: "600", fontSize: 13, textAlign: "center" },
   errorText: { color: colors.danger, fontWeight: "600", fontSize: 14, marginBottom: spacing.sm },
   odoHint: {
     backgroundColor: colors.surfaceMuted,
@@ -235,4 +398,33 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   odoHintText: { color: colors.text, fontWeight: "600", fontSize: 14, lineHeight: 20 },
+  searchField: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  searchInput: { flex: 1, fontSize: 16, color: colors.text, padding: 0 },
+  results: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.cardBg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  resultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  resultCs: { fontWeight: "800", fontSize: 14, color: colors.primary, minWidth: 56 },
+  resultName: { flex: 1, fontSize: 14, color: colors.text },
 });

@@ -2,6 +2,9 @@
 // FDL: errors[].code sections of blueprints/**
 
 export const ERROR_CODES = {
+  // generic transport / non-JSON failures (never used to force logout)
+  API_UNAVAILABLE: { status: 503, message: "Service temporarily unavailable. Please try again." },
+
   // auth/patroller-login
   LOGIN_INVALID_CREDENTIALS: { status: 401, message: "Invalid call sign or password" },
   LOGIN_MISSING_INPUT: { status: 422, message: "Call sign and password are both required" },
@@ -13,8 +16,8 @@ export const ERROR_CODES = {
   // workflow/commence-patrol
   COMMENCE_UNAUTHORIZED: { status: 403, message: "Your access level does not permit commencing a patrol" },
   ACCESS_FORBIDDEN: { status: 403, message: "You do not have permission for this action" },
-  COMMENCE_INVALID_PATROL_TYPE: { status: 422, message: "Select a valid patrol type (foot, vehicle, or static)" },
-  COMMENCE_VEHICLE_REQUIRED: { status: 422, message: "Vehicle patrols require a patrol vehicle" },
+  COMMENCE_INVALID_PATROL_TYPE: { status: 422, message: "Select a valid patrol type (foot, vehicle, static, sector monitoring, OPS, or responding)" },
+  COMMENCE_VEHICLE_REQUIRED: { status: 422, message: "Choose a vehicle for this patrol type" },
   COMMENCE_ALREADY_ON_PATROL: { status: 409, message: "You are already on an active patrol" },
   COMMENCE_INVALID_VEHICLE: { status: 422, message: "Selected vehicle is not available for your sector" },
   COMMENCE_VEHICLE_IN_USE: { status: 409, message: "This vehicle is already on another active patrol" },
@@ -29,16 +32,25 @@ export const ERROR_CODES = {
   STAND_DOWN_NOT_ON_PATROL: { status: 409, message: "You are not on any active patrol" },
   STAND_DOWN_ALREADY_STOOD_DOWN: { status: 409, message: "Stand down already recorded" },
   STAND_DOWN_ODOMETER_END_REQUIRED: { status: 422, message: "Enter the odometer reading before standing down" },
+  STAND_DOWN_DISTANCE_REQUIRED: { status: 422, message: "Enter kilometres travelled before standing down" },
   STAND_DOWN_ODOMETER_END_LESS_THAN_START: { status: 422, message: "End odometer must be greater than the starting odometer" },
   STAND_DOWN_HANDOFF_NO_CANDIDATES: { status: 409, message: "No joined patrollers remain to take over" },
   STAND_DOWN_HANDOFF_NEW_PRIMARY_INVALID: { status: 422, message: "The nominated new primary is not eligible" },
   STAND_DOWN_UNAUTHORIZED: { status: 403, message: "You do not have permission to stand down another patroller" },
+  PATROL_NOT_FOUND: { status: 404, message: "Patrol not found" },
+  PATROL_INVALID_INPUT: { status: 422, message: "Check patrol type, times, odometer, and state" },
+  SECTOR_NOT_FOUND: { status: 404, message: "Sector not found" },
+  SECTOR_INVALID_INPUT: { status: 422, message: "Enter a sector name (and optional code e.g. WBS4)" },
+  SECTOR_DUPLICATE_CODE: { status: 409, message: "That sector code is already in use" },
+  SECTOR_HAS_MEMBERS: { status: 409, message: "Move or reassign members before deleting this sector" },
 
   // data/hotspots-map
   HOTSPOTS_UNAUTHENTICATED: { status: 401, message: "Please log in to view hotspots" },
   HOTSPOTS_INVALID_PERIOD: { status: 422, message: "Select a valid time period" },
   HOTSPOTS_INCIDENTS_API_UNAVAILABLE: { status: 503, message: "Incident data is unavailable. Please try again shortly." },
   HOTSPOTS_MAP_PROVIDER_UNAVAILABLE: { status: 503, message: "Map provider unavailable" },
+  HOTSPOTS_NOT_FOUND: { status: 404, message: "Hotspot not found" },
+  HOTSPOTS_INVALID_INPUT: { status: 422, message: "Check title, rating (1–5), diameter (km), and location" },
 
   // data/residents-directory
   RESIDENTS_UNAUTHORIZED: { status: 401, message: "Please log in to view residents" },
@@ -52,6 +64,8 @@ export const ERROR_CODES = {
   MEMBERS_RATE_LIMITED: { status: 429, message: "Too many searches. Please wait a moment." },
   MEMBERS_SEARCH_TERM_TOO_SHORT: { status: 422, message: "Search term must be at least 2 characters" },
   MEMBERS_NO_RESULTS: { status: 404, message: "No members found" },
+  MEMBERS_DUPLICATE_CALL_SIGN: { status: 409, message: "That call sign is already in use" },
+  MEMBERS_INVALID_CALL_SIGN: { status: 422, message: "Enter a valid call sign (at least 2 characters)" },
 
   // data/emergency-contacts-directory
   EMERGENCY_UNAUTHORIZED: { status: 401, message: "Please log in" },
@@ -62,7 +76,8 @@ export const ERROR_CODES = {
   // data/live-patroller-map
   LIVE_MAP_UNAUTHORIZED: { status: 403, message: "Live map is only available to active patrollers and dispatch" },
   LIVE_MAP_HEARTBEAT_RATE_LIMITED: { status: 429, message: "Heartbeat rate limited" },
-  LIVE_MAP_HEARTBEAT_INVALID_SIGNATURE: { status: 401, message: "Heartbeat signature is invalid" },
+  // 403 (not 401): invalid signature must NOT force client logout / re-login
+  LIVE_MAP_HEARTBEAT_INVALID_SIGNATURE: { status: 403, message: "Heartbeat signature is invalid" },
   LIVE_MAP_HEARTBEAT_PATROL_NOT_ACTIVE: { status: 409, message: "Patrol is not in active state" },
   LIVE_MAP_REALTIME_CHANNEL_DOWN: { status: 503, message: "Realtime channel unavailable. Falling back to polling." },
 } as const;

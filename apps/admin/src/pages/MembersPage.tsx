@@ -1,30 +1,58 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { adminFetch } from "../lib/api";
+import { adminFetch, authStore } from "../lib/api";
 import { DataTable, PageHeader, RowActions, StatusBadge } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
 import { parseCsv, CsvImportButton } from "../components/CsvImport";
 
 interface Member {
   id: string; callSign: string; name: string; phone: string | null; address: string | null;
-  accessLevel: "call_centre_agent" | "patroller" | "sector_lead" | "admin";
+  sectorId: string;
+  sectorCode?: string | null;
+  sectorName?: string | null;
+  accessLevel: "call_centre_agent" | "patroller" | "sector_lead" | "admin" | "system_admin";
   status: "active" | "inactive" | "suspended";
+}
+
+interface SectorOption {
+  id: string;
+  name: string;
+  code: string | null;
 }
 
 const ACCESS_LEVELS = [
   { value: "patroller", label: "Patroller" },
   { value: "call_centre_agent", label: "Call centre agent" },
   { value: "sector_lead", label: "Sector lead" },
-  { value: "admin", label: "Admin" },
+  { value: "admin", label: "Admin (sector)" },
+  { value: "system_admin", label: "System admin (all sectors)" },
 ] as const;
 
 const STATUSES = ["active", "inactive", "suspended"] as const;
 
-const EMPTY_ADD = { call_sign: "", name: "", phone: "", address: "", password: "", access_level: "patroller" as Member["accessLevel"] };
-const EMPTY_EDIT = { name: "", phone: "", address: "", status: "active" as Member["status"], access_level: "patroller" as Member["accessLevel"], password: "" };
+const EMPTY_ADD = {
+  call_sign: "",
+  name: "",
+  phone: "",
+  address: "",
+  password: "",
+  access_level: "patroller" as Member["accessLevel"],
+  sector_id: "",
+};
+const EMPTY_EDIT = {
+  call_sign: "",
+  name: "",
+  phone: "",
+  address: "",
+  status: "active" as Member["status"],
+  access_level: "patroller" as Member["accessLevel"],
+  password: "",
+  sector_id: "",
+};
 
 export function MembersPage() {
   const qc = useQueryClient();
+  const isSysAdmin = authStore.getProfile()?.access_level === "system_admin";
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [editRow, setEditRow] = useState<Member | null>(null);
@@ -35,14 +63,46 @@ export function MembersPage() {
     queryKey: ["admin.members"],
     queryFn: () => adminFetch<{ results: Member[] }>("/admin/members"),
   });
+  const { data: sectorsData } = useQuery({
+    queryKey: ["admin.sectors"],
+    queryFn: () => adminFetch<{ results: SectorOption[] }>("/admin/sectors"),
+    retry: false,
+  });
+  const sectors = sectorsData?.results ?? [];
+  const sectorLabel = (r: Member) => {
+    if (r.sectorCode || r.sectorName) return r.sectorCode || r.sectorName || "—";
+    const s = sectors.find((x) => x.id === r.sectorId);
+    return s ? s.code || s.name : "—";
+  };
 
   const create = useMutation({
-    mutationFn: (body: typeof EMPTY_ADD) => adminFetch<Member>("/admin/members", { method: "POST", body: JSON.stringify(body) }),
+    mutationFn: (body: typeof EMPTY_ADD) =>
+      adminFetch<Member>("/admin/members", {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          sector_id: body.sector_id || undefined,
+        }),
+      }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin.members"] }); setAddOpen(false); setAddForm(EMPTY_ADD); },
   });
   const update = useMutation({
-    mutationFn: (body: typeof EMPTY_EDIT & { id: string }) =>
-      adminFetch(`/admin/members/${body.id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    mutationFn: (body: typeof EMPTY_EDIT & { id: string }) => {
+      const payload: Record<string, unknown> = {
+        name: body.name,
+        phone: body.phone,
+        address: body.address,
+        status: body.status,
+        access_level: body.access_level,
+        sector_id: body.sector_id || undefined,
+      };
+      if (body.password) payload.password = body.password;
+      if (isSysAdmin && body.call_sign.trim()) payload.call_sign = body.call_sign.trim().toUpperCase();
+      return adminFetch(`/admin/members/${body.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin.members"] }); setEditRow(null); },
   });
   const importMut = useMutation({
@@ -63,7 +123,16 @@ export function MembersPage() {
 
   function openEdit(r: Member) {
     setEditRow(r);
-    setEditForm({ name: r.name, phone: r.phone ?? "", address: r.address ?? "", status: r.status, access_level: r.accessLevel, password: "" });
+    setEditForm({
+      call_sign: r.callSign,
+      name: r.name,
+      phone: r.phone ?? "",
+      address: r.address ?? "",
+      status: r.status,
+      access_level: r.accessLevel,
+      password: "",
+      sector_id: r.sectorId,
+    });
   }
 
   function handleImport(file: File) {
@@ -106,6 +175,7 @@ export function MembersPage() {
           columns={[
             { header: "Call sign", render: (r) => <span className="font-mono font-bold">{r.callSign}</span> },
             { header: "Name", render: (r) => <span className="font-medium">{r.name}</span> },
+            { header: "Sector", render: (r) => <span className="font-mono text-xs">{sectorLabel(r)}</span> },
             { header: "Phone", render: (r) => r.phone ?? "—" },
             { header: "Access", render: (r) => <span className="capitalize text-xs">{r.accessLevel.replace(/_/g, " ")}</span> },
             { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
@@ -144,6 +214,22 @@ export function MembersPage() {
           <Field label="Phone">
             <input className={inputCls} value={addForm.phone} onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })} />
           </Field>
+          {sectors.length > 0 && (
+            <div className="col-span-2">
+              <Field label="Sector">
+                <select
+                  className={selectCls}
+                  value={addForm.sector_id}
+                  onChange={(e) => setAddForm({ ...addForm, sector_id: e.target.value })}
+                >
+                  <option value="">My sector (default)</option>
+                  {sectors.map((s) => (
+                    <option key={s.id} value={s.id}>{s.code || s.name}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          )}
           <div className="col-span-2">
             <Field label="Address">
               <input className={inputCls} value={addForm.address} onChange={(e) => setAddForm({ ...addForm, address: e.target.value })} />
@@ -172,7 +258,23 @@ export function MembersPage() {
           </>
         }
       >
+        {update.error instanceof Error && (
+          <p className="mb-3 text-sm text-red-600">{update.error.message}</p>
+        )}
         <div className="grid grid-cols-2 gap-x-4">
+          {isSysAdmin ? (
+            <Field label="Call sign" required>
+              <input
+                className={`${inputCls} uppercase`}
+                value={editForm.call_sign}
+                onChange={(e) => setEditForm({ ...editForm, call_sign: e.target.value.toUpperCase() })}
+              />
+            </Field>
+          ) : (
+            <Field label="Call sign">
+              <input className={`${inputCls} uppercase bg-gray-50`} value={editForm.call_sign} disabled readOnly />
+            </Field>
+          )}
           <Field label="Full name" required>
             <input className={inputCls} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
           </Field>
@@ -189,6 +291,21 @@ export function MembersPage() {
               {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
+          {sectors.length > 0 && (
+            <div className="col-span-2">
+              <Field label="Sector">
+                <select
+                  className={selectCls}
+                  value={editForm.sector_id}
+                  onChange={(e) => setEditForm({ ...editForm, sector_id: e.target.value })}
+                >
+                  {sectors.map((s) => (
+                    <option key={s.id} value={s.id}>{s.code || s.name}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          )}
           <div className="col-span-2">
             <Field label="Address">
               <input className={inputCls} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />

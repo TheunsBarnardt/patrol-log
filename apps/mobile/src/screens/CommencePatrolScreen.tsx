@@ -22,7 +22,13 @@ import { notify } from "../lib/notify";
 import { startHeartbeat } from "../lib/heartbeat";
 import { useAuthStore } from "../store/auth";
 import { colors, radii, spacing } from "../theme";
-import type { GeoPoint, MemberRecord, PatrolType, VehicleRecord } from "@patrol-log/shared";
+import {
+  patrolTypeRequiresVehicle,
+  type GeoPoint,
+  type MemberRecord,
+  type PatrolType,
+  type VehicleRecord,
+} from "@patrol-log/shared";
 
 type Props = NativeStackScreenProps<RootStackParamList, "CommencePatrol">;
 type IconName = ComponentProps<typeof FontAwesome5>["name"];
@@ -31,6 +37,9 @@ const PATROL_TYPES: { type: PatrolType; label: string; icon: IconName }[] = [
   { type: "foot", label: "Foot", icon: "walking" },
   { type: "vehicle", label: "Vehicle", icon: "car" },
   { type: "static", label: "Static", icon: "map-marker-alt" },
+  { type: "sector_monitoring", label: "Monitoring", icon: "eye" },
+  { type: "ops", label: "OPS", icon: "broadcast-tower" },
+  { type: "responding", label: "Responding", icon: "bolt" },
 ];
 
 export function CommencePatrolScreen({ navigation }: Props) {
@@ -125,12 +134,9 @@ export function CommencePatrolScreen({ navigation }: Props) {
       setFormError("Choose a patrol type.");
       return;
     }
-    if (patrolType === "vehicle" && !selectedVehicle) {
+    const needsVehicle = patrolTypeRequiresVehicle(patrolType);
+    if (needsVehicle && !selectedVehicle) {
       setFormError("Choose or add your vehicle.");
-      return;
-    }
-    if (patrolType === "vehicle" && !odometerStart.trim()) {
-      setFormError("Enter your starting odometer reading.");
       return;
     }
 
@@ -141,7 +147,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
       const res = await api.commencePatrol({
         joined_patroller_call_signs: selectedMembers.map((m) => m.call_sign),
         patrol_type: patrolType,
-        patrol_vehicle: patrolType === "vehicle" ? selectedVehicle!.id : undefined,
+        patrol_vehicle: needsVehicle ? selectedVehicle!.id : undefined,
         odometer_start: odometerStart ? Number(odometerStart) : undefined,
         start_location: startLocation,
       });
@@ -161,7 +167,8 @@ export function CommencePatrolScreen({ navigation }: Props) {
   }
 
   const availableVehicles = vehicles.filter((v) => v.status === "available");
-  const canStart = !!patrolType && !(patrolType === "vehicle" && (!selectedVehicle || !odometerStart.trim()));
+  const needsVehicle = !!patrolType && patrolTypeRequiresVehicle(patrolType);
+  const canStart = !!patrolType && !(needsVehicle && !selectedVehicle);
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
@@ -172,13 +179,17 @@ export function CommencePatrolScreen({ navigation }: Props) {
       >
         <Text style={styles.headline}>How are you{"\n"}patrolling?</Text>
 
-        <View style={styles.typeList}>
+        <View style={styles.typeGrid}>
           {PATROL_TYPES.map(({ type, label, icon }) => {
             const active = patrolType === type;
             return (
               <Pressable
                 key={type}
-                style={({ pressed }) => [styles.typeRow, active && styles.typeRowActive, pressed && styles.pressedSoft]}
+                style={({ pressed }) => [
+                  styles.typeCard,
+                  active && styles.typeCardActive,
+                  pressed && styles.pressedSoft,
+                ]}
                 onPress={() => {
                   setPatrolType(type);
                   setSelectedVehicle(null);
@@ -188,16 +199,15 @@ export function CommencePatrolScreen({ navigation }: Props) {
                 <View style={[styles.typeIcon, active && styles.typeIconActive]}>
                   <FontAwesome5 name={icon} size={16} color={active ? "#fff" : colors.text} solid />
                 </View>
-                <Text style={[styles.typeLabel, active && styles.typeLabelActive]}>{label}</Text>
-                <View style={[styles.radio, active && styles.radioActive]}>
-                  {active && <View style={styles.radioDot} />}
-                </View>
+                <Text style={[styles.typeLabel, active && styles.typeLabelActive]} numberOfLines={1}>
+                  {label}
+                </Text>
               </Pressable>
             );
           })}
         </View>
 
-        {patrolType === "vehicle" && (
+        {needsVehicle && (
           <View style={styles.block}>
             <Text style={styles.blockTitle}>Vehicle</Text>
             <Pressable style={styles.fieldBtn} onPress={() => setVehiclePickerOpen(true)}>
@@ -208,13 +218,13 @@ export function CommencePatrolScreen({ navigation }: Props) {
                     ? "Add your vehicle"
                     : "Choose vehicle"}
               </Text>
-              <FontAwesome5 name="chevron-right" size={12} color="#B3B3B3" />
+              <FontAwesome5 name="chevron-right" size={12} color={colors.textMuted} />
             </Pressable>
             {!!selectedVehicle?.description && (
               <Text style={styles.fieldHint}>{selectedVehicle.description}</Text>
             )}
 
-            <Text style={[styles.blockTitle, { marginTop: spacing.lg }]}>Odometer start</Text>
+            <Text style={[styles.blockTitle, { marginTop: spacing.lg }]}>Odometer start (optional)</Text>
             <TextInput
               style={styles.fieldInput}
               value={odometerStart}
@@ -225,22 +235,24 @@ export function CommencePatrolScreen({ navigation }: Props) {
                   ? `Last ${selectedVehicle.lastOdometer.toLocaleString()} km`
                   : "Enter reading"
               }
-              placeholderTextColor="#AFAFAF"
+              placeholderTextColor={colors.textMuted}
             />
-            <Text style={styles.fieldHint}>Required before you can start.</Text>
+            <Text style={styles.fieldHint}>
+              Optional. Fill in for tax/odometer tracking — otherwise you’ll enter km travelled when you stand down.
+            </Text>
           </View>
         )}
 
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Who’s joining?</Text>
           <View style={styles.searchField}>
-            <FontAwesome5 name="search" size={14} color="#AFAFAF" />
+            <FontAwesome5 name="search" size={14} color={colors.textMuted} />
             <TextInput
               style={styles.searchInput}
               value={memberQuery}
               onChangeText={setMemberQuery}
               placeholder="Search name or call sign"
-              placeholderTextColor="#AFAFAF"
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
@@ -347,7 +359,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
             onChangeText={setOwnReg}
             autoCapitalize="characters"
             placeholder="ABC123GP"
-            placeholderTextColor="#AFAFAF"
+            placeholderTextColor={colors.textMuted}
           />
           <Text style={styles.sheetLabel}>Description</Text>
           <TextInput
@@ -355,7 +367,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
             value={ownDesc}
             onChangeText={setOwnDesc}
             placeholder="Optional"
-            placeholderTextColor="#AFAFAF"
+            placeholderTextColor={colors.textMuted}
           />
           <Text style={styles.sheetLabel}>Odometer</Text>
           <TextInput
@@ -364,7 +376,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
             onChangeText={setOwnOdo}
             keyboardType="numeric"
             placeholder="0"
-            placeholderTextColor="#AFAFAF"
+            placeholderTextColor={colors.textMuted}
           />
           <Pressable
             style={[styles.startBtn, { marginTop: spacing.lg }, addingOwn && styles.startBtnDisabled]}
@@ -422,22 +434,30 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
 
-  typeList: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
-    overflow: "hidden",
+  typeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
     marginBottom: spacing.xl,
   },
-  typeRow: {
+  typeCard: {
+    width: "48%",
+    flexGrow: 1,
+    minWidth: "46%",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EBEBEB",
+    gap: 12,
+    borderWidth: 2,
+    borderColor: "transparent",
   },
-  typeRowActive: { backgroundColor: "#EFEFEF" },
+  typeCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
   typeIcon: {
     width: 40,
     height: 40,
@@ -447,19 +467,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   typeIconActive: { backgroundColor: colors.primary },
-  typeLabel: { flex: 1, fontSize: 17, fontWeight: "600", color: colors.text },
+  typeLabel: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.text },
   typeLabelActive: { fontWeight: "700" },
-  radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: "#C7C7C7",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioActive: { borderColor: colors.primary },
-  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+  pressedSoft: { opacity: 0.85 },
 
   block: { marginBottom: spacing.xl },
   blockTitle: {
@@ -479,7 +489,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   fieldValue: { fontSize: 17, fontWeight: "600", color: colors.text },
-  fieldPlaceholder: { fontSize: 17, fontWeight: "500", color: "#AFAFAF" },
+  fieldPlaceholder: { fontSize: 17, fontWeight: "500", color: colors.textMuted },
   fieldInput: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
@@ -513,7 +523,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#EBEBEB",
+    borderBottomColor: colors.border,
   },
   resultCs: { fontSize: 15, fontWeight: "700", color: colors.text, minWidth: 56 },
   resultName: { fontSize: 15, color: colors.textMuted, fontWeight: "500" },
@@ -546,7 +556,7 @@ const styles = StyleSheet.create({
     paddingVertical: 17,
     alignItems: "center",
   },
-  startBtnDisabled: { backgroundColor: "#C6C6C6" },
+  startBtnDisabled: { backgroundColor: colors.border },
   startBtnText: { color: "#fff", fontWeight: "700", fontSize: 17 },
 
   sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
@@ -566,7 +576,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 5,
     borderRadius: 3,
-    backgroundColor: "#D8D8D8",
+    backgroundColor: colors.border,
     marginBottom: spacing.md,
   },
   sheetTitle: { fontSize: 22, fontWeight: "700", color: colors.text, marginBottom: spacing.lg, letterSpacing: -0.3 },
@@ -596,11 +606,9 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#EBEBEB",
+    borderBottomColor: colors.border,
   },
   vehicleRowSelected: {},
   vehicleReg: { fontSize: 17, fontWeight: "700", color: colors.text },
   vehicleMeta: { fontSize: 13, color: colors.textMuted, marginTop: 3, fontWeight: "500" },
-
-  pressedSoft: { backgroundColor: "#EFEFEF" },
 });

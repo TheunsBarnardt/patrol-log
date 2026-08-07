@@ -2,6 +2,11 @@
 # Copy this to .dev.vars and fill in real values
 
 JWT_SECRET=dev-jwt-secret-change-in-production-c8f3a9b2
-CORS_ORIGINS=http://localhost:5173,http://localhost:8081,http://localhost:19000
+CORS_ORIGINS=http://localhost:5173,http://localhost:8081,http://localhost:8082,http://localhost:19000
 ENV=development
 APP_NAME=Patrol Log API (Local Dev)
+
+# D1 sync (system_admin):
+#   pnpm db:sync:pull          # Cloudflare → local wrangler D1
+#   pnpm db:sync:push -- --yes # local → Cloudflare (destructive)
+# Or use Admin → System backup → Sync panel (SYS01).

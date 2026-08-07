@@ -1,0 +1,70 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Admin portal",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/apps/admin",
+      "preLaunchTask": "Start Admin",
+      "presentation": { "group": "patrol-log", "order": 1 }
+    },
+    {
+      "name": "Mobile client (web)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:8082",
+      "webRoot": "${workspaceFolder}/apps/mobile",
+      "preLaunchTask": "Start Mobile Web",
+      "presentation": { "group": "patrol-log", "order": 2 }
+    },
+    {
+      "name": "API (Workers)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm run dev:api",
+      "cwd": "${workspaceFolder}",
+      "presentation": { "group": "patrol-log", "order": 0 }
+    },
+    {
+      "name": "Admin portal (server only)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm run dev:admin",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Mobile client (server only)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm run dev:mobile:web",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Admin + Client",
+      "configurations": ["Admin portal", "Mobile client (web)"],
+      "preLaunchTask": "Start API",
+      "stopAll": true,
+      "presentation": {
+        "order": 1,
+        "group": "patrol-log"
+      }
+    },
+    {
+      "name": "Admin + Client (servers only)",
+      "configurations": [
+        "API (Workers)",
+        "Admin portal (server only)",
+        "Mobile client (server only)"
+      ],
+      "stopAll": true,
+      "presentation": {
+        "order": 2,
+        "group": "patrol-log"
+      }
+    }
+  ]
+}

@@ -91,12 +91,9 @@ directory.get("/members", requireAuth(), async (c) => {
   const enriched = await Promise.all(
     rows.map(async (r) => {
       const nok = await db.select().from(nextOfKin).where(eq(nextOfKin.patrollerId, r.id));
-      const since = new Date(Date.now() - 2 * 60_000).toISOString();
+      // On duty = active patrol pin present (stays until stand-down, not heartbeat age).
       const onDuty = await db.query.livePins.findFirst({
-        where: (lp, { eq, gt }) => and(
-          eq(lp.callSign, r.callSign),
-          gt(lp.lastSeenAt, since),
-        ),
+        where: (lp, { eq }) => eq(lp.callSign, r.callSign),
       });
       return {
         member_id: r.id,
@@ -104,7 +101,7 @@ directory.get("/members", requireAuth(), async (c) => {
         call_sign: r.callSign,
         phone: r.phone ?? "",
         address: r.address ?? "",
-        sector: sector?.name ?? "",
+        sector: sector?.code || sector?.name || "",
         access_level: r.accessLevel,
         is_on_duty: Boolean(onDuty),
         next_of_kin: nok.map((n) => ({ name: n.name, relationship: n.relationship, phone: n.phone, alternate_phone: n.alternatePhone ?? undefined })),

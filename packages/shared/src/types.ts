@@ -77,7 +77,7 @@ export interface CommencePatrolRequest {
   joined_patroller_call_signs: string[];
   patrol_type: PatrolType;
   patrol_vehicle?: string; // required for vehicle / monitoring / ops / responding
-  odometer_start?: number; // required when patrol_vehicle present
+  odometer_start?: number; // optional; when set, stand-down asks for end odometer
   start_location?: GeoPoint;
 }
 
@@ -92,6 +92,8 @@ export interface ActivePatrolResponse {
   start_location?: GeoPoint;
   sars_compliant: boolean;
   state: PatrolState;
+  /** Caller's membership role on this patrol. */
+  my_role: PatrolRole;
 }
 
 export interface JoinedPatroller {
@@ -103,7 +105,10 @@ export interface JoinedPatroller {
 
 // ── Stand down ──────────────────────────────────────────────
 export interface StandDownRequest {
+  /** Required for primary on vehicle patrol when odometer_start was set. */
   odometer_end?: number;
+  /** Required for primary on vehicle patrol when odometer_start was omitted. */
+  distance_km?: number;
   end_location?: GeoPoint;
   reason?: StandDownReason;
   handoff?: {
@@ -111,6 +116,10 @@ export interface StandDownRequest {
     continue_vehicle: boolean;
     new_vehicle?: string;
   };
+}
+
+export interface AddPatrolMembersRequest {
+  call_signs: string[];
 }
 
 export interface StandDownResponse {
@@ -292,7 +301,7 @@ export interface Message {
 }
 
 // ── Admin dashboard analytics ────────────────────────────
-export type StatsPeriod = "today" | "7d" | "30d" | "month" | "custom";
+export type StatsPeriod = "today" | "7d" | "30d" | "month" | "all" | "custom";
 
 export interface DashboardMemberStats {
   patrollerId: string;
@@ -341,11 +350,14 @@ export interface PatrolDetailReportRow {
   callSign: string;
   name: string;
   sector: string;
+  /** Primary driver/lead, or joined passenger on the same patrol. */
+  role: "primary" | "joined";
   patrolType: PatrolType;
   commencedAt: string;
   stoodDownAt: string | null;
   durationHours: number;
   durationLabel: string;
+  /** Always 0 for joined passengers — km credits the primary only. */
   distanceKm: number;
   vehicleRegistration: string | null;
   vehicleDescription: string | null;

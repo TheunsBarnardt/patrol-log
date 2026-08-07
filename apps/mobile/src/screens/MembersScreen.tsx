@@ -18,7 +18,7 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
-import { radii, spacing } from "../theme";
+import { colors, radii, spacing } from "../theme";
 import type { MemberRecord } from "@patrol-log/shared";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Members">;
@@ -66,13 +66,13 @@ export function MembersScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={styles.searchWrap}>
-        <FontAwesome5 name="search" size={14} color="#667781" />
+        <FontAwesome5 name="search" size={14} color={colors.textMuted} />
         <TextInput
           style={styles.searchInput}
           value={q}
           onChangeText={setQ}
           placeholder="Search name or call sign"
-          placeholderTextColor="#667781"
+          placeholderTextColor={colors.textMuted}
         />
       </View>
 
@@ -108,9 +108,9 @@ export function MembersScreen({ navigation }: Props) {
                           accessibilityLabel={`Message ${item.call_sign}`}
                         >
                           {opening ? (
-                            <ActivityIndicator size="small" color="#008069" />
+                            <ActivityIndicator size="small" color={colors.primary} />
                           ) : (
-                            <FontAwesome5 name="comment" size={16} color="#008069" solid />
+                            <FontAwesome5 name="comment" size={16} color={colors.primary} solid />
                           )}
                         </Pressable>
                       )}
@@ -120,7 +120,7 @@ export function MembersScreen({ navigation }: Props) {
                         style={styles.actionBtn}
                         accessibilityLabel={`Call ${item.call_sign}`}
                       >
-                        <FontAwesome5 name="phone-alt" size={14} color="#008069" solid />
+                        <FontAwesome5 name="phone-alt" size={14} color={colors.primary} solid />
                       </Pressable>
                     </View>
                   </View>
@@ -140,7 +140,7 @@ export function MembersScreen({ navigation }: Props) {
                       <FontAwesome5
                         name={open ? "chevron-up" : "chevron-down"}
                         size={10}
-                        color="#667781"
+                        color={colors.textMuted}
                       />
                     </Pressable>
                   )}
@@ -155,13 +155,13 @@ export function MembersScreen({ navigation }: Props) {
                     onPress={() => call(nok.phone)}
                   >
                     <View style={styles.nokAvatar}>
-                      <FontAwesome5 name="user" size={12} color="#54656f" solid />
+                      <FontAwesome5 name="user" size={12} color={colors.textMuted} solid />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.nokName}>{nok.name}</Text>
                       <Text style={styles.preview}>{nok.relationship} · {nok.phone}</Text>
                     </View>
-                    <FontAwesome5 name="phone-alt" size={13} color="#008069" solid />
+                    <FontAwesome5 name="phone-alt" size={13} color={colors.primary} solid />
                   </Pressable>
                 ))}
             </View>
@@ -177,15 +177,15 @@ const styles = StyleSheet.create({
   searchWrap: {
     marginHorizontal: spacing.md,
     marginVertical: spacing.sm,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
     paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: "#111b21" },
-  empty: { textAlign: "center", color: "#667781", marginTop: 40, fontWeight: "500" },
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text },
+  empty: { textAlign: "center", color: colors.textMuted, marginTop: 40, fontWeight: "500" },
 
   row: {
     flexDirection: "row",
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { fontSize: 14, fontWeight: "700", color: "#54656f" },
+  avatarText: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
   onlineDot: {
     position: "absolute",
     right: 2,
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#25d366",
+    backgroundColor: colors.success,
     borderWidth: 2,
     borderColor: "#fff",
   },
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   topLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  name: { flex: 1, fontSize: 16, fontWeight: "600", color: "#111b21" },
+  name: { flex: 1, fontSize: 16, fontWeight: "600", color: colors.text },
   actions: { flexDirection: "row", alignItems: "center", gap: 4 },
   actionBtn: {
     width: 36,
@@ -230,14 +230,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  preview: { marginTop: 3, fontSize: 14, color: "#667781" },
+  preview: { marginTop: 3, fontSize: 14, color: colors.textMuted },
   nokLink: {
     marginTop: 6,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
-  nokLinkText: { fontSize: 12.5, fontWeight: "600", color: "#667781" },
+  nokLinkText: { fontSize: 12.5, fontWeight: "600", color: colors.textMuted },
   nokRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -255,5 +255,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  nokName: { fontSize: 14, fontWeight: "600", color: "#111b21" },
+  nokName: { fontSize: 14, fontWeight: "600", color: colors.text },
 });

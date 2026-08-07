@@ -1,50 +1,24 @@
 // FDL: blueprints/data/hotspots-map.blueprint.yaml
+// Managed hotspots: admin-defined circles with rating + diameter (km).
 
 import { Hono } from "hono";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
-import { AppError, type HotspotPeriod } from "@patrol-log/shared";
+import { desc } from "drizzle-orm";
+import { AppError, type HotspotPeriod, type HotspotPin } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
-import { requireAuth } from "../lib/middleware.js";
+import { requireAuth, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
-import { incidents } from "../db/schema.js";
+import { hotspots } from "../db/schema.js";
 import { logAudit } from "../lib/audit.js";
+import { isCpfWide, tenantScope } from "../lib/scope.js";
 
-export const hotspots = new Hono<AppContext>();
+export const hotspotsRoute = new Hono<AppContext>();
 
-hotspots.get("/", requireAuth(), async (c) => {
-  const period = (c.req.query("period") ?? "7d") as HotspotPeriod;
-  if (!["today", "7d", "30d", "90d"].includes(period)) throw new AppError("HOTSPOTS_INVALID_PERIOD");
-
-  const now = new Date();
-  const from = periodStart(period, now);
-  const db = getDb(c.env);
-
-  // SQLite stores dates as ISO-8601 text; compare with ISO strings
-  const fromStr = from.toISOString();
-  const nowStr = now.toISOString();
-
-  const rows = await db
-    .select()
-    .from(incidents)
-    .where(and(gte(incidents.occurredAt, fromStr), lte(incidents.occurredAt, nowStr)))
-    .limit(500);
-
-  await logAudit(db, "hotspots.queried", c.get("auth")!, { period, result_count: rows.length });
-
-  return c.json({
-    period,
-    from: fromStr,
-    to: nowStr,
-    pins: rows.map((r) => ({
-      incident_id: r.id,
-      lat: r.lat,
-      lng: r.lng,
-      type: r.type,
-      severity: r.severity as "low" | "medium" | "high",
-      occurred_at: r.occurredAt,
-    })),
-  });
-});
+function ratingToSeverity(rating: number): HotspotPin["severity"] {
+  if (rating >= 5) return "critical";
+  if (rating >= 4) return "high";
+  if (rating >= 3) return "medium";
+  return "low";
+}
 
 function periodStart(period: HotspotPeriod, now: Date): Date {
   const d = new Date(now);
@@ -63,3 +37,54 @@ function periodStart(period: HotspotPeriod, now: Date): Date {
       return d;
   }
 }
+
+function toPin(r: typeof hotspots.$inferSelect): HotspotPin {
+  return {
+    hotspot_id: r.id,
+    title: r.title,
+    description: r.description ?? "",
+    rating: r.rating,
+    diameter_km: r.diameterKm,
+    lat: r.lat,
+    lng: r.lng,
+    created_at: r.createdAt,
+    sector_id: r.sectorId,
+    severity: ratingToSeverity(r.rating),
+    incident_id: r.id,
+    type: r.title,
+    occurred_at: r.createdAt,
+  };
+}
+
+hotspotsRoute.get("/", requireAuth(), async (c) => {
+  const auth = getAuth(c);
+  const period = (c.req.query("period") ?? "7d") as HotspotPeriod;
+  if (!["today", "7d", "30d", "90d"].includes(period)) throw new AppError("HOTSPOTS_INVALID_PERIOD");
+
+  const now = new Date();
+  const from = periodStart(period, now);
+  const db = getDb(c.env);
+  const fromStr = from.toISOString();
+  const nowStr = now.toISOString();
+
+  // All managed hotspots in sector (system_admin = whole CPF). Period kept for client UI.
+  const rows = await db
+    .select()
+    .from(hotspots)
+    .where(tenantScope(auth, hotspots))
+    .orderBy(desc(hotspots.createdAt))
+    .limit(500);
+
+  await logAudit(db, "hotspots.queried", auth, {
+    period,
+    result_count: rows.length,
+    cpf_wide: isCpfWide(auth),
+  });
+
+  return c.json({
+    period,
+    from: fromStr,
+    to: nowStr,
+    pins: rows.map(toPin),
+  });
+});

@@ -45,13 +45,13 @@ export function EmergencyContactsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={styles.searchWrap}>
-        <FontAwesome5 name="search" size={14} color="#AFAFAF" />
+        <FontAwesome5 name="search" size={14} color={colors.textMuted} />
         <TextInput
           style={styles.input}
           value={q}
           onChangeText={setQ}
           placeholder="Search contacts"
-          placeholderTextColor="#AFAFAF"
+          placeholderTextColor={colors.textMuted}
           autoCorrect={false}
           clearButtonMode="while-editing"
         />

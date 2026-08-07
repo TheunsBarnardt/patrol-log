@@ -8,7 +8,14 @@ import type { LiveMapMovement, LiveMapPin, PatrolType } from "@patrol-log/shared
 
 function movementOf(pin: LiveMapPin): LiveMapMovement {
   if (pin.patrol_type === "vehicle") return "car";
-  if (pin.patrol_type === "static") return "stationary";
+  if (
+    pin.patrol_type === "static" ||
+    pin.patrol_type === "sector_monitoring" ||
+    pin.patrol_type === "ops" ||
+    pin.patrol_type === "responding"
+  ) {
+    return "stationary";
+  }
   return "walk";
 }
 
@@ -119,6 +126,9 @@ function formatAge(isoString: string): string {
 function typeCaption(type: PatrolType): string {
   if (type === "vehicle") return "Vehicle patrol";
   if (type === "static") return "Static post";
+  if (type === "sector_monitoring") return "Sector monitoring";
+  if (type === "ops") return "OPS";
+  if (type === "responding") return "Responding";
   return "Foot patrol";
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome5 } from "@expo/vector-icons";
@@ -8,17 +8,27 @@ import { useAuthStore } from "../store/auth";
 import { useMessagingStore } from "../store/messaging";
 import { api } from "../lib/api";
 import { registerPushToken } from "../lib/notifications";
-import type { ActivePatrolResponse } from "@patrol-log/shared";
+import type { ActivePatrolResponse, PatrollerStats, StatsPeriod } from "@patrol-log/shared";
 import { colors, radii, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 type IconName = ComponentProps<typeof FontAwesome5>["name"];
+
+const STAT_PERIODS: { id: StatsPeriod; label: string }[] = [
+  { id: "month", label: "Month" },
+  { id: "7d", label: "7d" },
+  { id: "30d", label: "30d" },
+  { id: "today", label: "Today" },
+  { id: "all", label: "All" },
+];
 
 export function HomeScreen({ navigation }: Props) {
   const profile = useAuthStore((s) => s.profile);
   const setUnreadCount = useMessagingStore((s) => s.setUnreadCount);
   const unreadCount = useMessagingStore((s) => s.unreadCount);
   const [activePatrol, setActivePatrol] = useState<ActivePatrolResponse | null>(null);
+  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("month");
+  const [stats, setStats] = useState<PatrollerStats | null>(null);
   const pushRegistered = useRef(false);
 
   async function refreshUnread() {
@@ -27,6 +37,14 @@ export function HomeScreen({ navigation }: Props) {
       setUnreadCount(res.channels.reduce((sum, ch) => sum + ch.unreadCount, 0));
     } catch {}
   }
+
+  const refreshStats = useCallback(async (period: StatsPeriod) => {
+    try {
+      setStats(await api.myPatrolStats(period));
+    } catch {
+      setStats(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!pushRegistered.current) {
@@ -39,9 +57,14 @@ export function HomeScreen({ navigation }: Props) {
     const unsub = navigation.addListener("focus", () => {
       void api.activePatrol().then(setActivePatrol).catch(() => setActivePatrol(null));
       void refreshUnread();
+      void refreshStats(statsPeriod);
     });
     return unsub;
-  }, [navigation]);
+  }, [navigation, refreshStats, statsPeriod]);
+
+  useEffect(() => {
+    void refreshStats(statsPeriod);
+  }, [statsPeriod, refreshStats]);
 
   if (!profile) return null;
   const firstName = profile.name.split(" ")[0];
@@ -56,6 +79,37 @@ export function HomeScreen({ navigation }: Props) {
             <Text style={styles.metaSep}>  ·  </Text>
             {profile.sector}
           </Text>
+        </View>
+
+        <View style={styles.statsCard}>
+          <View style={styles.statsHeader}>
+            <Text style={styles.statsTitle}>My patrols</Text>
+            <View style={styles.periodRow}>
+              {STAT_PERIODS.map((p) => (
+                <Pressable
+                  key={p.id}
+                  onPress={() => setStatsPeriod(p.id)}
+                  style={[styles.periodChip, statsPeriod === p.id && styles.periodChipOn]}
+                >
+                  <Text style={[styles.periodText, statsPeriod === p.id && styles.periodTextOn]}>{p.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <View style={styles.statsGrid}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats?.totalKm ?? "—"}</Text>
+              <Text style={styles.statLabel}>km</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats?.totalHours ?? "—"}</Text>
+              <Text style={styles.statLabel}>hours</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats?.completedPatrols ?? "—"}</Text>
+              <Text style={styles.statLabel}>patrols</Text>
+            </View>
+          </View>
         </View>
 
         <Pressable
@@ -158,7 +212,7 @@ function SuggestRow({
           <Text style={styles.badgeText}>{badge > 99 ? "99+" : badge}</Text>
         </View>
       )}
-      <FontAwesome5 name="chevron-right" size={12} color="#B3B3B3" />
+      <FontAwesome5 name="chevron-right" size={12} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -186,7 +240,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xl },
 
-  hero: { marginBottom: spacing.lg, marginTop: spacing.sm },
+  hero: { marginBottom: spacing.md, marginTop: spacing.sm },
   hello: {
     fontSize: 34,
     fontWeight: "700",
@@ -195,6 +249,35 @@ const styles = StyleSheet.create({
   },
   meta: { marginTop: 6, fontSize: 15, color: colors.textMuted, fontWeight: "500" },
   metaSep: { color: "#D0D0D0" },
+
+  statsCard: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    padding: 18,
+    marginBottom: spacing.md,
+  },
+  statsHeader: { marginBottom: 14, gap: 10 },
+  statsTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
+  periodRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  periodChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: colors.bg,
+  },
+  periodChipOn: { backgroundColor: colors.primary },
+  periodText: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
+  periodTextOn: { color: "#fff" },
+  statsGrid: { flexDirection: "row", gap: 10 },
+  statBox: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    borderRadius: radii.md,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  statValue: { fontSize: 22, fontWeight: "800", color: colors.text },
+  statLabel: { fontSize: 12, color: colors.textMuted, marginTop: 2, fontWeight: "500" },
 
   cta: {
     backgroundColor: colors.surfaceMuted,
@@ -252,7 +335,7 @@ const styles = StyleSheet.create({
   },
   suggestTitle: { fontSize: 16, fontWeight: "600", color: colors.text },
   suggestSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  divider: { height: 1, backgroundColor: "#EBEBEB", marginLeft: 72 },
+  divider: { height: 1, backgroundColor: colors.border, marginLeft: 72 },
 
   quickRow: { flexDirection: "row", gap: 12 },
   quick: {
@@ -286,5 +369,5 @@ const styles = StyleSheet.create({
   badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
 
   pressed: { opacity: 0.88 },
-  pressedSoft: { backgroundColor: "#EFEFEF" },
+  pressedSoft: { backgroundColor: colors.primarySoft },
 });

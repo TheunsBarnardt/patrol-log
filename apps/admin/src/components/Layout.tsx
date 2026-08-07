@@ -2,7 +2,7 @@ import { Link, NavLink, Navigate, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { authStore } from "../lib/api";
 
-type Role = "admin" | "sector_lead" | "call_centre_agent" | "patroller";
+type Role = "system_admin" | "admin" | "sector_lead" | "call_centre_agent" | "patroller";
 
 type NavItem = {
   to: string;
@@ -12,18 +12,26 @@ type NavItem = {
   roles: Role[] | null;
 };
 
+/** Sector ops: directory CRUD, patrols, messaging, live map */
+const OPS: Role[] = ["system_admin", "admin", "sector_lead", "call_centre_agent"];
+/** Platform tools — system admin only */
+const SYS: Role[] = ["system_admin"];
+
 const NAV_ALL: NavItem[] = [
-  { to: "/", label: "Dashboard", end: true, roles: ["admin", "sector_lead", "call_centre_agent"] },
-  { to: "/live-map", label: "Live Map", roles: ["admin", "sector_lead", "call_centre_agent"] },
-  { to: "/messaging", label: "Messaging", roles: ["admin", "sector_lead", "call_centre_agent"] },
-  { to: "/residents", label: "Residents", roles: ["admin", "sector_lead", "call_centre_agent"] },
-  { to: "/members", label: "Members", roles: ["admin", "sector_lead", "call_centre_agent"] },
-  { to: "/emergency-services", label: "Emergency services", roles: ["admin", "sector_lead", "call_centre_agent"] },
-  { to: "/vehicles", label: "Vehicles", roles: ["admin", "sector_lead"] },
-  { to: "/patrols", label: "Patrols", roles: ["admin", "sector_lead", "call_centre_agent"] },
-  { to: "/devices", label: "Devices", roles: ["admin", "sector_lead"] },
-  { to: "/audit-log", label: "Audit log", roles: ["admin", "sector_lead"] },
-  { to: "/sectors", label: "Sectors", roles: ["admin"] },
+  { to: "/", label: "Dashboard", end: true, roles: OPS },
+  { to: "/live-map", label: "Live Map", roles: OPS },
+  { to: "/messaging", label: "Messaging", roles: OPS },
+  { to: "/residents", label: "Residents", roles: OPS },
+  { to: "/members", label: "Members", roles: OPS },
+  { to: "/emergency-services", label: "Emergency services", roles: OPS },
+  { to: "/vehicles", label: "Vehicles", roles: OPS },
+  { to: "/patrols", label: "Patrols", roles: OPS },
+  { to: "/reports", label: "Reports", roles: OPS },
+  { to: "/hotspots", label: "Hotspots", roles: OPS },
+  { to: "/sectors", label: "Sectors", roles: SYS },
+  { to: "/devices", label: "Devices", roles: SYS },
+  { to: "/audit-log", label: "Audit log", roles: SYS },
+  { to: "/system-backup", label: "System backup", roles: SYS },
   { to: "/my-details", label: "My details", roles: ["patroller"] },
 ];
 
@@ -55,7 +63,13 @@ export function Layout({ children }: { children: ReactNode }) {
           <div>
             <Link to="/" className="text-base font-extrabold tracking-tight leading-tight block">PATROL LOG</Link>
             <p className="text-xs text-gray-500">
-              {accessLevel === "patroller" ? "Member portal" : "Admin Portal"}
+              {accessLevel === "system_admin"
+                ? "System admin · all sectors"
+                : profile?.sector
+                  ? profile.sector
+                  : accessLevel === "patroller"
+                    ? "Member portal"
+                    : "Admin Portal"}
             </p>
           </div>
         </div>
@@ -79,7 +93,10 @@ export function Layout({ children }: { children: ReactNode }) {
           {profile && (
             <>
               <p className="font-semibold">{profile.name}</p>
-              <p className="text-gray-500">{profile.call_sign} · {profile.access_level}</p>
+              <p className="text-gray-500">
+                {profile.call_sign}
+                {profile.sector ? ` · ${profile.sector}` : ""} · {profile.access_level}
+              </p>
             </>
           )}
           <button onClick={logout} className="mt-2 w-full text-left text-red-600 hover:underline">Log out</button>

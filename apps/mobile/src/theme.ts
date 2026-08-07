@@ -1,25 +1,26 @@
-// Uber-inspired field ops UI — stark surfaces, black actions, quiet chrome.
+// CPF-branded field ops UI — Uber-clean layout with Wierdabrug logo colours.
 export const colors = {
-  primary: "#000000",
-  primarySoft: "#F3F4F6",
-  primaryInk: "#111111",
-  accent: "#000000",
-  danger: "#E11900",
-  dangerSoft: "#FDE8E6",
-  info: "#276EF1",
-  infoSoft: "#EBF2FF",
-  warning: "#FFC043",
-  warningSoft: "#FFF6DB",
-  success: "#05A357",
-  successSoft: "#E6F9EF",
+  // Logo: royal blue, red, yellow, forest green
+  primary: "#0B3D8C",
+  primarySoft: "#E8F0FA",
+  primaryInk: "#0B1220",
+  accent: "#F5C518",
+  danger: "#E30613",
+  dangerSoft: "#FDE8EA",
+  info: "#0B3D8C",
+  infoSoft: "#E8F0FA",
+  warning: "#F5C518",
+  warningSoft: "#FFF8DB",
+  success: "#1E7A3A",
+  successSoft: "#E8F5EC",
   bg: "#FFFFFF",
   surface: "#FFFFFF",
-  surfaceMuted: "#F6F6F6",
-  text: "#000000",
-  textMuted: "#6B6B6B",
-  border: "#E8E8E8",
+  surfaceMuted: "#F3F6FB",
+  text: "#0B1220",
+  textMuted: "#5B6B85",
+  border: "#D7E0EE",
   // Back-compat
-  cardBg: "#F6F6F6",
+  cardBg: "#F3F6FB",
 };
 
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };

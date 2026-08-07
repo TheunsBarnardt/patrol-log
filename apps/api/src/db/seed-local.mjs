@@ -45,6 +45,7 @@ for (const m of data.members) {
 }
 
 let sql = `
+-- NEVER delete system_backups — protected from seed
 DELETE FROM message_channel_members;
 DELETE FROM message_reads;
 DELETE FROM messages;

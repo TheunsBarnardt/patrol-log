@@ -19,8 +19,8 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { showLocalNotification } from "../lib/notifications";
 import { useMessagingStore } from "../store/messaging";
-import type { MessageChannel } from "@patrol-log/shared";
-import { radii, spacing } from "../theme";
+import { parseSqliteUtc, type MessageChannel } from "@patrol-log/shared";
+import { colors, radii, spacing } from "../theme";
 
 const POLL_MS = 5_000;
 
@@ -29,7 +29,7 @@ type Filter = "all" | "chats" | "groups";
 
 function formatTime(iso: string | null): string {
   if (!iso) return "";
-  const d = new Date(iso);
+  const d = parseSqliteUtc(iso) ?? new Date(iso);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -119,7 +119,7 @@ export function MessagingScreen({ navigation }: Props) {
   if (loading) {
     return (
       <SafeAreaView style={styles.center} edges={["bottom"]}>
-        <ActivityIndicator color="#008069" />
+        <ActivityIndicator color={colors.primary} />
       </SafeAreaView>
     );
   }
@@ -127,13 +127,13 @@ export function MessagingScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={styles.searchWrap}>
-        <FontAwesome5 name="search" size={14} color="#667781" />
+        <FontAwesome5 name="search" size={14} color={colors.textMuted} />
         <TextInput
           style={styles.searchInput}
           value={q}
           onChangeText={setQ}
           placeholder="Search or start a new chat"
-          placeholderTextColor="#667781"
+          placeholderTextColor={colors.textMuted}
         />
       </View>
 
@@ -182,7 +182,7 @@ export function MessagingScreen({ navigation }: Props) {
               >
                 <View style={[styles.avatar, isGroup && styles.avatarGroup]}>
                   {isGroup ? (
-                    <FontAwesome5 name="users" size={18} color="#54656f" solid />
+                    <FontAwesome5 name="users" size={18} color={colors.textMuted} solid />
                   ) : (
                     <Text style={styles.avatarText}>{initials(ch.name) || "CH"}</Text>
                   )}
@@ -221,7 +221,7 @@ export function MessagingScreen({ navigation }: Props) {
                 navigation.navigate("Members");
               }}
             >
-              <FontAwesome5 name="comment" size={16} color="#008069" solid />
+              <FontAwesome5 name="comment" size={16} color={colors.primary} solid />
               <Text style={styles.menuText}>New chat</Text>
             </Pressable>
             <Pressable
@@ -231,7 +231,7 @@ export function MessagingScreen({ navigation }: Props) {
                 navigation.navigate("NewGroup");
               }}
             >
-              <FontAwesome5 name="users" size={16} color="#008069" solid />
+              <FontAwesome5 name="users" size={16} color={colors.primary} solid />
               <Text style={styles.menuText}>New group</Text>
             </Pressable>
           </View>
@@ -245,12 +245,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg },
   emptyTitle: { fontSize: 18, fontWeight: "600", color: "#41525d" },
-  emptyText: { marginTop: 6, fontSize: 14, color: "#667781", textAlign: "center" },
+  emptyText: { marginTop: 6, fontSize: 14, color: colors.textMuted, textAlign: "center" },
 
   searchWrap: {
     marginHorizontal: spacing.md,
     marginTop: spacing.sm,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
     paddingHorizontal: 14,
     minHeight: 42,
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     fontSize: 15,
     lineHeight: 20,
-    color: "#111b21",
+    color: colors.text,
     ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null),
   },
   filters: {
@@ -276,11 +276,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 16,
-    backgroundColor: "#f0f2f5",
+    backgroundColor: colors.surfaceMuted,
   },
   chipOn: { backgroundColor: "#dff3ea" },
-  chipText: { fontSize: 13, fontWeight: "600", color: "#54656f" },
-  chipTextOn: { color: "#008069" },
+  chipText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
+  chipTextOn: { color: colors.primary },
 
   row: {
     flexDirection: "row",
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarGroup: { backgroundColor: "#cfe9de" },
-  avatarText: { fontSize: 16, fontWeight: "700", color: "#54656f" },
+  avatarText: { fontSize: 16, fontWeight: "700", color: colors.textMuted },
   body: {
     flex: 1,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -307,17 +307,17 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   topLine: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8 },
-  name: { flex: 1, fontSize: 16, fontWeight: "600", color: "#111b21" },
-  time: { fontSize: 12, color: "#667781" },
-  timeUnread: { color: "#25d366", fontWeight: "600" },
+  name: { flex: 1, fontSize: 16, fontWeight: "600", color: colors.text },
+  time: { fontSize: 12, color: colors.textMuted },
+  timeUnread: { color: colors.success, fontWeight: "600" },
   bottomLine: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 3 },
-  preview: { flex: 1, fontSize: 14, color: "#667781" },
+  preview: { flex: 1, fontSize: 14, color: colors.textMuted },
   badge: {
     minWidth: 20,
     height: 20,
     borderRadius: 10,
     paddingHorizontal: 6,
-    backgroundColor: "#25d366",
+    backgroundColor: colors.success,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -348,5 +348,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
   },
-  menuText: { fontSize: 15, fontWeight: "600", color: "#111b21" },
+  menuText: { fontSize: 15, fontWeight: "600", color: colors.text },
 });

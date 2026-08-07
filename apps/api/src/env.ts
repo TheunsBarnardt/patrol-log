@@ -17,7 +17,7 @@ export type AuthenticatedContext = {
   patroller: {
     patroller_id: string;
     call_sign: string;
-    access_level: "call_centre_agent" | "patroller" | "sector_lead" | "admin";
+    access_level: "call_centre_agent" | "patroller" | "sector_lead" | "admin" | "system_admin";
     cpf_id: string;
     sector_id: string;
   };
