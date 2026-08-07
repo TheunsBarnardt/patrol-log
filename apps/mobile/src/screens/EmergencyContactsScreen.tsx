@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
 import { colors, radii, spacing } from "../theme";
-import type { EmergencyServiceRecord } from "@patrol-log/shared";
+import { parseSqliteUtc, type EmergencyServiceRecord } from "@patrol-log/shared";
 
 function formatType(type: string) {
   return type.replace(/_/g, " ");
@@ -66,7 +66,8 @@ export function EmergencyContactsScreen() {
           <Text style={styles.empty}>{loading ? "Loading…" : "No contacts found"}</Text>
         )}
         renderItem={({ item }) => {
-          const stale = Date.now() - new Date(item.verified_at).getTime() > 90 * 24 * 60 * 60 * 1000;
+          const verifiedAt = parseSqliteUtc(item.verified_at)?.getTime() ?? new Date(item.verified_at).getTime();
+          const stale = Date.now() - verifiedAt > 90 * 24 * 60 * 60 * 1000;
           const numbers = [
             { label: "Primary", num: item.primary_number },
             ...(item.secondary_number ? [{ label: "Secondary", num: item.secondary_number }] : []),

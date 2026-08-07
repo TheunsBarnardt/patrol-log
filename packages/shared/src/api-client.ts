@@ -3,6 +3,7 @@ import type {
   ActivePatrolResponse,
   AddPatrolMembersRequest,
   CommencePatrolRequest,
+  JoinablePatrolSummary,
   EmergencyServiceRecord,
   HeartbeatRequest,
   HeartbeatResponse,
@@ -108,6 +109,9 @@ export function createApiClient(opts: ApiClientOptions) {
     // patrols
     commencePatrol: (body: CommencePatrolRequest) => request<ActivePatrolResponse>("/patrols/commence", { method: "POST", body: JSON.stringify(body) }),
     activePatrol: () => request<ActivePatrolResponse | null>("/patrols/active/me"),
+    joinablePatrols: () => request<{ results: JoinablePatrolSummary[] }>("/patrols/active"),
+    joinPatrol: (patrolId: string) =>
+      request<ActivePatrolResponse>(`/patrols/${patrolId}/join`, { method: "POST", body: JSON.stringify({}) }),
     myPatrolStats: (period: StatsPeriod = "month") =>
       request<PatrollerStats>(`/patrols/stats/me?period=${period}`),
     standDown: (patrolId: string, body: StandDownRequest) => request<StandDownResponse>(`/patrols/${patrolId}/stand-down`, { method: "POST", body: JSON.stringify(body) }),

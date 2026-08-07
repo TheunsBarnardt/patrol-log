@@ -180,6 +180,104 @@ patrolRoutes.get("/active/me", requireAuth(), async (c) => {
   return c.json(await hydrateActivePatrol(db, membership.patrolId, auth.patroller.patroller_id));
 });
 
+/** Active patrols in the caller's sector that they can join as a passenger. */
+patrolRoutes.get("/active", requireAuth(), async (c) => {
+  const auth = getAuth(c);
+  const db = getDb(c.env);
+  const myId = auth.patroller.patroller_id;
+
+  const myActive = await db.query.patrolMembers.findFirst({
+    where: (pm, { and, eq, isNull }) => and(eq(pm.patrollerId, myId), isNull(pm.endTime)),
+  });
+  if (myActive) return c.json({ results: [] });
+
+  const active = await db
+    .select({
+      patrolId: patrols.id,
+      patrolType: patrols.patrolType,
+      startTime: patrols.startTime,
+      primaryId: patrols.primaryPatrollerId,
+      primaryCallSign: patrollers.callSign,
+      primaryName: patrollers.name,
+      vehicleRegistration: vehicles.registration,
+    })
+    .from(patrols)
+    .innerJoin(patrollers, eq(patrollers.id, patrols.primaryPatrollerId))
+    .leftJoin(vehicles, eq(vehicles.id, patrols.vehicleId))
+    .where(
+      and(
+        eq(patrols.cpfId, auth.patroller.cpf_id),
+        eq(patrols.sectorId, auth.patroller.sector_id),
+        eq(patrols.state, "active"),
+      ),
+    );
+
+  const results = [];
+  for (const row of active) {
+    if (row.primaryId === myId) continue;
+    const members = await db.query.patrolMembers.findMany({
+      where: (pm, { eq }) => eq(pm.patrolId, row.patrolId),
+    });
+    const alreadyOn = members.some((m) => m.patrollerId === myId && !m.endTime);
+    if (alreadyOn) continue;
+    results.push({
+      patrol_id: row.patrolId,
+      primary_patroller_call_sign: row.primaryCallSign,
+      primary_patroller_name: row.primaryName,
+      patrol_type: row.patrolType,
+      vehicle_registration: row.vehicleRegistration ?? null,
+      start_time: row.startTime,
+      joined_count: members.filter((m) => m.role === "joined" && !m.endTime).length,
+    });
+  }
+
+  results.sort((a, b) => (a.start_time < b.start_time ? 1 : -1));
+  return c.json({ results });
+});
+
+patrolRoutes.post("/:patrol_id/join", requireAuth(), requireAccessLevel("patroller", "sector_lead", "admin", "system_admin", "call_centre_agent"), async (c) => {
+  const auth = getAuth(c);
+  const patrolId = c.req.param("patrol_id");
+  const db = getDb(c.env);
+  const myId = auth.patroller.patroller_id;
+
+  const myActive = await db.query.patrolMembers.findFirst({
+    where: (pm, { and, eq, isNull }) => and(eq(pm.patrollerId, myId), isNull(pm.endTime)),
+  });
+  if (myActive) throw new AppError("COMMENCE_ALREADY_ON_PATROL");
+
+  const patrol = await db.query.patrols.findFirst({ where: eq(patrols.id, patrolId) });
+  if (!patrol || patrol.state !== "active") throw new AppError("JOIN_PATROL_UNAVAILABLE");
+  if (patrol.cpfId !== auth.patroller.cpf_id || patrol.sectorId !== auth.patroller.sector_id) {
+    throw new AppError("JOIN_PATROL_UNAVAILABLE");
+  }
+  if (patrol.primaryPatrollerId === myId) throw new AppError("JOIN_PATROL_ALREADY_MEMBER");
+
+  const existing = await db.query.patrolMembers.findFirst({
+    where: (pm, { and, eq }) => and(eq(pm.patrolId, patrolId), eq(pm.patrollerId, myId)),
+  });
+  if (existing && !existing.endTime) throw new AppError("JOIN_PATROL_ALREADY_MEMBER");
+
+  if (existing?.endTime) {
+    await db.update(patrolMembers).set({
+      role: "joined",
+      startTime: new Date().toISOString(),
+      endTime: null,
+      endLat: null,
+      endLng: null,
+    }).where(and(eq(patrolMembers.patrolId, patrolId), eq(patrolMembers.patrollerId, myId)));
+  } else {
+    await db.insert(patrolMembers).values({
+      patrolId,
+      patrollerId: myId,
+      role: "joined",
+    });
+  }
+
+  await logAudit(db, "patrol.joined", auth, { patrol_id: patrolId });
+  return c.json(await hydrateActivePatrol(db, patrolId, myId));
+});
+
 patrolRoutes.get("/stats/me", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const rawPeriod = c.req.query("period") ?? "month";

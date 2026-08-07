@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch } from "../lib/api";
 import { DataTable, PageHeader } from "../components/DataTable";
 
@@ -32,7 +33,7 @@ export function AuditLogPage() {
           rows={data?.results ?? []}
           keyExtractor={(r) => r.audit_log.id}
           columns={[
-            { header: "When", render: (r) => new Date(r.audit_log.createdAt).toLocaleString() },
+            { header: "When", render: (r) => (parseSqliteUtc(r.audit_log.createdAt) ?? new Date(r.audit_log.createdAt)).toLocaleString() },
             { header: "Actor", render: (r) => r.patrollers ? `${r.patrollers.callSign} — ${r.patrollers.name}` : "—" },
             { header: "Action", render: (r) => <span className="font-mono text-xs">{r.audit_log.action}</span> },
             { header: "IP", render: (r) => r.audit_log.ip ?? "—" },

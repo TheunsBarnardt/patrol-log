@@ -23,6 +23,8 @@ export const ERROR_CODES = {
   COMMENCE_VEHICLE_IN_USE: { status: 409, message: "This vehicle is already on another active patrol" },
   COMMENCE_ODOMETER_START_INVALID: { status: 422, message: "Enter a valid odometer reading at or above the last recorded value" },
   COMMENCE_JOINED_PATROLLER_UNAVAILABLE: { status: 409, message: "One or more joined patrollers are unavailable" },
+  JOIN_PATROL_UNAVAILABLE: { status: 409, message: "That patrol is not available to join" },
+  JOIN_PATROL_ALREADY_MEMBER: { status: 409, message: "You are already on this patrol" },
 
   // vehicles
   VEHICLE_REGISTRATION_REQUIRED: { status: 422, message: "Enter the vehicle registration" },

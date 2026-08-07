@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch } from "../lib/api";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
@@ -108,8 +109,9 @@ export function EmergencyServicesPage() {
             { header: "Primary", render: (r) => r.primaryNumber },
             { header: "Secondary", render: (r) => r.secondaryNumber ?? <span className="text-gray-400">—</span> },
             { header: "Verified", render: (r) => {
-              const stale = Date.now() - new Date(r.verifiedAt).getTime() > 90 * 24 * 60 * 60 * 1000;
-              return <span className={stale ? "text-amber-600 text-xs font-semibold" : "text-xs text-gray-500"}>{stale ? "⚠ " : ""}{new Date(r.verifiedAt).toLocaleDateString()}</span>;
+              const verified = parseSqliteUtc(r.verifiedAt) ?? new Date(r.verifiedAt);
+              const stale = Date.now() - verified.getTime() > 90 * 24 * 60 * 60 * 1000;
+              return <span className={stale ? "text-amber-600 text-xs font-semibold" : "text-xs text-gray-500"}>{stale ? "⚠ " : ""}{verified.toLocaleDateString()}</span>;
             }},
             { header: "", className: "text-right", render: (r) => <RowActions onEdit={() => openEdit(r)} onDelete={() => { if (confirm(`Delete ${r.name}?`)) remove.mutate(r.id); }} /> },
           ]}

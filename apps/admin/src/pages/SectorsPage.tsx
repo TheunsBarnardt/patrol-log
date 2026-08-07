@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch } from "../lib/api";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls } from "../components/Modal";
@@ -99,7 +100,7 @@ export function SectorsPage() {
             {
               header: "Created",
               render: (r) => (
-                <span className="text-xs text-gray-500">{new Date(r.createdAt).toLocaleDateString()}</span>
+                <span className="text-xs text-gray-500">{(parseSqliteUtc(r.createdAt) ?? new Date(r.createdAt)).toLocaleDateString()}</span>
               ),
             },
             {

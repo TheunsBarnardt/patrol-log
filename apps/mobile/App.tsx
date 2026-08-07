@@ -18,6 +18,7 @@ const webLinking: LinkingOptions<RootStackParamList> = {
       Login: "login",
       Home: "",
       CommencePatrol: "commence",
+      JoinPatrol: "join",
       ActivePatrol: "patrol/:patrolId",
       HotspotsMap: "hotspots",
       Residents: "residents",

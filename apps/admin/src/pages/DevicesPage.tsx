@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch } from "../lib/api";
 import { DataTable, PageHeader } from "../components/DataTable";
 
@@ -39,7 +40,7 @@ export function DevicesPage() {
             { header: "Patroller", render: (r) => r.patrollers ? `${r.patrollers.callSign} — ${r.patrollers.name}` : "—" },
             { header: "Device ID", render: (r) => <span className="font-mono text-xs">{r.devices.deviceId.slice(0, 12)}</span> },
             { header: "User agent", render: (r) => <span className="text-xs text-gray-500">{r.devices.userAgent ?? "—"}</span> },
-            { header: "Last seen", render: (r) => new Date(r.devices.lastSeenAt).toLocaleString() },
+            { header: "Last seen", render: (r) => (parseSqliteUtc(r.devices.lastSeenAt) ?? new Date(r.devices.lastSeenAt)).toLocaleString() },
             {
               header: "Status",
               render: (r) => (

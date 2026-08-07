@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch, authStore } from "../lib/api";
 import { PageHeader } from "../components/DataTable";
 import { Btn } from "../components/Modal";
@@ -9,6 +10,10 @@ import {
   loginSystemAdmin,
   restoreOn,
 } from "../lib/syncApi";
+
+function formatBackupTime(iso: string): string {
+  return (parseSqliteUtc(iso) ?? new Date(iso)).toLocaleString();
+}
 
 interface BackupMeta {
   id: string;
@@ -391,7 +396,7 @@ export function SystemBackupPage() {
             <tbody className="divide-y">
               {data.results.map((b) => (
                 <tr key={b.id}>
-                  <td className="px-3 py-2 whitespace-nowrap">{new Date(b.createdAt).toLocaleString()}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{formatBackupTime(b.createdAt)}</td>
                   <td className="px-3 py-2">{b.label || "—"}</td>
                   <td className="px-3 py-2 font-mono">{b.createdByCallSign}</td>
                   <td className="px-3 py-2">{formatBytes(b.byteSize)}</td>
@@ -411,7 +416,7 @@ export function SystemBackupPage() {
                         onClick={() => {
                           if (
                             confirm(
-                              `Restore backup from ${new Date(b.createdAt).toLocaleString()}?\n\nThis replaces all live operational data. Stored backups stay intact.`,
+                              `Restore backup from ${formatBackupTime(b.createdAt)}?\n\nThis replaces all live operational data. Stored backups stay intact.`,
                             )
                           ) {
                             restoreStored.mutate(b.id);

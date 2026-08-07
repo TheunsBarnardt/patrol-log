@@ -122,6 +122,17 @@ export interface AddPatrolMembersRequest {
   call_signs: string[];
 }
 
+/** Active patrols in the caller's sector that they can join as a passenger. */
+export interface JoinablePatrolSummary {
+  patrol_id: string;
+  primary_patroller_call_sign: string;
+  primary_patroller_name: string;
+  patrol_type: PatrolType;
+  vehicle_registration?: string | null;
+  start_time: string;
+  joined_count: number;
+}
+
 export interface StandDownResponse {
   patrol_id: string;
   end_time: string;

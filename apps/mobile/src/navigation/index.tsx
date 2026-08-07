@@ -9,6 +9,7 @@ import { ProfileDrawer } from "../components/ProfileDrawer";
 import { LoginScreen } from "../screens/LoginScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { CommencePatrolScreen } from "../screens/CommencePatrolScreen";
+import { JoinPatrolScreen } from "../screens/JoinPatrolScreen";
 import { ActivePatrolScreen } from "../screens/ActivePatrolScreen";
 import { HotspotsMapScreen } from "../screens/HotspotsMapScreen";
 import { ResidentsScreen } from "../screens/ResidentsScreen";
@@ -23,6 +24,7 @@ export type RootStackParamList = {
   Login: undefined;
   Home: undefined;
   CommencePatrol: undefined;
+  JoinPatrol: undefined;
   ActivePatrol: { patrolId: string };
   HotspotsMap: undefined;
   Residents: undefined;
@@ -117,6 +119,7 @@ export function RootNavigator() {
               })}
             />
             <Stack.Screen name="CommencePatrol" component={CommencePatrolScreen} options={{ title: "Commence patrol" }} />
+            <Stack.Screen name="JoinPatrol" component={JoinPatrolScreen} options={{ title: "Join patrol" }} />
             <Stack.Screen name="ActivePatrol" component={ActivePatrolScreen} options={{ title: "Active patrol" }} />
             <Stack.Screen name="HotspotsMap" component={HotspotsMapScreen} options={{ title: "Hotspots" }} />
             <Stack.Screen name="Residents" component={ResidentsScreen} options={{ title: "Residents" }} />

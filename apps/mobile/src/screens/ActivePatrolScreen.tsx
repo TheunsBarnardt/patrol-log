@@ -22,6 +22,7 @@ import { startHeartbeat, stopHeartbeat } from "../lib/heartbeat";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
 import {
+  parseSqliteUtc,
   patrolTypeRequiresVehicle,
   type ActivePatrolResponse,
   type GeoPoint,
@@ -344,7 +345,7 @@ async function captureGps(): Promise<GeoPoint | undefined> {
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + (iso.endsWith("Z") ? "" : "Z"));
+  const d = parseSqliteUtc(iso) ?? new Date(iso);
   return `${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${d.toISOString().slice(0, 10)}`;
 }
 

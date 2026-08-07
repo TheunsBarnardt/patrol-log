@@ -4,7 +4,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { adminFetch } from "../lib/api";
 import { PageHeader } from "../components/DataTable";
-import type { LiveMapMovement, LiveMapPin, PatrolType } from "@patrol-log/shared";
+import { parseSqliteUtc, type LiveMapMovement, type LiveMapPin, type PatrolType } from "@patrol-log/shared";
 
 function movementOf(pin: LiveMapPin): LiveMapMovement {
   if (pin.patrol_type === "vehicle") return "car";
@@ -116,7 +116,8 @@ function AutoFit({ pins }: { pins: LiveMapPin[] }) {
 }
 
 function formatAge(isoString: string): string {
-  const diffMs = Date.now() - new Date(isoString).getTime();
+  const at = parseSqliteUtc(isoString)?.getTime() ?? new Date(isoString).getTime();
+  const diffMs = Date.now() - at;
   const diffMin = Math.floor(diffMs / 60_000);
   if (diffMin < 1) return "just now";
   if (diffMin === 1) return "1 min ago";

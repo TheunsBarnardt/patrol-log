@@ -1,4 +1,4 @@
-import type { PatrolDetailReport, PatrolSummaryReport, PatrolType } from "@patrol-log/shared";
+import { parseSqliteUtc, type PatrolDetailReport, type PatrolSummaryReport, type PatrolType } from "@patrol-log/shared";
 
 const TYPE_LABELS: Record<PatrolType, string> = {
   foot: "Foot",
@@ -50,8 +50,8 @@ function xmlEscape(value: string): string {
 
 function formatDisplayTime(value: string | null | undefined): string {
   if (!value) return "";
-  const d = new Date(value.includes("T") ? value : value.replace(" ", "T") + (value.endsWith("Z") ? "" : "Z"));
-  if (Number.isNaN(d.getTime())) return value;
+  const d = parseSqliteUtc(value);
+  if (!d) return value;
   return d.toLocaleString();
 }
 

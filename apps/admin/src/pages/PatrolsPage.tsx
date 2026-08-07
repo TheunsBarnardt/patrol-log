@@ -1,8 +1,15 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch, authStore } from "../lib/api";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
+
+function formatUtc(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = parseSqliteUtc(iso);
+  return d ? d.toLocaleString() : iso;
+}
 
 type PatrolType = "foot" | "vehicle" | "static" | "sector_monitoring" | "ops" | "responding";
 type PatrolState = "active" | "stood_down";
@@ -46,8 +53,8 @@ const REASONS: { value: PatrolReason | ""; label: string }[] = [
 
 function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
+  const d = parseSqliteUtc(iso);
+  if (!d) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -191,8 +198,8 @@ export function PatrolsPage() {
                 </span>
               ),
             },
-            { header: "Start", render: (r) => new Date(r.startTime).toLocaleString() },
-            { header: "End", render: (r) => (r.endTime ? new Date(r.endTime).toLocaleString() : "—") },
+            { header: "Start", render: (r) => formatUtc(r.startTime) },
+            { header: "End", render: (r) => formatUtc(r.endTime) },
             {
               header: "Distance",
               render: (r) => (r.distanceKm != null ? `${r.distanceKm} km` : "—"),

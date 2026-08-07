@@ -129,13 +129,32 @@ export function HomeScreen({ navigation }: Props) {
               {activePatrol ? "Active patrol" : "Commence patrol"}
             </Text>
             <Text style={[styles.ctaSub, activePatrol && styles.ctaSubLive]}>
-              {activePatrol ? "Tap to view or stand down" : "Where are you patrolling?"}
+              {activePatrol
+                ? activePatrol.my_role === "joined"
+                  ? "Passenger — tap to stand down"
+                  : "Tap to view or stand down"
+                : "Where are you patrolling?"}
             </Text>
           </View>
           <View style={[styles.ctaIcon, activePatrol && styles.ctaIconLive]}>
             <FontAwesome5 name="arrow-right" size={16} color={activePatrol ? colors.danger : colors.primary} solid />
           </View>
         </Pressable>
+
+        {!activePatrol && (
+          <Pressable
+            style={({ pressed }) => [styles.ctaSecondary, pressed && styles.pressed]}
+            onPress={() => navigation.navigate("JoinPatrol")}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.ctaTitle}>Join patrol</Text>
+              <Text style={styles.ctaSub}>Select an active patrol as passenger</Text>
+            </View>
+            <View style={styles.ctaIcon}>
+              <FontAwesome5 name="user-plus" size={15} color={colors.primary} solid />
+            </View>
+          </Pressable>
+        )}
 
         <Text style={styles.section}>Suggestions</Text>
         <View style={styles.suggestCard}>
@@ -287,9 +306,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  ctaSecondary: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.xl,
+    paddingVertical: 18,
+    paddingHorizontal: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: spacing.xl,
   },
-  ctaLive: { backgroundColor: colors.danger },
+  ctaLive: { backgroundColor: colors.danger, marginBottom: spacing.xl },
   ctaTitle: { fontSize: 22, fontWeight: "700", color: colors.text, letterSpacing: -0.3 },
   ctaTitleLive: { color: "#fff" },
   ctaSub: { fontSize: 14, color: colors.textMuted, marginTop: 4, fontWeight: "500" },
