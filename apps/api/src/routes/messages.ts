@@ -24,6 +24,16 @@ import type { AuthenticatedContext } from "../env.js";
 
 type ChannelRow = typeof messageChannels.$inferSelect;
 
+/** Ensure SQLite UTC timestamps without Z are returned as ISO so clients don't show −2h. */
+function toIsoUtc(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const t = value.trim();
+  if (!t) return null;
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(t)) return t;
+  const withT = t.includes("T") ? t : t.replace(" ", "T");
+  return withT.endsWith("Z") ? withT : `${withT}Z`;
+}
+
 async function countUnreadForPatroller(
   db: Db,
   channelId: string,
@@ -115,7 +125,7 @@ async function enrichChannelForPatroller(
     memberCount,
     unreadCount,
     lastMessage,
-    lastMessageAt: lastMsg?.createdAt ?? null,
+    lastMessageAt: toIsoUtc(lastMsg?.createdAt) ?? null,
   };
 }
 
@@ -259,6 +269,7 @@ export async function sendOutOfSectorNotification(
       senderCallSign: "System",
       body: alertBody,
       priority: "urgent",
+      createdAt: new Date().toISOString(),
     });
   }
 }
@@ -538,7 +549,7 @@ messagesRoute.get("/:channelId", async (c) => {
     senderCallSign: r.senderCallSign,
     body: r.body,
     priority: r.priority,
-    createdAt: r.createdAt,
+    createdAt: toIsoUtc(r.createdAt) ?? r.createdAt,
     isRead: readSet.has(r.id),
   }));
 
@@ -584,7 +595,7 @@ messagesRoute.post("/:channelId", async (c) => {
     senderCallSign: msg.senderCallSign,
     body: msg.body,
     priority: msg.priority,
-    createdAt: msg.createdAt,
+    createdAt: toIsoUtc(msg.createdAt) ?? msg.createdAt,
     isRead: true,
   });
 });

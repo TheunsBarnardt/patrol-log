@@ -34,26 +34,38 @@ type Props = NativeStackScreenProps<RootStackParamList, "ActivePatrol">;
 export function ActivePatrolScreen({ navigation, route }: Props) {
   const { patrolId } = route.params;
   const [patrol, setPatrol] = useState<ActivePatrolResponse | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [odometerEnd, setOdometerEnd] = useState("");
   const [distanceKm, setDistanceKm] = useState("");
   const [busy, setBusy] = useState(false);
+  const [standingDownCallSign, setStandingDownCallSign] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [memberQuery, setMemberQuery] = useState("");
   const [memberResults, setMemberResults] = useState<MemberRecord[]>([]);
   const [addingMember, setAddingMember] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const patrolRef = useRef<ActivePatrolResponse | null>(null);
   const deviceToken = useAuthStore((s) => s.deviceToken);
   const profile = useAuthStore((s) => s.profile);
+  patrolRef.current = patrol;
 
   const refresh = useCallback(async () => {
     try {
       const p = await api.activePatrol();
-      setPatrol(p && p.patrol_id === patrolId ? p : p);
+      if (p == null) {
+        setPatrol(null);
+        setLoadFailed(true);
+        return;
+      }
+      setPatrol(p);
+      setLoadFailed(false);
     } catch (err) {
       console.warn("[active-patrol] failed to refresh", err);
+      // Keep last good patrol so stand-down stays available overnight.
+      if (!patrolRef.current) setLoadFailed(true);
     }
-  }, [patrolId]);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -109,13 +121,31 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     }
   }
 
-  async function standDownSelf() {
+  async function standDownPassenger(callSign: string) {
     if (!patrol) return;
+    setStandingDownCallSign(callSign);
+    setError(null);
+    try {
+      const updated = await api.standDownMember(patrol.patrol_id, { call_sign: callSign });
+      setPatrol(updated);
+      notify("Passenger stood down", `${callSign} has been stood down.`);
+    } catch (err: any) {
+      const msg = err?.body?.message ?? err?.message ?? "Unable to stand down passenger.";
+      setError(msg);
+      notify("Stand down failed", msg);
+    } finally {
+      setStandingDownCallSign(null);
+    }
+  }
 
-    const isPrimary = patrol.my_role === "primary";
-    const isVehicle = patrolTypeRequiresVehicle(patrol.patrol_type);
-    const useOdometer = isPrimary && isVehicle && patrol.odometer_start != null;
-    const useDistance = isPrimary && isVehicle && patrol.odometer_start == null;
+  async function standDownSelf() {
+    const id = patrol?.patrol_id ?? patrolId;
+    if (!id) return;
+
+    const isPrimary = patrol?.my_role === "primary";
+    const isVehicle = patrol ? patrolTypeRequiresVehicle(patrol.patrol_type) : false;
+    const useOdometer = !!isPrimary && isVehicle && patrol?.odometer_start != null;
+    const useDistance = !!isPrimary && isVehicle && patrol?.odometer_start == null;
 
     const endOdo = odometerEnd.trim() === "" ? NaN : Number(odometerEnd);
     const dist = distanceKm.trim() === "" ? NaN : Number(distanceKm);
@@ -127,7 +157,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
         notify("Stand down", msg);
         return;
       }
-      if (patrol.odometer_start != null && endOdo < patrol.odometer_start) {
+      if (patrol?.odometer_start != null && endOdo < patrol.odometer_start) {
         const msg = `End odometer must be at least ${patrol.odometer_start.toLocaleString()} km.`;
         setError(msg);
         notify("Stand down", msg);
@@ -148,7 +178,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     setError(null);
     try {
       const loc = await captureGps();
-      await api.standDown(patrol.patrol_id, {
+      await api.standDown(id, {
         odometer_end: useOdometer ? endOdo : undefined,
         distance_km: useDistance ? Math.round(dist) : undefined,
         end_location: loc,
@@ -167,7 +197,25 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   if (!patrol) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+        {loadFailed ? (
+          <View style={{ padding: spacing.lg, gap: spacing.md }}>
+            <Text style={styles.cardHead}>Couldn’t load patrol</Text>
+            <Text style={styles.odoHintText}>
+              Check your connection and try again. If you were already on patrol, stand-down may still work after refresh.
+            </Text>
+            <TouchableOpacity style={styles.standDownPrimary} onPress={() => { setLoadFailed(false); void refresh(); }}>
+              <Text style={styles.standDownText}>Retry</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.standDownPrimary, { backgroundColor: colors.surfaceMuted }]}
+              onPress={() => navigation.replace("Home")}
+            >
+              <Text style={[styles.standDownText, { color: colors.text }]}>Back to home</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+        )}
       </SafeAreaView>
     );
   }
@@ -291,13 +339,25 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
                 <Text style={styles.cardHead}>{jp.call_sign}</Text>
                 <Text style={styles.cardLine}>{jp.name}</Text>
                 <Text style={styles.cardLine}>Start Time: {formatTime(jp.start_time)}</Text>
-                <View style={styles.standDownJoined}>
-                  <Text style={styles.joinedHint}>
-                    {jp.call_sign === profile?.call_sign
-                      ? "Stand down with the button above"
-                      : "(stands down from their own device)"}
-                  </Text>
-                </View>
+                {isPrimary && jp.call_sign !== profile?.call_sign ? (
+                  <TouchableOpacity
+                    style={[styles.standDownMember, standingDownCallSign === jp.call_sign && { opacity: 0.6 }]}
+                    onPress={() => void standDownPassenger(jp.call_sign)}
+                    disabled={!!standingDownCallSign}
+                  >
+                    <Text style={styles.standDownText}>
+                      {standingDownCallSign === jp.call_sign ? "Standing down…" : "Stand down passenger"}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.standDownJoined}>
+                    <Text style={styles.joinedHint}>
+                      {jp.call_sign === profile?.call_sign
+                        ? "Stand down with the button above"
+                        : "(stands down from their own device)"}
+                    </Text>
+                  </View>
+                )}
               </View>
             ))}
           </>
@@ -386,6 +446,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     padding: spacing.md,
     borderRadius: 16,
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  standDownMember: {
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    borderRadius: 20,
     alignItems: "center",
     marginTop: spacing.sm,
   },

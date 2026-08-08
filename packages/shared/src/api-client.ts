@@ -19,6 +19,7 @@ import type {
   PatrollerStats,
   ResidentRecord,
   ResumeRequest,
+  StandDownMemberRequest,
   StandDownRequest,
   StandDownResponse,
   StatsPeriod,
@@ -115,6 +116,8 @@ export function createApiClient(opts: ApiClientOptions) {
     myPatrolStats: (period: StatsPeriod = "month") =>
       request<PatrollerStats>(`/patrols/stats/me?period=${period}`),
     standDown: (patrolId: string, body: StandDownRequest) => request<StandDownResponse>(`/patrols/${patrolId}/stand-down`, { method: "POST", body: JSON.stringify(body) }),
+    standDownMember: (patrolId: string, body: StandDownMemberRequest) =>
+      request<ActivePatrolResponse>(`/patrols/${patrolId}/members/stand-down`, { method: "POST", body: JSON.stringify(body) }),
     addPatrolMembers: (patrolId: string, body: AddPatrolMembersRequest) =>
       request<ActivePatrolResponse>(`/patrols/${patrolId}/members`, { method: "POST", body: JSON.stringify(body) }),
 
@@ -137,6 +140,10 @@ export function createApiClient(opts: ApiClientOptions) {
     vehicles: () => request<{ results: VehicleRecord[] }>("/vehicles"),
     createOwnVehicle: (body: { registration: string; description?: string; last_odometer?: number }) =>
       request<VehicleRecord>("/vehicles", { method: "POST", body: JSON.stringify(body) }),
+    updateOwnVehicle: (
+      id: string,
+      body: { registration?: string; description?: string; last_odometer?: number },
+    ) => request<VehicleRecord>(`/vehicles/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 
     // auth extras
     changePassword: (body: { current_password: string; new_password: string }) =>

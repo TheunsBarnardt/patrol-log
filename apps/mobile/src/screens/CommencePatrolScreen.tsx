@@ -54,6 +54,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
   const [selectedVehicle, setSelectedVehicle] = useState<VehicleRecord | null>(null);
   const [vehiclePickerOpen, setVehiclePickerOpen] = useState(false);
   const [addOwnOpen, setAddOwnOpen] = useState(false);
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [ownReg, setOwnReg] = useState("");
   const [ownDesc, setOwnDesc] = useState("");
   const [ownOdo, setOwnOdo] = useState("");
@@ -97,7 +98,25 @@ export function CommencePatrolScreen({ navigation }: Props) {
     setSelectedMembers((prev) => prev.filter((m) => m.member_id !== id));
   }
 
-  async function handleAddOwnVehicle() {
+  function openAddVehicle() {
+    setEditingVehicleId(null);
+    setOwnReg("");
+    setOwnDesc("");
+    setOwnOdo("");
+    setVehiclePickerOpen(false);
+    setAddOwnOpen(true);
+  }
+
+  function openEditVehicle(v: VehicleRecord) {
+    setEditingVehicleId(v.id);
+    setOwnReg(v.registration);
+    setOwnDesc(v.description ?? "");
+    setOwnOdo(String(v.lastOdometer ?? 0));
+    setVehiclePickerOpen(false);
+    setAddOwnOpen(true);
+  }
+
+  async function handleSaveOwnVehicle() {
     const registration = ownReg.trim().toUpperCase();
     if (registration.length < 2) {
       notify("Missing", "Enter the vehicle registration.");
@@ -105,25 +124,33 @@ export function CommencePatrolScreen({ navigation }: Props) {
     }
     setAddingOwn(true);
     try {
-      const created = await api.createOwnVehicle({
-        registration,
-        description: ownDesc.trim() || "Own vehicle",
-        last_odometer: ownOdo ? Number(ownOdo) : 0,
-      });
+      const saved = editingVehicleId
+        ? await api.updateOwnVehicle(editingVehicleId, {
+            registration,
+            description: ownDesc.trim() || "Own vehicle",
+            last_odometer: ownOdo ? Number(ownOdo) : 0,
+          })
+        : await api.createOwnVehicle({
+            registration,
+            description: ownDesc.trim() || "Own vehicle",
+            last_odometer: ownOdo ? Number(ownOdo) : 0,
+          });
       setVehicles((prev) => {
-        const without = prev.filter((v) => v.id !== created.id);
-        return [...without, created].sort((a, b) => a.registration.localeCompare(b.registration));
+        const without = prev.filter((v) => v.id !== saved.id);
+        return [...without, saved].sort((a, b) => a.registration.localeCompare(b.registration));
       });
-      setSelectedVehicle(created);
+      setSelectedVehicle(saved);
       if (ownOdo) setOdometerStart(ownOdo);
       setAddOwnOpen(false);
       setVehiclePickerOpen(false);
+      setEditingVehicleId(null);
       setOwnReg("");
       setOwnDesc("");
       setOwnOdo("");
       setFormError(null);
+      notify(editingVehicleId ? "Vehicle updated" : "Vehicle saved", saved.registration);
     } catch (err: any) {
-      notify("Could not add vehicle", err?.body?.message ?? "Something went wrong.");
+      notify(editingVehicleId ? "Could not update vehicle" : "Could not add vehicle", err?.body?.message ?? "Something went wrong.");
     } finally {
       setAddingOwn(false);
     }
@@ -158,6 +185,17 @@ export function CommencePatrolScreen({ navigation }: Props) {
       }
       navigation.replace("ActivePatrol", { patrolId: res.patrol_id });
     } catch (err: any) {
+      const code = err?.body?.error ?? err?.code;
+      if (code === "COMMENCE_ALREADY_ON_PATROL") {
+        try {
+          const active = await api.activePatrol();
+          if (active?.patrol_id) {
+            notify("Already on patrol", "Opening your active patrol.");
+            navigation.replace("ActivePatrol", { patrolId: active.patrol_id });
+            return;
+          }
+        } catch {}
+      }
       const msg = err?.body?.message ?? "Something went wrong.";
       setFormError(msg);
       notify("Could not start patrol", msg);
@@ -308,7 +346,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Choose a vehicle</Text>
-          <Pressable style={styles.addRow} onPress={() => { setVehiclePickerOpen(false); setAddOwnOpen(true); }}>
+          <Pressable style={styles.addRow} onPress={openAddVehicle}>
             <View style={styles.addIcon}>
               <FontAwesome5 name="plus" size={14} color="#fff" solid />
             </View>
@@ -323,23 +361,30 @@ export function CommencePatrolScreen({ navigation }: Props) {
               renderItem={({ item }) => {
                 const selected = selectedVehicle?.id === item.id;
                 return (
-                  <Pressable
-                    style={[styles.vehicleRow, selected && styles.vehicleRowSelected]}
-                    onPress={() => {
-                      setSelectedVehicle(item);
-                      setVehiclePickerOpen(false);
-                      setFormError(null);
-                      if (!odometerStart) setOdometerStart(String(item.lastOdometer));
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
+                  <View style={[styles.vehicleRow, selected && styles.vehicleRowSelected]}>
+                    <Pressable
+                      style={{ flex: 1 }}
+                      onPress={() => {
+                        setSelectedVehicle(item);
+                        setVehiclePickerOpen(false);
+                        setFormError(null);
+                        if (!odometerStart) setOdometerStart(String(item.lastOdometer));
+                      }}
+                    >
                       <Text style={styles.vehicleReg}>{item.registration}</Text>
                       <Text style={styles.vehicleMeta}>
                         {[item.description, `${item.lastOdometer.toLocaleString()} km`].filter(Boolean).join(" · ")}
                       </Text>
-                    </View>
+                    </Pressable>
+                    <Pressable
+                      hitSlop={10}
+                      onPress={() => openEditVehicle(item)}
+                      style={{ padding: 8 }}
+                    >
+                      <FontAwesome5 name="edit" size={14} color={colors.textMuted} solid />
+                    </Pressable>
                     {selected && <FontAwesome5 name="check" size={14} color={colors.text} solid />}
-                  </Pressable>
+                  </View>
                 );
               }}
             />
@@ -351,7 +396,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
         <Pressable style={styles.sheetBackdrop} onPress={() => setAddOwnOpen(false)} />
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Add own vehicle</Text>
+          <Text style={styles.sheetTitle}>{editingVehicleId ? "Edit vehicle" : "Add own vehicle"}</Text>
           <Text style={styles.sheetLabel}>Registration</Text>
           <TextInput
             style={styles.fieldInput}
@@ -380,7 +425,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
           />
           <Pressable
             style={[styles.startBtn, { marginTop: spacing.lg }, addingOwn && styles.startBtnDisabled]}
-            onPress={handleAddOwnVehicle}
+            onPress={handleSaveOwnVehicle}
             disabled={addingOwn}
           >
             {addingOwn ? <ActivityIndicator color="#fff" /> : <Text style={styles.startBtnText}>Save</Text>}

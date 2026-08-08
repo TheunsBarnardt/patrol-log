@@ -55,7 +55,12 @@ export function HomeScreen({ navigation }: Props) {
 
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => {
-      void api.activePatrol().then(setActivePatrol).catch(() => setActivePatrol(null));
+      void api
+        .activePatrol()
+        .then(setActivePatrol)
+        .catch(() => {
+          // Keep last known active patrol after overnight/network blips — never treat errors as "not on patrol".
+        });
       void refreshUnread();
       void refreshStats(statsPeriod);
     });

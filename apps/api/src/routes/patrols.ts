@@ -9,6 +9,7 @@ import {
   type AddPatrolMembersRequest,
   type CommencePatrolRequest,
   type PatrollerStats,
+  type StandDownMemberRequest,
   type StandDownRequest,
   type StatsPeriod,
 } from "@patrol-log/shared";
@@ -375,6 +376,44 @@ patrolRoutes.post("/:patrol_id/members", requireAuth(), async (c) => {
   await logAudit(db, "patrol.membersadded", auth, {
     patrol_id: patrolId,
     call_signs: joined.map((j) => j.callSign),
+  });
+
+  return c.json(await hydrateActivePatrol(db, patrolId, auth.patroller.patroller_id));
+});
+
+/** Primary stands down a joined passenger without ending the whole patrol. */
+patrolRoutes.post("/:patrol_id/members/stand-down", requireAuth(), async (c) => {
+  const auth = getAuth(c);
+  const patrolId = c.req.param("patrol_id");
+  const body = await c.req.json<StandDownMemberRequest>().catch(() => null);
+  const callSign = body?.call_sign?.toUpperCase().trim();
+  if (!callSign) throw new AppError("STAND_DOWN_MEMBER_NOT_FOUND");
+
+  const db = getDb(c.env);
+  const patrol = await db.query.patrols.findFirst({ where: eq(patrols.id, patrolId) });
+  if (!patrol || patrol.state !== "active") throw new AppError("STAND_DOWN_NOT_ON_PATROL");
+  if (patrol.primaryPatrollerId !== auth.patroller.patroller_id) {
+    throw new AppError("STAND_DOWN_UNAUTHORIZED");
+  }
+
+  const target = await db.query.patrollers.findFirst({
+    where: (p, { and, eq }) => and(eq(p.callSign, callSign), eq(p.cpfId, auth.patroller.cpf_id)),
+  });
+  if (!target) throw new AppError("STAND_DOWN_MEMBER_NOT_FOUND");
+
+  const member = await db.query.patrolMembers.findFirst({
+    where: (pm, { and, eq }) => and(eq(pm.patrolId, patrolId), eq(pm.patrollerId, target.id)),
+  });
+  if (!member || member.role !== "joined") throw new AppError("STAND_DOWN_MEMBER_NOT_FOUND");
+  if (member.endTime) throw new AppError("STAND_DOWN_ALREADY_STOOD_DOWN");
+
+  const now = new Date().toISOString();
+  await db.update(patrolMembers).set({ endTime: now }).where(
+    and(eq(patrolMembers.patrolId, patrolId), eq(patrolMembers.patrollerId, target.id)),
+  );
+  await logAudit(db, "patrol.passengerstooddown", auth, {
+    patrol_id: patrolId,
+    call_sign: callSign,
   });
 
   return c.json(await hydrateActivePatrol(db, patrolId, auth.patroller.patroller_id));

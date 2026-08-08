@@ -103,3 +103,43 @@ vehiclesRoute.post("/", requireAuth(), async (c) => {
   await logAudit(db, "vehicle.own_registered", auth, { vehicle_id: row.id, reused: false });
   return c.json(toRecord(row), 201);
 });
+
+/** Edit own vehicle (registration / description / odometer). */
+vehiclesRoute.patch("/:id", requireAuth(), async (c) => {
+  const auth = getAuth(c);
+  const id = c.req.param("id");
+  const body = await c.req
+    .json<{ registration?: string; description?: string; last_odometer?: number }>()
+    .catch(() => null);
+
+  const db = getDb(c.env);
+  const existing = await db.query.vehicles.findFirst({
+    where: (v, { and, eq }) => and(eq(v.id, id), eq(v.cpfId, auth.patroller.cpf_id)),
+  });
+  if (!existing) throw new AppError("VEHICLE_NOT_FOUND");
+  if (existing.patrollerId !== auth.patroller.patroller_id) throw new AppError("VEHICLE_FORBIDDEN");
+
+  const update: Partial<typeof vehicles.$inferInsert> = {};
+  if (body?.registration != null) {
+    const registration = body.registration.trim().toUpperCase();
+    if (registration.length < 2) throw new AppError("VEHICLE_REGISTRATION_REQUIRED");
+    if (registration !== existing.registration) {
+      const clash = await db.query.vehicles.findFirst({
+        where: (v, { and, eq }) =>
+          and(eq(v.cpfId, auth.patroller.cpf_id), eq(v.registration, registration)),
+      });
+      if (clash && clash.id !== existing.id) throw new AppError("VEHICLE_DUPLICATE_REGISTRATION");
+      update.registration = registration;
+    }
+  }
+  if (body?.description !== undefined) {
+    update.description = body.description?.trim() || existing.description;
+  }
+  if (body?.last_odometer != null && Number.isFinite(body.last_odometer)) {
+    update.lastOdometer = Math.max(0, Math.floor(body.last_odometer));
+  }
+
+  const [row] = await db.update(vehicles).set(update).where(eq(vehicles.id, id)).returning();
+  await logAudit(db, "vehicle.own_updated", auth, { vehicle_id: row.id });
+  return c.json(toRecord(row));
+});
