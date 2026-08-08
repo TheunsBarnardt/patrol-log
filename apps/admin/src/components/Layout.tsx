@@ -1,6 +1,7 @@
 import { Link, NavLink, Navigate, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { authStore } from "../lib/api";
+import { APP_VERSION } from "../version";
 
 type Role = "system_admin" | "admin" | "sector_lead" | "call_centre_agent" | "patroller";
 
@@ -99,6 +100,7 @@ export function Layout({ children }: { children: ReactNode }) {
               </p>
             </>
           )}
+          <p className="mt-2 text-gray-400">About · v{APP_VERSION}</p>
           <button onClick={logout} className="mt-2 w-full text-left text-red-600 hover:underline">Log out</button>
         </div>
       </aside>

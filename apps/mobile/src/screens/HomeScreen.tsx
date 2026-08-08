@@ -8,8 +8,19 @@ import { useAuthStore } from "../store/auth";
 import { useMessagingStore } from "../store/messaging";
 import { api } from "../lib/api";
 import { registerPushToken } from "../lib/notifications";
+import { storage } from "../lib/storage";
 import type { ActivePatrolResponse, PatrollerStats, StatsPeriod } from "@patrol-log/shared";
 import { colors, radii, spacing } from "../theme";
+
+async function readCachedActivePatrol(): Promise<ActivePatrolResponse | null> {
+  try {
+    const raw = await storage.getActivePatrolCache();
+    if (!raw) return null;
+    return JSON.parse(raw) as ActivePatrolResponse;
+  } catch {
+    return null;
+  }
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
 type IconName = ComponentProps<typeof FontAwesome5>["name"];
@@ -54,10 +65,25 @@ export function HomeScreen({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
+    void readCachedActivePatrol().then((cached) => {
+      if (cached) setActivePatrol((prev) => prev ?? cached);
+    });
+  }, []);
+
+  useEffect(() => {
     const unsub = navigation.addListener("focus", () => {
       void api
         .activePatrol()
-        .then(setActivePatrol)
+        .then(async (p) => {
+          setActivePatrol(p);
+          if (p) {
+            try {
+              await storage.setActivePatrolCache(JSON.stringify(p));
+            } catch {}
+          } else {
+            await storage.clearActivePatrolCache();
+          }
+        })
         .catch(() => {
           // Keep last known active patrol after overnight/network blips — never treat errors as "not on patrol".
         });

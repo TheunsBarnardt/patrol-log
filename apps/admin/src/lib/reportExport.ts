@@ -98,8 +98,10 @@ function stamp(from: string, to: string): string {
   return `${from}_to_${to}`;
 }
 
-function roleLabel(role: "primary" | "joined" | undefined): string {
-  return role === "joined" ? "Passenger" : "Primary";
+function roleLabel(role: "primary" | "joined" | "guest" | undefined): string {
+  if (role === "joined") return "Passenger";
+  if (role === "guest") return "Guest";
+  return "Primary";
 }
 
 export function downloadDetailCsv(report: PatrolDetailReport) {

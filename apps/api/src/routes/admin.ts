@@ -24,6 +24,7 @@ import {
   nextOfKin,
   patrolBreadcrumbs,
   patrolEscalationEvents,
+  patrolGuests,
   patrolMembers,
   patrollers,
   patrols,
@@ -446,6 +447,33 @@ admin.get("/reports/detail", async (c) => {
     }
   }
 
+  const guestsByPatrol = new Map<
+    string,
+    { displayName: string; note: string | null; createdAt: string }[]
+  >();
+  if (patrolIds.length > 0) {
+    const guestRows = await db
+      .select({
+        patrolId: patrolGuests.patrolId,
+        displayName: patrolGuests.displayName,
+        note: patrolGuests.note,
+        createdAt: patrolGuests.createdAt,
+      })
+      .from(patrolGuests)
+      .where(inArray(patrolGuests.patrolId, patrolIds))
+      .orderBy(patrolGuests.displayName);
+
+    for (const g of guestRows) {
+      const list = guestsByPatrol.get(g.patrolId) ?? [];
+      list.push({
+        displayName: g.displayName,
+        note: g.note,
+        createdAt: g.createdAt,
+      });
+      guestsByPatrol.set(g.patrolId, list);
+    }
+  }
+
   const reportRows: PatrolDetailReport["rows"] = [];
   for (const r of rows) {
     const hours = patrolHours(r.startTime, r.endTime);
@@ -480,6 +508,25 @@ admin.get("/reports/detail", async (c) => {
         stoodDownAt: j.endTime ?? r.endTime,
         durationHours: jHours,
         durationLabel: durationLabel(jHours),
+        distanceKm: 0,
+        vehicleRegistration,
+        vehicleDescription,
+      });
+    }
+
+    for (const g of guestsByPatrol.get(r.patrolId) ?? []) {
+      const gHours = patrolHours(g.createdAt, r.endTime);
+      const nameWithNote = g.note ? `${g.displayName} (${g.note})` : g.displayName;
+      reportRows.push({
+        callSign: "—",
+        name: nameWithNote,
+        sector,
+        role: "guest",
+        patrolType: r.patrolType,
+        commencedAt: g.createdAt,
+        stoodDownAt: r.endTime,
+        durationHours: gHours,
+        durationLabel: durationLabel(gHours),
         distanceKm: 0,
         vehicleRegistration,
         vehicleDescription,

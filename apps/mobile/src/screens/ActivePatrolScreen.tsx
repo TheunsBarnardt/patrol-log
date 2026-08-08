@@ -19,6 +19,7 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { startHeartbeat, stopHeartbeat } from "../lib/heartbeat";
+import { storage } from "../lib/storage";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
 import {
@@ -28,6 +29,23 @@ import {
   type GeoPoint,
   type MemberRecord,
 } from "@patrol-log/shared";
+
+async function cacheActivePatrol(p: ActivePatrolResponse) {
+  try {
+    await storage.setActivePatrolCache(JSON.stringify(p));
+  } catch {}
+}
+
+async function readCachedPatrol(id: string): Promise<ActivePatrolResponse | null> {
+  try {
+    const raw = await storage.getActivePatrolCache();
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ActivePatrolResponse;
+    return parsed?.patrol_id === id ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, "ActivePatrol">;
 
@@ -43,6 +61,10 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   const [memberQuery, setMemberQuery] = useState("");
   const [memberResults, setMemberResults] = useState<MemberRecord[]>([]);
   const [addingMember, setAddingMember] = useState(false);
+  const [guestDraft, setGuestDraft] = useState("");
+  const [guestNote, setGuestNote] = useState("");
+  const [addingGuest, setAddingGuest] = useState(false);
+  const [removingGuestId, setRemovingGuestId] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const patrolRef = useRef<ActivePatrolResponse | null>(null);
@@ -54,22 +76,55 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     try {
       const p = await api.activePatrol();
       if (p == null) {
+        // Prefer in-memory / disk cache over wiping UI after midnight blips.
+        if (patrolRef.current?.patrol_id === patrolId) {
+          setLoadFailed(false);
+          return;
+        }
+        const cached = await readCachedPatrol(patrolId);
+        if (cached) {
+          setPatrol(cached);
+          setLoadFailed(false);
+          return;
+        }
         setPatrol(null);
         setLoadFailed(true);
         return;
       }
+      if (p.patrol_id !== patrolId) {
+        // On a different patrol — still show what the server says.
+        setPatrol(p);
+        void cacheActivePatrol(p);
+        setLoadFailed(false);
+        return;
+      }
       setPatrol(p);
+      void cacheActivePatrol(p);
       setLoadFailed(false);
     } catch (err) {
       console.warn("[active-patrol] failed to refresh", err);
       // Keep last good patrol so stand-down stays available overnight.
-      if (!patrolRef.current) setLoadFailed(true);
+      if (patrolRef.current?.patrol_id === patrolId) {
+        setLoadFailed(false);
+        return;
+      }
+      const cached = await readCachedPatrol(patrolId);
+      if (cached) {
+        setPatrol(cached);
+        setLoadFailed(false);
+        return;
+      }
+      setLoadFailed(true);
     }
-  }, []);
+  }, [patrolId]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void (async () => {
+      const cached = await readCachedPatrol(patrolId);
+      if (cached && !patrolRef.current) setPatrol(cached);
+      await refresh();
+    })();
+  }, [refresh, patrolId]);
 
   useEffect(() => {
     if (!deviceToken) return;
@@ -138,6 +193,48 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     }
   }
 
+  async function addGuest() {
+    if (!patrol) return;
+    const displayName = guestDraft.trim();
+    if (!displayName) return;
+    setAddingGuest(true);
+    setError(null);
+    try {
+      const note = guestNote.trim() || undefined;
+      const updated = await api.addPatrolGuest(patrol.patrol_id, {
+        display_name: displayName,
+        note,
+      });
+      setPatrol(updated);
+      setGuestDraft("");
+      setGuestNote("");
+      notify("Guest added", displayName);
+    } catch (err: any) {
+      const msg = err?.body?.message ?? err?.message ?? "Unable to add guest.";
+      setError(msg);
+      notify("Could not add guest", msg);
+    } finally {
+      setAddingGuest(false);
+    }
+  }
+
+  async function removeGuest(guestId: string, displayName: string) {
+    if (!patrol) return;
+    setRemovingGuestId(guestId);
+    setError(null);
+    try {
+      const updated = await api.removePatrolGuest(patrol.patrol_id, guestId);
+      setPatrol(updated);
+      notify("Guest removed", displayName);
+    } catch (err: any) {
+      const msg = err?.body?.message ?? err?.message ?? "Unable to remove guest.";
+      setError(msg);
+      notify("Could not remove guest", msg);
+    } finally {
+      setRemovingGuestId(null);
+    }
+  }
+
   async function standDownSelf() {
     const id = patrol?.patrol_id ?? patrolId;
     if (!id) return;
@@ -146,6 +243,9 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     const isVehicle = patrol ? patrolTypeRequiresVehicle(patrol.patrol_type) : false;
     const useOdometer = !!isPrimary && isVehicle && patrol?.odometer_start != null;
     const useDistance = !!isPrimary && isVehicle && patrol?.odometer_start == null;
+    /** Offline / failed load: optional km if they were the driver. */
+    const offlineDistance =
+      !patrol && distanceKm.trim() !== "" ? Number(distanceKm) : NaN;
 
     const endOdo = odometerEnd.trim() === "" ? NaN : Number(odometerEnd);
     const dist = distanceKm.trim() === "" ? NaN : Number(distanceKm);
@@ -174,16 +274,28 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
       }
     }
 
+    if (!patrol && distanceKm.trim() !== "" && (!Number.isFinite(offlineDistance) || offlineDistance < 0)) {
+      const msg = "Enter a valid kilometres travelled, or leave blank if you were a passenger.";
+      setError(msg);
+      notify("Stand down", msg);
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
       const loc = await captureGps();
       await api.standDown(id, {
         odometer_end: useOdometer ? endOdo : undefined,
-        distance_km: useDistance ? Math.round(dist) : undefined,
+        distance_km: useDistance
+          ? Math.round(dist)
+          : Number.isFinite(offlineDistance)
+            ? Math.round(offlineDistance)
+            : undefined,
         end_location: loc,
       });
       stopHeartbeat();
+      await storage.clearActivePatrolCache();
       navigation.replace("Home");
     } catch (err: any) {
       const msg = err?.body?.message ?? err?.message ?? "Unable to stand down.";
@@ -201,10 +313,26 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
           <View style={{ padding: spacing.lg, gap: spacing.md }}>
             <Text style={styles.cardHead}>Couldn’t load patrol</Text>
             <Text style={styles.odoHintText}>
-              Check your connection and try again. If you were already on patrol, stand-down may still work after refresh.
+              Connection may be offline after midnight. You can still try standing down with this patrol id, or retry when you’re back online.
             </Text>
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            <Text style={[styles.cardLine, { fontWeight: "700" }]}>Km travelled (if you were the driver)</Text>
+            <TextInput
+              style={styles.input}
+              value={distanceKm}
+              onChangeText={setDistanceKm}
+              placeholder="Leave blank if passenger"
+              keyboardType="numeric"
+            />
+            <TouchableOpacity
+              style={[styles.standDownPrimary, busy && { opacity: 0.6 }]}
+              onPress={() => void standDownSelf()}
+              disabled={busy}
+            >
+              <Text style={styles.standDownText}>{busy ? "Standing down…" : "Stand down anyway"}</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.standDownPrimary} onPress={() => { setLoadFailed(false); void refresh(); }}>
-              <Text style={styles.standDownText}>Retry</Text>
+              <Text style={styles.standDownText}>Retry load</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.standDownPrimary, { backgroundColor: colors.surfaceMuted }]}
@@ -225,6 +353,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   const useOdometer = isPrimary && isVehicle && patrol.odometer_start != null;
   const useDistance = isPrimary && isVehicle && patrol.odometer_start == null;
   const activeJoined = patrol.joined_patrollers.filter((jp) => !jp.end_time);
+  const guests = patrol.guests ?? [];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -379,6 +508,61 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
               ))}
           </>
         )}
+
+        {isPrimary && (
+          <>
+            <Text style={styles.section}>Add guest</Text>
+            <View style={styles.divider} />
+            <TextInput
+              style={styles.input}
+              value={guestDraft}
+              onChangeText={setGuestDraft}
+              placeholder="Guest name"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="words"
+            />
+            <TextInput
+              style={[styles.input, { marginTop: 0 }]}
+              value={guestNote}
+              onChangeText={setGuestNote}
+              placeholder="Note (optional, e.g. neighbour)"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="sentences"
+            />
+            <TouchableOpacity
+              style={[styles.standDownMember, (!guestDraft.trim() || addingGuest) && { opacity: 0.5 }]}
+              onPress={() => void addGuest()}
+              disabled={!guestDraft.trim() || addingGuest}
+            >
+              <Text style={styles.standDownText}>{addingGuest ? "Adding…" : "Add guest"}</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {guests.length > 0 && (
+          <>
+            <Text style={styles.section}>Guests</Text>
+            <View style={styles.divider} />
+            {guests.map((g) => (
+              <View style={styles.card} key={g.id}>
+                <Text style={styles.cardHead}>{g.display_name}</Text>
+                {g.note ? <Text style={styles.cardLine}>{g.note}</Text> : null}
+                <Text style={styles.cardLine}>Added: {formatTime(g.created_at)}</Text>
+                {isPrimary && (
+                  <TouchableOpacity
+                    style={[styles.removeGuestBtn, removingGuestId === g.id && { opacity: 0.6 }]}
+                    onPress={() => void removeGuest(g.id, g.display_name)}
+                    disabled={!!removingGuestId}
+                  >
+                    <Text style={styles.removeGuestText}>
+                      {removingGuestId === g.id ? "Removing…" : "Remove guest"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -495,4 +679,12 @@ const styles = StyleSheet.create({
   },
   resultCs: { fontWeight: "800", fontSize: 14, color: colors.primary, minWidth: 56 },
   resultName: { flex: 1, fontSize: 14, color: colors.text },
+  removeGuestBtn: {
+    backgroundColor: colors.surfaceMuted,
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  removeGuestText: { color: colors.danger, fontWeight: "700", fontSize: 15 },
 });

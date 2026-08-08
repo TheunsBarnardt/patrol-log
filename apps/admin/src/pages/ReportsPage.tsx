@@ -176,7 +176,7 @@ export function ReportsPage() {
                           {r.callSign} / {r.name}
                         </td>
                         <td className="px-3 py-2 text-gray-600">
-                          {r.role === "joined" ? "Passenger" : "Primary"}
+                          {r.role === "joined" ? "Passenger" : r.role === "guest" ? "Guest" : "Primary"}
                         </td>
                         <td className="px-3 py-2 text-gray-600">{patrolTypeLabel(r.patrolType)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.distanceKm}</td>

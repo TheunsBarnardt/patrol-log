@@ -44,6 +44,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     stopHeartbeat();
     await storage.clearDeviceToken();
     await storage.clearProfile();
+    await storage.clearActivePatrolCache();
     set({ status: "unauthenticated", profile: null, deviceToken: null });
   },
 }));

@@ -1,5 +1,6 @@
 import { authStore } from "../lib/api";
 import { PageHeader } from "../components/DataTable";
+import { APP_VERSION } from "../version";
 
 function formatAccessLevel(level: string) {
   return level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -17,6 +18,7 @@ export function MyDetailsPage() {
     ["Organization", profile.organization],
     ["Sector", profile.sector],
     ["Province", profile.province],
+    ["App version", APP_VERSION],
   ];
 
   return (

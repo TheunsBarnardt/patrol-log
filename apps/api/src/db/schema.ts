@@ -227,6 +227,24 @@ export const patrolMembers = sqliteTable("patrol_members", {
   activeByPatrollerIdx: index("patrol_members_active_by_patroller_idx").on(t.patrollerId, t.endTime),
 }));
 
+/** Non-member guests logged on a patrol (no patroller account). */
+export const patrolGuests = sqliteTable("patrol_guests", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  patrolId: text("patrol_id")
+    .notNull()
+    .references(() => patrols.id, { onDelete: "cascade" }),
+  displayName: text("display_name").notNull(),
+  note: text("note"),
+  addedByPatrollerId: text("added_by_patroller_id")
+    .notNull()
+    .references(() => patrollers.id),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  patrolIdx: index("patrol_guests_patrol_idx").on(t.patrolId),
+}));
+
 export const patrolBreadcrumbs = sqliteTable("patrol_breadcrumbs", {
   id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
   patrolId: text("patrol_id")

@@ -46,6 +46,8 @@ export function CommencePatrolScreen({ navigation }: Props) {
   const [memberQuery, setMemberQuery] = useState("");
   const [memberResults, setMemberResults] = useState<MemberRecord[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<MemberRecord[]>([]);
+  const [guestNames, setGuestNames] = useState<string[]>([]);
+  const [guestDraft, setGuestDraft] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -96,6 +98,21 @@ export function CommencePatrolScreen({ navigation }: Props) {
 
   function removeMember(id: string) {
     setSelectedMembers((prev) => prev.filter((m) => m.member_id !== id));
+  }
+
+  function addGuestName() {
+    const name = guestDraft.trim();
+    if (!name) return;
+    if (guestNames.some((g) => g.toLowerCase() === name.toLowerCase())) {
+      setGuestDraft("");
+      return;
+    }
+    setGuestNames((prev) => [...prev, name]);
+    setGuestDraft("");
+  }
+
+  function removeGuestName(name: string) {
+    setGuestNames((prev) => prev.filter((g) => g !== name));
   }
 
   function openAddVehicle() {
@@ -173,6 +190,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
       const startLocation = await captureGps();
       const res = await api.commencePatrol({
         joined_patroller_call_signs: selectedMembers.map((m) => m.call_sign),
+        guest_names: guestNames.length > 0 ? guestNames : undefined,
         patrol_type: patrolType,
         patrol_vehicle: needsVehicle ? selectedVehicle!.id : undefined,
         odometer_start: odometerStart ? Number(odometerStart) : undefined,
@@ -313,6 +331,39 @@ export function CommencePatrolScreen({ navigation }: Props) {
               {selectedMembers.map((m) => (
                 <Pressable key={m.member_id} style={styles.chip} onPress={() => removeMember(m.member_id)}>
                   <Text style={styles.chipText}>{m.call_sign}</Text>
+                  <FontAwesome5 name="times" size={11} color={colors.text} />
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>Guests (non-members)</Text>
+          <Text style={styles.fieldHint}>People without an account — logged by name only.</Text>
+          <View style={styles.searchField}>
+            <FontAwesome5 name="user" size={14} color={colors.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              value={guestDraft}
+              onChangeText={setGuestDraft}
+              placeholder="Guest name"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="words"
+              onSubmitEditing={addGuestName}
+              returnKeyType="done"
+            />
+            <Pressable onPress={addGuestName} hitSlop={8} disabled={!guestDraft.trim()}>
+              <Text style={{ color: guestDraft.trim() ? colors.primary : colors.textMuted, fontWeight: "700" }}>
+                Add
+              </Text>
+            </Pressable>
+          </View>
+          {guestNames.length > 0 && (
+            <View style={styles.chipRow}>
+              {guestNames.map((name) => (
+                <Pressable key={name} style={styles.chip} onPress={() => removeGuestName(name)}>
+                  <Text style={styles.chipText}>{name}</Text>
                   <FontAwesome5 name="times" size={11} color={colors.text} />
                 </Pressable>
               ))}

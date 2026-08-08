@@ -6,6 +6,7 @@ import { and, eq, gte, inArray, isNull } from "drizzle-orm";
 import {
   AppError,
   patrolTypeRequiresVehicle,
+  type AddPatrolGuestRequest,
   type AddPatrolMembersRequest,
   type CommencePatrolRequest,
   type PatrollerStats,
@@ -18,6 +19,7 @@ import { getAuth, requireAuth, requireAccessLevel } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
 import {
   livePins,
+  patrolGuests,
   patrolMembers,
   patrollers,
   patrols,
@@ -163,6 +165,19 @@ patrolRoutes.post("/commence", requireAuth(), requireAccessLevel("patroller", "s
       patrolId: created.id,
       patrollerId: jp.id,
       role: "joined",
+    });
+  }
+
+  const guestNames = (body.guest_names ?? [])
+    .map((n) => (typeof n === "string" ? n.trim() : ""))
+    .filter((n) => n.length > 0);
+  const guestCreatedAt = new Date().toISOString();
+  for (const displayName of guestNames) {
+    await db.insert(patrolGuests).values({
+      patrolId: created.id,
+      displayName,
+      addedByPatrollerId: auth.patroller.patroller_id,
+      createdAt: guestCreatedAt,
     });
   }
 
@@ -419,6 +434,57 @@ patrolRoutes.post("/:patrol_id/members/stand-down", requireAuth(), async (c) => 
   return c.json(await hydrateActivePatrol(db, patrolId, auth.patroller.patroller_id));
 });
 
+patrolRoutes.post("/:patrol_id/guests", requireAuth(), async (c) => {
+  const auth = getAuth(c);
+  const patrolId = c.req.param("patrol_id");
+  const body = await c.req.json<AddPatrolGuestRequest>().catch(() => ({} as AddPatrolGuestRequest));
+  const displayName = typeof body.display_name === "string" ? body.display_name.trim() : "";
+  if (!displayName) throw new AppError("PATROL_GUEST_NAME_REQUIRED");
+  const note =
+    typeof body.note === "string" && body.note.trim() ? body.note.trim() : null;
+
+  const db = getDb(c.env);
+  const patrol = await db.query.patrols.findFirst({ where: eq(patrols.id, patrolId) });
+  if (!patrol || patrol.state !== "active") throw new AppError("PATROL_NOT_FOUND");
+  if (patrol.primaryPatrollerId !== auth.patroller.patroller_id) {
+    throw new AppError("PATROL_GUEST_UNAUTHORIZED");
+  }
+
+  await db.insert(patrolGuests).values({
+    patrolId,
+    displayName,
+    note,
+    addedByPatrollerId: auth.patroller.patroller_id,
+    createdAt: new Date().toISOString(),
+  });
+  await logAudit(db, "patrol.guestadded", auth, { patrol_id: patrolId, display_name: displayName });
+
+  return c.json(await hydrateActivePatrol(db, patrolId, auth.patroller.patroller_id));
+});
+
+patrolRoutes.delete("/:patrol_id/guests/:guest_id", requireAuth(), async (c) => {
+  const auth = getAuth(c);
+  const patrolId = c.req.param("patrol_id");
+  const guestId = c.req.param("guest_id");
+
+  const db = getDb(c.env);
+  const patrol = await db.query.patrols.findFirst({ where: eq(patrols.id, patrolId) });
+  if (!patrol || patrol.state !== "active") throw new AppError("PATROL_NOT_FOUND");
+  if (patrol.primaryPatrollerId !== auth.patroller.patroller_id) {
+    throw new AppError("PATROL_GUEST_UNAUTHORIZED");
+  }
+
+  const guest = await db.query.patrolGuests.findFirst({
+    where: (g, { and, eq }) => and(eq(g.id, guestId), eq(g.patrolId, patrolId)),
+  });
+  if (!guest) throw new AppError("PATROL_GUEST_NOT_FOUND");
+
+  await db.delete(patrolGuests).where(eq(patrolGuests.id, guestId));
+  await logAudit(db, "patrol.guestremoved", auth, { patrol_id: patrolId, guest_id: guestId });
+
+  return c.json(await hydrateActivePatrol(db, patrolId, auth.patroller.patroller_id));
+});
+
 patrolRoutes.post("/:patrol_id/stand-down", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const patrolId = c.req.param("patrol_id");
@@ -584,10 +650,20 @@ async function hydrateActivePatrol(
       };
     }),
   );
+  const guests = await db.query.patrolGuests.findMany({
+    where: (g, { eq }) => eq(g.patrolId, patrolId),
+  });
+  const guestsFull = guests.map((g) => ({
+    id: g.id,
+    display_name: g.displayName,
+    note: g.note ?? undefined,
+    created_at: g.createdAt,
+  }));
   return {
     patrol_id: p.id,
     primary_patroller_call_sign: primaryP?.callSign ?? "",
     joined_patrollers: joinedFull,
+    guests: guestsFull,
     patrol_type: p.patrolType,
     patrol_vehicle: p.vehicleId ?? undefined,
     odometer_start: p.odometerStart ?? undefined,

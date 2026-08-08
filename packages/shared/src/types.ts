@@ -75,16 +75,26 @@ export interface ResumeRequest {
 // ── Commence patrol ─────────────────────────────────────────
 export interface CommencePatrolRequest {
   joined_patroller_call_signs: string[];
+  /** Free-text guest passenger names (non-members). */
+  guest_names?: string[];
   patrol_type: PatrolType;
   patrol_vehicle?: string; // required for vehicle / monitoring / ops / responding
   odometer_start?: number; // optional; when set, stand-down asks for end odometer
   start_location?: GeoPoint;
 }
 
+export interface ActivePatrolGuest {
+  id: string;
+  display_name: string;
+  note?: string;
+  created_at: string;
+}
+
 export interface ActivePatrolResponse {
   patrol_id: string;
   primary_patroller_call_sign: string;
   joined_patrollers: JoinedPatroller[];
+  guests: ActivePatrolGuest[];
   patrol_type: PatrolType;
   patrol_vehicle?: string;
   odometer_start?: number;
@@ -101,6 +111,11 @@ export interface JoinedPatroller {
   name: string;
   start_time: string;
   end_time?: string;
+}
+
+export interface AddPatrolGuestRequest {
+  display_name: string;
+  note?: string;
 }
 
 // ── Stand down ──────────────────────────────────────────────
@@ -365,14 +380,14 @@ export interface PatrolDetailReportRow {
   callSign: string;
   name: string;
   sector: string;
-  /** Primary driver/lead, or joined passenger on the same patrol. */
-  role: "primary" | "joined";
+  /** Primary, joined passenger, or non-member guest. */
+  role: "primary" | "joined" | "guest";
   patrolType: PatrolType;
   commencedAt: string;
   stoodDownAt: string | null;
   durationHours: number;
   durationLabel: string;
-  /** Always 0 for joined passengers — km credits the primary only. */
+  /** Always 0 for joined passengers and guests — km credits the primary only. */
   distanceKm: number;
   vehicleRegistration: string | null;
   vehicleDescription: string | null;

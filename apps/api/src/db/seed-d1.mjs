@@ -65,6 +65,7 @@ async function main() {
   await db.delete(schema.auditLog);
   await db.delete(schema.patrolEscalationEvents);
   await db.delete(schema.patrolBreadcrumbs);
+  await db.delete(schema.patrolGuests);
   await db.delete(schema.patrolMembers);
   await db.delete(schema.patrols);
   await db.delete(schema.devices);

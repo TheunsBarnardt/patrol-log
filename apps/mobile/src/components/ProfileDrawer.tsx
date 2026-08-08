@@ -12,6 +12,7 @@ import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
+import { APP_NAME, APP_VERSION } from "../version";
 
 interface Props {
   visible: boolean;
@@ -79,6 +80,12 @@ export function ProfileDrawer({ visible, onClose }: Props) {
             <Row label="Sector" value={profile.sector} />
             <Row label="Organization" value={profile.organization} />
             <Row label="Province" value={profile.province} />
+          </View>
+
+          <Text style={styles.aboutTitle}>About</Text>
+          <View style={styles.section}>
+            <Row label="App" value={APP_NAME} />
+            <Row label="Version" value={APP_VERSION} />
           </View>
 
           <View style={styles.divider} />
@@ -185,6 +192,14 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 24, fontWeight: "800", color: "#fff" },
   name: { fontSize: 20, fontWeight: "800", textAlign: "center" },
   callSign: { fontSize: 14, color: colors.textMuted, textAlign: "center", marginBottom: spacing.md },
+  aboutTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
   section: {
     backgroundColor: colors.cardBg,
     borderRadius: 10,

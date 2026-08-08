@@ -7,6 +7,8 @@ const KEYS = {
   deviceToken: "patrol_log.device_token",
   deviceId: "patrol_log.device_id",
   profile: "patrol_log.profile",
+  /** Last known active patrol — survives overnight reloads / flaky /active/me. */
+  activePatrol: "patrol_log.active_patrol",
 };
 
 async function getItem(key: string): Promise<string | null> {
@@ -60,5 +62,14 @@ export const storage = {
   },
   async clearProfile(): Promise<void> {
     await deleteItem(KEYS.profile);
+  },
+  async getActivePatrolCache(): Promise<string | null> {
+    return getItem(KEYS.activePatrol);
+  },
+  async setActivePatrolCache(v: string): Promise<void> {
+    await setItem(KEYS.activePatrol, v);
+  },
+  async clearActivePatrolCache(): Promise<void> {
+    await deleteItem(KEYS.activePatrol);
   },
 };

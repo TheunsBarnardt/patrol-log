@@ -1,6 +1,7 @@
 // Thin typed fetch wrapper used by the mobile app and admin portal.
 import type {
   ActivePatrolResponse,
+  AddPatrolGuestRequest,
   AddPatrolMembersRequest,
   CommencePatrolRequest,
   JoinablePatrolSummary,
@@ -120,6 +121,10 @@ export function createApiClient(opts: ApiClientOptions) {
       request<ActivePatrolResponse>(`/patrols/${patrolId}/members/stand-down`, { method: "POST", body: JSON.stringify(body) }),
     addPatrolMembers: (patrolId: string, body: AddPatrolMembersRequest) =>
       request<ActivePatrolResponse>(`/patrols/${patrolId}/members`, { method: "POST", body: JSON.stringify(body) }),
+    addPatrolGuest: (patrolId: string, body: AddPatrolGuestRequest) =>
+      request<ActivePatrolResponse>(`/patrols/${patrolId}/guests`, { method: "POST", body: JSON.stringify(body) }),
+    removePatrolGuest: (patrolId: string, guestId: string) =>
+      request<ActivePatrolResponse>(`/patrols/${patrolId}/guests/${guestId}`, { method: "DELETE" }),
 
     // hotspots
     hotspots: (period: HotspotPeriod) => request<HotspotsResponse>(`/hotspots?period=${period}`),
