@@ -18,7 +18,9 @@ export const colors = {
   surfaceMuted: "#F3F6FB",
   text: "#0B1220",
   textMuted: "#5B6B85",
-  border: "#D7E0EE",
+  /** Visible edge on gray cards / fields (was too light on white). */
+  border: "#8A9BB5",
+  borderSoft: "#D7E0EE",
   // Back-compat
   cardBg: "#F3F6FB",
 };
@@ -26,3 +28,10 @@ export const colors = {
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };
 
 export const radii = { sm: 8, md: 12, lg: 16, xl: 28 };
+
+/** Shared chrome for light-gray cards / search bars that sit on white. */
+export const mutedCard = {
+  backgroundColor: colors.surfaceMuted,
+  borderWidth: 1.5,
+  borderColor: colors.border,
+} as const;

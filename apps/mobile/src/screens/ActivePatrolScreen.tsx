@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
   cardLine: { fontSize: 14, fontWeight: "600" },
   input: {
     backgroundColor: colors.cardBg,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: 6,
     padding: spacing.md,
@@ -628,6 +628,8 @@ const styles = StyleSheet.create({
   },
   standDownJoined: {
     backgroundColor: colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     padding: spacing.md,
     borderRadius: 16,
     alignItems: "center",
@@ -645,6 +647,8 @@ const styles = StyleSheet.create({
   errorText: { color: colors.danger, fontWeight: "600", fontSize: 14, marginBottom: spacing.sm },
   odoHint: {
     backgroundColor: colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     borderRadius: 16,
     padding: spacing.md,
     marginTop: spacing.md,
@@ -655,6 +659,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     backgroundColor: colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
@@ -664,7 +670,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     backgroundColor: colors.cardBg,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
     overflow: "hidden",
   },
@@ -681,6 +687,8 @@ const styles = StyleSheet.create({
   resultName: { flex: 1, fontSize: 14, color: colors.text },
   removeGuestBtn: {
     backgroundColor: colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     paddingVertical: 12,
     borderRadius: 20,
     alignItems: "center",

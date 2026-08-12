@@ -377,6 +377,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
     backgroundColor: colors.surfaceMuted,
+    borderTopWidth: 1.5,
+    borderTopColor: colors.border,
     gap: 8,
   },
   sideBtn: {
@@ -477,6 +479,8 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     backgroundColor: colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
   },

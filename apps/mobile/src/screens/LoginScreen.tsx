@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
   diagCard: {
     backgroundColor: "#fff",
     borderWidth: 1.5,
-    borderColor: "#8A9BB5",
+    borderColor: colors.border,
     borderRadius: radii.lg,
     padding: spacing.md,
     marginBottom: spacing.lg,
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
   input: {
     width: "100%",
     backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: radii.lg,
     paddingHorizontal: spacing.md,

@@ -179,6 +179,8 @@ const styles = StyleSheet.create({
     marginVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",

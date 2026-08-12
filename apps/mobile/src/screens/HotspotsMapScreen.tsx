@@ -177,8 +177,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: colors.border,
   },
-  pillActive: { backgroundColor: colors.primary },
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   pillText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
   pillTextActive: { color: "#fff" },
   banner: {

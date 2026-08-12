@@ -101,7 +101,11 @@ const styles = StyleSheet.create({
   },
   btnPrimary: { backgroundColor: colors.primary },
   btnDanger: { backgroundColor: colors.danger },
-  btnGhost: { backgroundColor: colors.surfaceMuted },
+  btnGhost: {
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
   btnText: { fontSize: 14, fontWeight: "700" },
   btnTextPrimary: { color: "#fff" },
   btnTextDanger: { color: "#fff" },

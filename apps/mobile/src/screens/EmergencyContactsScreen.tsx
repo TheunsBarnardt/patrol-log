@@ -115,6 +115,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     paddingHorizontal: 18,
     flexDirection: "row",
     alignItems: "center",
@@ -133,6 +135,8 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     padding: 18,
     gap: 10,
   },
