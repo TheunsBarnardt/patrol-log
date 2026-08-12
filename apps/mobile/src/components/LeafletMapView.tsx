@@ -1,11 +1,13 @@
 /**
  * LeafletMapView — embeds a Leaflet/OpenStreetMap map.
  * Native: WebView. Web: iframe. Pin updates via injectJavaScript.
+ * Assets/tiles load via same-origin Pages proxies (mobile carriers often block CDNs).
  */
 
 import { useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { HtmlMapHost, type HtmlMapHostHandle } from "./HtmlMapHost";
+import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
 
 export interface LeafletPin {
   id: string;
@@ -24,28 +26,21 @@ interface Props {
 }
 
 function buildHtml(defaultCenter: [number, number], defaultZoom: number): string {
+  const { head, tileLayerJs } = mapBootstrapHtml(
+    ".custom-dot{width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}",
+  );
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>
-  html, body, #map { margin:0; padding:0; width:100%; height:100%; background:#e8e0d8; }
-  .custom-dot { width:16px; height:16px; border-radius:50%; border:3px solid #fff;
-    box-shadow:0 1px 4px rgba(0,0,0,.4); }
-</style>
+${head}
 </head>
 <body>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+${mapLeafletScript()}
 <script>
   var map = L.map('map', { zoomControl: true }).setView(${JSON.stringify(defaultCenter)}, ${defaultZoom});
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap contributors'
-  }).addTo(map);
-
+  ${tileLayerJs}
   var markers = {};
 
   function makeIcon(color) {
@@ -115,7 +110,6 @@ export function LeafletMapView({ pins, defaultCenter = [-25.842, 28.178], defaul
       <HtmlMapHost
         ref={hostRef}
         html={html.current}
-        baseUrl="https://openstreetmap.org"
         style={styles.webview}
         onLoad={handleLoad}
       />

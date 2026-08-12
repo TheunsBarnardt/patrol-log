@@ -1,7 +1,6 @@
 /**
  * Same-origin API proxy.
  * Some SA mobile networks time out on *.workers.dev while *.pages.dev works.
- * Browser calls /api/* on this Pages host; we forward to the Worker.
  */
 
 const UPSTREAM = "https://patrol-log-api.small-night-657e.workers.dev";
@@ -29,15 +28,13 @@ export async function onRequest(context: PagesContext): Promise<Response> {
   };
 
   if (context.request.method !== "GET" && context.request.method !== "HEAD") {
-    init.body = context.request.body;
-    // Required when streaming a request body in the Workers runtime.
-    (init as RequestInit & { duplex?: string }).duplex = "half";
+    // Buffer body — more reliable than streaming duplex on Pages Functions.
+    init.body = await context.request.arrayBuffer();
   }
 
   try {
     const upstream = await fetch(target, init);
     const outHeaders = new Headers(upstream.headers);
-    // Ensure browsers don't cache error/auth responses oddly through the proxy.
     if (!outHeaders.has("cache-control")) {
       outHeaders.set("cache-control", "no-store");
     }

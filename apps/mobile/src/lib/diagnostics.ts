@@ -1,7 +1,7 @@
 /** Temporary mobile-data diagnostics — remove after field testing. */
 
 import { Platform } from "react-native";
-import { API_BASE_URL } from "../config";
+import { getApiBaseUrl } from "../config";
 import { APP_VERSION } from "../version";
 
 export const DIAG_SLOW_MS = 3000;
@@ -32,7 +32,7 @@ export interface DiagReport {
 }
 
 function apiUrl(path: string): string {
-  return `${API_BASE_URL.replace(/\/$/, "")}${path}`;
+  return `${getApiBaseUrl().replace(/\/$/, "")}${path}`;
 }
 
 async function timedFetch(
@@ -104,7 +104,7 @@ export async function runNetworkDiagnostics(
   checks[0] = {
     ...checks[0]!,
     status: "pass",
-    detail: API_BASE_URL.replace(/^https?:\/\//, ""),
+    detail: getApiBaseUrl().replace(/^https?:\/\//, ""),
   };
   emit();
 
@@ -170,7 +170,7 @@ export async function runNetworkDiagnostics(
     checks,
     overall,
     at,
-    apiBase: API_BASE_URL,
+    apiBase: getApiBaseUrl(),
     appVersion: APP_VERSION,
     platform: Platform.OS,
   };

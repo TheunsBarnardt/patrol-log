@@ -6,6 +6,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "rea
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
+import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
 import { colors, spacing } from "../theme";
 import type { HotspotPeriod, HotspotPin } from "@patrol-log/shared";
 
@@ -24,19 +25,20 @@ function ratingColor(rating: number): string {
   return colors.textMuted;
 }
 
-const MAP_HTML = `<!DOCTYPE html>
+function buildHotspotMapHtml(): string {
+  const { head, tileLayerJs } = mapBootstrapHtml();
+  return `<!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#e8e0d8}</style>
+${head}
 </head>
 <body>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+${mapLeafletScript()}
 <script>
 var map=L.map('map',{zoomControl:true}).setView([-25.842,28.178],12);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd',attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
+${tileLayerJs}
 var circles=[];
 var fitted=false;
 
@@ -82,6 +84,7 @@ window.renderPins=function(json){
 </script>
 </body>
 </html>`;
+}
 
 export function HotspotsMapScreen() {
   const [period, setPeriod] = useState<HotspotPeriod>("7d");
@@ -156,7 +159,12 @@ export function HotspotsMapScreen() {
       )}
 
       <View style={styles.map}>
-        <HtmlMapHost ref={hostRef} html={MAP_HTML} onLoad={handleLoad} style={StyleSheet.absoluteFill} />
+        <HtmlMapHost
+          ref={hostRef}
+          html={buildHotspotMapHtml()}
+          onLoad={handleLoad}
+          style={StyleSheet.absoluteFill}
+        />
       </View>
     </SafeAreaView>
   );

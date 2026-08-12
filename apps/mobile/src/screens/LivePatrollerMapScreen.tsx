@@ -8,27 +8,28 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
+import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
 import { colors, spacing } from "../theme";
 import type { LiveMapPin } from "@patrol-log/shared";
 
 const POLL_INTERVAL = 10_000;
 
-const MAP_HTML = `<!DOCTYPE html>
+function buildLiveMapHtml(): string {
+  const { head, tileLayerJs } = mapBootstrapHtml(
+    ".live-pin{background:transparent!important;border:0!important}",
+  );
+  return `<!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>
-  html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#e8e0d8}
-  .live-pin{background:transparent!important;border:0!important}
-</style>
+${head}
 </head>
 <body>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+${mapLeafletScript()}
 <script>
 var map = L.map('map',{zoomControl:true}).setView([-25.842,28.178],12);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:19,subdomains:'abcd',attribution:'© OpenStreetMap © CARTO'}).addTo(map);
+${tileLayerJs}
 
 var markers={};
 var fitted=false;
@@ -106,6 +107,7 @@ window.updatePins=function(json){
 </script>
 </body>
 </html>`;
+}
 
 export function LivePatrollerMapScreen() {
   const [pins, setPins] = useState<LiveMapPin[]>([]);
@@ -177,8 +179,7 @@ export function LivePatrollerMapScreen() {
       ) : (
         <HtmlMapHost
           ref={hostRef}
-          html={MAP_HTML}
-          baseUrl="https://carto.com"
+          html={buildLiveMapHtml()}
           style={styles.map}
           onLoad={handleLoad}
         />

@@ -2,7 +2,7 @@
 // Uses a dedicated fetch path so heartbeat failures never force logout.
 
 import * as Location from "expo-location";
-import { API_BASE_URL } from "../config";
+import { getApiBaseUrl } from "../config";
 import { storage } from "./storage";
 import { showLocalNotification } from "./notifications";
 
@@ -45,7 +45,7 @@ async function sendOnce() {
       return;
     }
 
-    const res = await fetch(`${API_BASE_URL.replace(/\/$/, "")}/live-map/heartbeat`, {
+    const res = await fetch(`${getApiBaseUrl().replace(/\/$/, "")}/live-map/heartbeat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

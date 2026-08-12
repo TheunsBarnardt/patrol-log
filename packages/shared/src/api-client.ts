@@ -29,7 +29,10 @@ import type {
 import type { ErrorCode } from "./errors";
 
 export interface ApiClientOptions {
-  baseUrl: string;
+  /** Static base URL (admin / simple clients). */
+  baseUrl?: string;
+  /** Prefer this — resolves on every request (mobile web proxy). */
+  getBaseUrl?: () => string;
   getDeviceToken?: () => string | null | Promise<string | null>;
   onUnauthorized?: () => void;
 }
@@ -60,7 +63,10 @@ function isSessionAuthFailure(status: number, code?: string): boolean {
 }
 
 export function createApiClient(opts: ApiClientOptions) {
-  const base = opts.baseUrl.replace(/\/$/, "");
+  function resolveBase(): string {
+    const raw = opts.getBaseUrl?.() ?? opts.baseUrl ?? "";
+    return raw.replace(/\/$/, "");
+  }
 
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
@@ -68,7 +74,7 @@ export function createApiClient(opts: ApiClientOptions) {
     const token = opts.getDeviceToken ? await opts.getDeviceToken() : null;
     if (token) headers.set("Authorization", `Bearer ${token}`);
 
-    const res = await fetch(`${base}${path}`, { ...init, headers });
+    const res = await fetch(`${resolveBase()}${path}`, { ...init, headers });
     const text = await res.text();
     let body: unknown = null;
     if (text) {

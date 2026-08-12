@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../lib/api";
-import { API_BASE_URL } from "../config";
+import { getApiBaseUrl } from "../config";
 import { runNetworkDiagnostics, type DiagReport } from "../lib/diagnostics";
 import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
@@ -113,7 +113,7 @@ export function ProfileDrawer({ visible, onClose }: Props) {
           <View style={styles.section}>
             <Row label="App" value={APP_NAME} />
             <Row label="Version" value={APP_VERSION} />
-            <Row label="API" value={API_BASE_URL.replace(/^https?:\/\//, "")} />
+            <Row label="API" value={getApiBaseUrl().replace(/^https?:\/\//, "")} />
           </View>
 
           <Text style={styles.aboutTitle}>Network check</Text>
