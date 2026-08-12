@@ -113,7 +113,7 @@ export function RootNavigator() {
               options={({ navigation }) => ({
                 title: "Patrol Log",
                 headerRight: () => (
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", paddingRight: 12 }}>
                     <BellIcon navigation={navigation} />
                     <HamburgerIcon onPress={() => setDrawerOpen(true)} />
                   </View>
