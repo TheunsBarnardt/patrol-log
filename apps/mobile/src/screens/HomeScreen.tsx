@@ -143,64 +143,43 @@ export function HomeScreen({ navigation }: Props) {
           </View>
         </View>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.cta,
-            activePatrol ? styles.ctaLive : null,
-            pressed && styles.pressed,
-          ]}
-          onPress={() =>
-            activePatrol
-              ? navigation.navigate("ActivePatrol", { patrolId: activePatrol.patrol_id })
-              : navigation.navigate("CommencePatrol")
-          }
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.ctaTitle, activePatrol && styles.ctaTitleLive]}>
-              {activePatrol ? "Active patrol" : "Commence patrol"}
-            </Text>
-            <Text style={[styles.ctaSub, activePatrol && styles.ctaSubLive]}>
-              {activePatrol
+        <View style={[styles.suggestCard, activePatrol && styles.patrolCardLive]}>
+          <SuggestRow
+            icon={activePatrol ? "broadcast-tower" : "flag"}
+            title={activePatrol ? "Active patrol" : "Commence patrol"}
+            subtitle={
+              activePatrol
                 ? activePatrol.my_role === "joined"
                   ? "Passenger — tap to stand down"
                   : "Tap to view or stand down"
-                : "Where are you patrolling?"}
-            </Text>
-          </View>
-          <View style={[styles.ctaIcon, activePatrol && styles.ctaIconLive]}>
-            <FontAwesome5 name="arrow-right" size={16} color={activePatrol ? colors.danger : colors.primary} solid />
-          </View>
-        </Pressable>
-
-        {!activePatrol && (
-          <Pressable
-            style={({ pressed }) => [styles.ctaSecondary, pressed && styles.pressed]}
-            onPress={() => navigation.navigate("JoinPatrol")}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.ctaTitle}>Join patrol</Text>
-              <Text style={styles.ctaSub}>Select an active patrol as passenger</Text>
-            </View>
-            <View style={styles.ctaIcon}>
-              <FontAwesome5 name="user-plus" size={15} color={colors.primary} solid />
-            </View>
-          </Pressable>
-        )}
-
-        {!activePatrol && (
-          <Pressable
-            style={({ pressed }) => [styles.ctaSecondary, pressed && styles.pressed]}
-            onPress={() => navigation.navigate("CapturePatrol")}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.ctaTitle}>Capture patrol</Text>
-              <Text style={styles.ctaSub}>Log a patrol you already completed</Text>
-            </View>
-            <View style={styles.ctaIcon}>
-              <FontAwesome5 name="clipboard-list" size={15} color={colors.primary} solid />
-            </View>
-          </Pressable>
-        )}
+                : "Where are you patrolling?"
+            }
+            live={!!activePatrol}
+            onPress={() =>
+              activePatrol
+                ? navigation.navigate("ActivePatrol", { patrolId: activePatrol.patrol_id })
+                : navigation.navigate("CommencePatrol")
+            }
+          />
+          {!activePatrol && (
+            <>
+              <View style={styles.divider} />
+              <SuggestRow
+                icon="user-plus"
+                title="Join patrol"
+                subtitle="Select an active patrol as passenger"
+                onPress={() => navigation.navigate("JoinPatrol")}
+              />
+              <View style={styles.divider} />
+              <SuggestRow
+                icon="clipboard-list"
+                title="Capture patrol"
+                subtitle="Log a patrol you already completed"
+                onPress={() => navigation.navigate("CapturePatrol")}
+              />
+            </>
+          )}
+        </View>
 
         <Text style={styles.section}>Suggestions</Text>
         <View style={styles.suggestCard}>
@@ -256,28 +235,37 @@ function SuggestRow({
   subtitle,
   onPress,
   badge,
+  live,
 }: {
   icon: IconName;
   title: string;
   subtitle: string;
   onPress: () => void;
   badge?: number;
+  live?: boolean;
 }) {
   return (
-    <Pressable style={({ pressed }) => [styles.suggestRow, pressed && styles.pressedSoft]} onPress={onPress}>
-      <View style={styles.suggestIcon}>
-        <FontAwesome5 name={icon} size={15} color={colors.text} solid />
+    <Pressable
+      style={({ pressed }) => [
+        styles.suggestRow,
+        live && styles.suggestRowLive,
+        pressed && (live ? styles.pressed : styles.pressedSoft),
+      ]}
+      onPress={onPress}
+    >
+      <View style={[styles.suggestIcon, live && styles.suggestIconLive]}>
+        <FontAwesome5 name={icon} size={15} color={live ? colors.danger : colors.text} solid />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.suggestTitle}>{title}</Text>
-        <Text style={styles.suggestSub}>{subtitle}</Text>
+        <Text style={[styles.suggestTitle, live && styles.suggestTitleLive]}>{title}</Text>
+        <Text style={[styles.suggestSub, live && styles.suggestSubLive]}>{subtitle}</Text>
       </View>
       {badge != null && (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{badge > 99 ? "99+" : badge}</Text>
         </View>
       )}
-      <FontAwesome5 name="chevron-right" size={12} color={colors.textMuted} />
+      <FontAwesome5 name="chevron-right" size={12} color={live ? "rgba(255,255,255,0.75)" : colors.textMuted} />
     </Pressable>
   );
 }
@@ -348,49 +336,6 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 22, fontWeight: "800", color: colors.text },
   statLabel: { fontSize: 12, color: colors.textMuted, marginTop: 2, fontWeight: "500" },
 
-  cta: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    paddingVertical: 22,
-    paddingHorizontal: 22,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.md,
-  },
-  ctaSecondary: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    paddingVertical: 18,
-    paddingHorizontal: 22,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.xl,
-  },
-  ctaLive: {
-    backgroundColor: colors.danger,
-    borderColor: "#B00510",
-    marginBottom: spacing.xl,
-  },
-  ctaTitle: { fontSize: 22, fontWeight: "700", color: colors.text, letterSpacing: -0.3 },
-  ctaTitleLive: { color: "#fff" },
-  ctaSub: { fontSize: 14, color: colors.textMuted, marginTop: 4, fontWeight: "500" },
-  ctaSubLive: { color: "rgba(255,255,255,0.85)" },
-  ctaIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.bg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ctaIconLive: { backgroundColor: "#fff" },
-
   section: {
     fontSize: 18,
     fontWeight: "700",
@@ -407,12 +352,19 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginBottom: spacing.xl,
   },
+  patrolCardLive: {
+    backgroundColor: colors.danger,
+    borderColor: "#B00510",
+  },
   suggestRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
     paddingHorizontal: 18,
     paddingVertical: 16,
+  },
+  suggestRowLive: {
+    backgroundColor: colors.danger,
   },
   suggestIcon: {
     width: 40,
@@ -422,8 +374,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  suggestIconLive: { backgroundColor: "#fff" },
   suggestTitle: { fontSize: 16, fontWeight: "600", color: colors.text },
+  suggestTitleLive: { color: "#fff" },
   suggestSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  suggestSubLive: { color: "rgba(255,255,255,0.85)" },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 72 },
 
   quickRow: { flexDirection: "row", gap: 12 },
