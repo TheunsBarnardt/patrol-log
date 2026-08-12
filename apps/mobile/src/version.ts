@@ -1,9 +1,4 @@
-import Constants from "expo-constants";
-
-/** Bump with `app.json` / `package.json` version so About shows deploy freshness. */
-export const APP_VERSION =
-  Constants.expoConfig?.version ??
-  Constants.nativeAppVersion ??
-  "0.2.5";
+/** Bumped by `scripts/bump-app-version.mjs` on deploy — do not read from expoConfig (stale on web). */
+export const APP_VERSION = "0.2.6";
 
 export const APP_NAME = "Patrol Log";

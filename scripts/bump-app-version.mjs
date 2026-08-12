@@ -45,15 +45,11 @@ if (target === "mobile") {
   writeFileSync(appJsonPath, `${JSON.stringify(appJson, null, 2)}\n`);
 
   const versionTsPath = join(appDir, "src", "version.ts");
+  // Literal only — Constants.expoConfig.version can stay stale in Metro web bundles.
   writeFileSync(
     versionTsPath,
-    `import Constants from "expo-constants";
-
-/** Bump with \`app.json\` / \`package.json\` version so About shows deploy freshness. */
-export const APP_VERSION =
-  Constants.expoConfig?.version ??
-  Constants.nativeAppVersion ??
-  "${next}";
+    `/** Bumped by \`scripts/bump-app-version.mjs\` on deploy — do not read from expoConfig (stale on web). */
+export const APP_VERSION = "${next}";
 
 export const APP_NAME = "Patrol Log";
 `,
