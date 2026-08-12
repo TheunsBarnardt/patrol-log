@@ -16,7 +16,9 @@ import { FontAwesome5 } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
+import { cacheGet, cacheSet, EMPTY_CACHE_HINT } from "../lib/offlineCache";
 import { notify } from "../lib/notify";
+import { useConnectivityStore } from "../lib/connectivity";
 import { useAuthStore } from "../store/auth";
 import { colors, radii, spacing } from "../theme";
 import type { MemberRecord } from "@patrol-log/shared";
@@ -25,6 +27,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Members">;
 
 export function MembersScreen({ navigation }: Props) {
   const myId = useAuthStore((s) => s.profile?.patroller_id);
+  const online = useConnectivityStore((s) => s.online);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<MemberRecord[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -33,7 +36,31 @@ export function MembersScreen({ navigation }: Props) {
   useEffect(() => {
     const t = setTimeout(() => {
       if (q && q.length < 2) return;
-      api.members(q || undefined).then((r) => setResults(r.results)).catch(() => setResults([]));
+      api
+        .members(q || undefined)
+        .then(async (r) => {
+          setResults(r.results);
+          if (!q) await cacheSet("members", r.results);
+        })
+        .catch(async () => {
+          const cached = await cacheGet<MemberRecord[]>("members");
+          if (!cached?.data) {
+            setResults([]);
+            return;
+          }
+          if (!q) {
+            setResults(cached.data);
+            return;
+          }
+          const term = q.toLowerCase();
+          setResults(
+            cached.data.filter(
+              (m) =>
+                m.name.toLowerCase().includes(term) ||
+                m.call_sign.toLowerCase().includes(term),
+            ),
+          );
+        });
     }, 300);
     return () => clearTimeout(t);
   }, [q]);
@@ -45,6 +72,10 @@ export function MembersScreen({ navigation }: Props) {
 
   async function openChat(member: MemberRecord) {
     if (!member.member_id || member.member_id === myId || messagingId) return;
+    if (!useConnectivityStore.getState().online) {
+      notify("Needs connection", "Messaging requires an internet connection.");
+      return;
+    }
     setMessagingId(member.member_id);
     try {
       const ch = await api.openDirectChannel(member.member_id);
@@ -81,7 +112,11 @@ export function MembersScreen({ navigation }: Props) {
         keyExtractor={(m) => m.member_id}
         ListEmptyComponent={() => (
           <Text style={styles.empty}>
-            {q.length > 0 && q.length < 2 ? "Type at least 2 characters" : "No members found"}
+            {q.length > 0 && q.length < 2
+              ? "Type at least 2 characters"
+              : !online && results.length === 0
+                ? EMPTY_CACHE_HINT
+                : "No members found"}
           </Text>
         )}
         renderItem={({ item }) => {

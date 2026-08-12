@@ -5,6 +5,8 @@ import { FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
+import { cacheGet, cacheSet, EMPTY_CACHE_HINT } from "../lib/offlineCache";
+import { useConnectivityStore } from "../lib/connectivity";
 import { colors, radii, spacing } from "../theme";
 import { parseSqliteUtc, type EmergencyServiceRecord } from "@patrol-log/shared";
 
@@ -16,12 +18,19 @@ export function EmergencyContactsScreen() {
   const [results, setResults] = useState<EmergencyServiceRecord[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
+  const online = useConnectivityStore((s) => s.online);
 
   useEffect(() => {
     api
       .emergencyContacts()
-      .then((r) => setResults(r.results))
-      .catch(() => setResults([]))
+      .then(async (r) => {
+        setResults(r.results);
+        await cacheSet("emergency", r.results);
+      })
+      .catch(async () => {
+        const cached = await cacheGet<EmergencyServiceRecord[]>("emergency");
+        setResults(cached?.data ?? []);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -63,7 +72,13 @@ export function EmergencyContactsScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={() => (
-          <Text style={styles.empty}>{loading ? "Loading…" : "No contacts found"}</Text>
+          <Text style={styles.empty}>
+            {loading
+              ? "Loading…"
+              : !online && results.length === 0
+                ? EMPTY_CACHE_HINT
+                : "No contacts found"}
+          </Text>
         )}
         renderItem={({ item }) => {
           const verifiedAt = parseSqliteUtc(item.verified_at)?.getTime() ?? new Date(item.verified_at).getTime();

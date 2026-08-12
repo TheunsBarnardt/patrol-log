@@ -15,6 +15,7 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { startHeartbeat } from "../lib/heartbeat";
+import { useConnectivityStore } from "../lib/connectivity";
 import { useAuthStore } from "../store/auth";
 import { colors, radii, spacing } from "../theme";
 import { parseSqliteUtc, type JoinablePatrolSummary, type PatrolType } from "@patrol-log/shared";
@@ -52,6 +53,10 @@ export function JoinPatrolScreen({ navigation }: Props) {
   }, [refresh]);
 
   async function handleJoin(patrol: JoinablePatrolSummary) {
+    if (!useConnectivityStore.getState().online) {
+      notify("Needs connection", "Joining a patrol requires an internet connection.");
+      return;
+    }
     setJoiningId(patrol.patrol_id);
     try {
       const joined = await api.joinPatrol(patrol.patrol_id);

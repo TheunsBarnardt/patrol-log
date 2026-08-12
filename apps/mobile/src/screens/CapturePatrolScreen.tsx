@@ -16,6 +16,9 @@ import { FontAwesome5 } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
+import { isNetworkError, useConnectivityStore } from "../lib/connectivity";
+import { cacheGet, cacheSet } from "../lib/offlineCache";
+import { enqueueCapture } from "../lib/outbox";
 import { notify } from "../lib/notify";
 import { colors, radii, spacing } from "../theme";
 import {
@@ -65,7 +68,16 @@ export function CapturePatrolScreen({ navigation }: Props) {
   const needsVehicle = patrolType ? patrolTypeRequiresVehicle(patrolType) : false;
 
   useEffect(() => {
-    api.vehicles().then((r) => setVehicles(r.results)).catch(() => {});
+    api
+      .vehicles()
+      .then(async (r) => {
+        setVehicles(r.results);
+        await cacheSet("vehicles", r.results);
+      })
+      .catch(async () => {
+        const cached = await cacheGet<VehicleRecord[]>("vehicles");
+        setVehicles(cached?.data ?? []);
+      });
   }, []);
 
   useEffect(() => {
@@ -99,23 +111,41 @@ export function CapturePatrolScreen({ navigation }: Props) {
 
     setBusy(true);
     try {
-      const res = await api.capturePatrol({
+      const body = {
         patrol_type: patrolType,
         start_time: startIso,
         end_time: endIso,
         distance_km: km,
         patrol_vehicle: selectedVehicle?.id,
-        reason: "emergency",
-      });
-      notify(
-        "Patrol captured",
-        `${res.distance_km} km logged · ${PATROL_TYPES.find((t) => t.type === res.patrol_type)?.label ?? res.patrol_type}`,
-      );
-      navigation.replace("Home");
-    } catch (err: any) {
-      const msg = err?.body?.message ?? err?.message ?? "Could not capture patrol.";
-      setFormError(msg);
-      notify("Capture failed", msg);
+        reason: "emergency" as const,
+      };
+
+      const offline = !useConnectivityStore.getState().online;
+      if (offline) {
+        await enqueueCapture(body);
+        notify("Saved offline", "Will sync when you’re back online.");
+        navigation.replace("Home");
+        return;
+      }
+
+      try {
+        const res = await api.capturePatrol(body);
+        notify(
+          "Patrol captured",
+          `${res.distance_km} km logged · ${PATROL_TYPES.find((t) => t.type === res.patrol_type)?.label ?? res.patrol_type}`,
+        );
+        navigation.replace("Home");
+      } catch (err: any) {
+        if (isNetworkError(err)) {
+          await enqueueCapture(body);
+          notify("Saved offline", "Will sync when you’re back online.");
+          navigation.replace("Home");
+          return;
+        }
+        const msg = err?.body?.message ?? err?.message ?? "Could not capture patrol.";
+        setFormError(msg);
+        notify("Capture failed", msg);
+      }
     } finally {
       setBusy(false);
     }

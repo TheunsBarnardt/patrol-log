@@ -20,6 +20,8 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { startHeartbeat, stopHeartbeat } from "../lib/heartbeat";
+import { isNetworkError, useConnectivityStore } from "../lib/connectivity";
+import { enqueueStandDown } from "../lib/outbox";
 import { storage } from "../lib/storage";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
@@ -286,7 +288,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     setError(null);
     try {
       const loc = await captureGps();
-      await api.standDown(id, {
+      const body = {
         odometer_end: useOdometer ? endOdo : undefined,
         distance_km: useDistance
           ? Math.round(dist)
@@ -294,10 +296,35 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
             ? Math.round(offlineDistance)
             : undefined,
         end_location: loc,
-      });
-      stopHeartbeat();
-      await storage.clearActivePatrolCache();
-      navigation.replace("Home");
+      };
+
+      const tryQueue = async () => {
+        await enqueueStandDown(id, body);
+        stopHeartbeat();
+        await storage.clearActivePatrolCache();
+        notify("Saved offline", "Stand-down will sync when you’re back online.");
+        navigation.replace("Home");
+      };
+
+      if (!useConnectivityStore.getState().online) {
+        await tryQueue();
+        return;
+      }
+
+      try {
+        await api.standDown(id, body);
+        stopHeartbeat();
+        await storage.clearActivePatrolCache();
+        navigation.replace("Home");
+      } catch (err: any) {
+        if (isNetworkError(err)) {
+          await tryQueue();
+          return;
+        }
+        const msg = err?.body?.message ?? err?.message ?? "Unable to stand down.";
+        setError(msg);
+        notify("Stand down failed", msg);
+      }
     } catch (err: any) {
       const msg = err?.body?.message ?? err?.message ?? "Unable to stand down.";
       setError(msg);

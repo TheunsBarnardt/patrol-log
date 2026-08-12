@@ -5,17 +5,45 @@ import { FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
+import { cacheGet, cacheSet, EMPTY_CACHE_HINT } from "../lib/offlineCache";
+import { useConnectivityStore } from "../lib/connectivity";
 import { colors, radii, spacing } from "../theme";
 import type { ResidentRecord } from "@patrol-log/shared";
 
 export function ResidentsScreen() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<ResidentRecord[]>([]);
+  const online = useConnectivityStore((s) => s.online);
 
   useEffect(() => {
     const t = setTimeout(() => {
       if (q && q.length < 2) return;
-      api.residents(q || undefined).then((r) => setResults(r.results)).catch(() => setResults([]));
+      api
+        .residents(q || undefined)
+        .then(async (r) => {
+          setResults(r.results);
+          if (!q) await cacheSet("residents", r.results);
+        })
+        .catch(async () => {
+          if (q) {
+            // Offline search: filter cached full list
+            const cached = await cacheGet<ResidentRecord[]>("residents");
+            if (cached?.data) {
+              const term = q.toLowerCase();
+              setResults(
+                cached.data.filter(
+                  (r) =>
+                    r.name.toLowerCase().includes(term) ||
+                    r.phone.includes(term) ||
+                    r.address.toLowerCase().includes(term),
+                ),
+              );
+            } else setResults([]);
+            return;
+          }
+          const cached = await cacheGet<ResidentRecord[]>("residents");
+          setResults(cached?.data ?? []);
+        });
     }, 300);
     return () => clearTimeout(t);
   }, [q]);
@@ -42,7 +70,11 @@ export function ResidentsScreen() {
         keyExtractor={(r) => r.resident_id}
         ListEmptyComponent={() => (
           <Text style={styles.empty}>
-            {q.length > 0 && q.length < 2 ? "Type at least 2 characters" : "No residents found"}
+            {q.length > 0 && q.length < 2
+              ? "Type at least 2 characters"
+              : !online && results.length === 0
+                ? EMPTY_CACHE_HINT
+                : "No residents found"}
           </Text>
         )}
         renderItem={({ item }) => (

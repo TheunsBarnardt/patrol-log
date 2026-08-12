@@ -1,6 +1,6 @@
 {
   "name": "@patrol-log/mobile",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -19,6 +19,7 @@
     "@expo/metro-runtime": "~3.2.3",
     "@expo/vector-icons": "^14.0.0",
     "@patrol-log/shared": "workspace:*",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "@react-navigation/native": "^6.1.17",
     "@react-navigation/native-stack": "^6.9.26",
     "expo": "~51.0.0",

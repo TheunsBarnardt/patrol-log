@@ -8,6 +8,7 @@ import { useAuthStore } from "../store/auth";
 import { useMessagingStore } from "../store/messaging";
 import { api } from "../lib/api";
 import { registerPushToken } from "../lib/notifications";
+import { cacheGet, cacheSet } from "../lib/offlineCache";
 import { storage } from "../lib/storage";
 import type { ActivePatrolResponse, PatrollerStats, StatsPeriod } from "@patrol-log/shared";
 import { colors, radii, spacing } from "../theme";
@@ -51,9 +52,12 @@ export function HomeScreen({ navigation }: Props) {
 
   const refreshStats = useCallback(async (period: StatsPeriod) => {
     try {
-      setStats(await api.myPatrolStats(period));
+      const s = await api.myPatrolStats(period);
+      setStats(s);
+      await cacheSet(`stats:${period}`, s);
     } catch {
-      setStats(null);
+      const cached = await cacheGet<PatrollerStats>(`stats:${period}`);
+      setStats(cached?.data ?? null);
     }
   }, []);
 

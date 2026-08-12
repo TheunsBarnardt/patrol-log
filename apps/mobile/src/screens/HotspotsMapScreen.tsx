@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
 import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
+import { cacheGet, cacheSet } from "../lib/offlineCache";
 import { colors, spacing } from "../theme";
 import type { HotspotPeriod, HotspotPin } from "@patrol-log/shared";
 
@@ -109,18 +110,25 @@ export function HotspotsMapScreen() {
   useEffect(() => {
     setLoading(true);
     setError(null);
+    const key = `hotspots:${period}` as const;
     api
       .hotspots(period)
-      .then((r) => {
+      .then(async (r) => {
         setPins(r.pins);
+        await cacheSet(key, r.pins);
         if (loaded.current) pushPins(r.pins);
       })
-      .catch(() => {
-        setError(
-          pinsRef.current.length > 0
-            ? "Connection lost · showing last known hotspots"
-            : "Connection lost · try again shortly",
-        );
+      .catch(async () => {
+        const cached = await cacheGet<HotspotPin[]>(key);
+        if (cached?.data?.length) {
+          setPins(cached.data);
+          if (loaded.current) pushPins(cached.data);
+          setError("Connection lost · showing last known hotspots");
+        } else if (pinsRef.current.length > 0) {
+          setError("Connection lost · showing last known hotspots");
+        } else {
+          setError("Connection lost · connect once to load hotspots");
+        }
       })
       .finally(() => setLoading(false));
   }, [period]);

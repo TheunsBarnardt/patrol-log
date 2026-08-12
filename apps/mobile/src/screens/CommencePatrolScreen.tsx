@@ -20,6 +20,8 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { startHeartbeat } from "../lib/heartbeat";
+import { cacheGet, cacheSet } from "../lib/offlineCache";
+import { useConnectivityStore } from "../lib/connectivity";
 import { useAuthStore } from "../store/auth";
 import { colors, radii, spacing } from "../theme";
 import {
@@ -69,7 +71,16 @@ export function CommencePatrolScreen({ navigation }: Props) {
   const deviceToken = useAuthStore((s) => s.deviceToken);
 
   useEffect(() => {
-    api.vehicles().then((r) => setVehicles(r.results)).catch(() => {});
+    api
+      .vehicles()
+      .then(async (r) => {
+        setVehicles(r.results);
+        await cacheSet("vehicles", r.results);
+      })
+      .catch(async () => {
+        const cached = await cacheGet<VehicleRecord[]>("vehicles");
+        if (cached?.data) setVehicles(cached.data);
+      });
   }, []);
 
   useEffect(() => {
@@ -176,6 +187,11 @@ export function CommencePatrolScreen({ navigation }: Props) {
   async function handleStart() {
     if (!patrolType) {
       setFormError("Choose a patrol type.");
+      return;
+    }
+    if (!useConnectivityStore.getState().online) {
+      setFormError("Needs connection — commence requires internet. Use Capture patrol if already finished.");
+      notify("Needs connection", "Commence requires an internet connection.");
       return;
     }
     const needsVehicle = patrolTypeRequiresVehicle(patrolType);

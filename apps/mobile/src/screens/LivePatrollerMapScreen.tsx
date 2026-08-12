@@ -9,6 +9,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
 import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
+import { cacheGet, cacheSet } from "../lib/offlineCache";
 import { colors, spacing } from "../theme";
 import type { LiveMapPin } from "@patrol-log/shared";
 
@@ -130,10 +131,11 @@ export function LivePatrollerMapScreen() {
       const res = await api.liveMapSnapshot();
       setPins(res.pins);
       setConnectionLost(false);
+      await cacheSet("liveMap", res.pins);
       if (loaded.current) pushPins(res.pins);
     } catch {
-      // Keep last known pins on the map; mark them stale so the UI shows they’re frozen.
-      const last = pinsRef.current;
+      const cached = await cacheGet<LiveMapPin[]>("liveMap");
+      const last = pinsRef.current.length > 0 ? pinsRef.current : cached?.data ?? [];
       if (last.length > 0) {
         const frozen = last.map((p) => ({ ...p, stale: true }));
         setPins(frozen);
@@ -146,8 +148,15 @@ export function LivePatrollerMapScreen() {
   }
 
   useEffect(() => {
-    void refresh();
-    timer.current = setInterval(refresh, POLL_INTERVAL);
+    void (async () => {
+      const cached = await cacheGet<LiveMapPin[]>("liveMap");
+      if (cached?.data?.length) {
+        setPins(cached.data.map((p) => ({ ...p, stale: true })));
+        setLoading(false);
+      }
+      await refresh();
+      timer.current = setInterval(refresh, POLL_INTERVAL);
+    })();
     return () => {
       if (timer.current) clearInterval(timer.current);
     };

@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { FontAwesome } from "@expo/vector-icons";
 import { useAuthStore } from "../store/auth";
 import { useMessagingStore } from "../store/messaging";
 import { colors } from "../theme";
+import { OfflineBanner } from "../components/OfflineBanner";
 import { ProfileDrawer } from "../components/ProfileDrawer";
+import { startConnectivityMonitoring } from "../lib/connectivity";
+import { flushOutbox, refreshOutboxCount } from "../lib/outbox";
 import { LoginScreen } from "../screens/LoginScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { CommencePatrolScreen } from "../screens/CommencePatrolScreen";
@@ -90,9 +93,16 @@ export function RootNavigator() {
   const status = useAuthStore((s) => s.status);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  return (
-    <>
-      <ProfileDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    void refreshOutboxCount();
+    return startConnectivityMonitoring(() => {
+      void flushOutbox();
+    });
+  }, [status]);
+
+  if (status === "unauthenticated") {
+    return (
       <Stack.Navigator
         screenOptions={{
           headerTitleAlign: "center",
@@ -103,10 +113,26 @@ export function RootNavigator() {
           contentStyle: { backgroundColor: colors.bg },
         }}
       >
-        {status === "unauthenticated" ? (
-          <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
-        ) : (
-          <>
+        <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+      </Stack.Navigator>
+    );
+  }
+
+  return (
+    <>
+      <ProfileDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <View style={{ flex: 1 }}>
+        <OfflineBanner />
+        <Stack.Navigator
+          screenOptions={{
+            headerTitleAlign: "center",
+            headerTitleStyle: { fontSize: 17, fontWeight: "700", color: colors.text },
+            headerStyle: { backgroundColor: colors.bg },
+            headerShadowVisible: false,
+            headerTintColor: colors.text,
+            contentStyle: { backgroundColor: colors.bg },
+          }}
+        >
             <Stack.Screen
               name="Home"
               component={HomeScreen}
@@ -162,9 +188,8 @@ export function RootNavigator() {
                 contentStyle: { backgroundColor: colors.primarySoft },
               })}
             />
-          </>
-        )}
-      </Stack.Navigator>
+        </Stack.Navigator>
+      </View>
     </>
   );
 }
