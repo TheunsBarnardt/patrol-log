@@ -93,6 +93,8 @@ export function HotspotsMapScreen() {
   const [error, setError] = useState<string | null>(null);
   const hostRef = useRef<HtmlMapHostHandle>(null);
   const loaded = useRef(false);
+  const pinsRef = useRef<HotspotPin[]>([]);
+  pinsRef.current = pins;
 
   function pushPins(p: HotspotPin[]) {
     const enriched = p.map((pin) => ({
@@ -113,9 +115,12 @@ export function HotspotsMapScreen() {
         setPins(r.pins);
         if (loaded.current) pushPins(r.pins);
       })
-      .catch((err) => {
-        const msg = err instanceof Error ? err.message : "Network error";
-        setError(msg);
+      .catch(() => {
+        setError(
+          pinsRef.current.length > 0
+            ? "Connection lost · showing last known hotspots"
+            : "Connection lost · try again shortly",
+        );
       })
       .finally(() => setLoading(false));
   }, [period]);

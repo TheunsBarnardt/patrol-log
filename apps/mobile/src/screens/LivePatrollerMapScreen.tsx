@@ -112,10 +112,12 @@ window.updatePins=function(json){
 export function LivePatrollerMapScreen() {
   const [pins, setPins] = useState<LiveMapPin[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [connectionLost, setConnectionLost] = useState(false);
   const hostRef = useRef<HtmlMapHostHandle>(null);
   const loaded = useRef(false);
+  const pinsRef = useRef<LiveMapPin[]>([]);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  pinsRef.current = pins;
 
   function pushPins(p: LiveMapPin[]) {
     hostRef.current?.injectJavaScript(
@@ -127,11 +129,17 @@ export function LivePatrollerMapScreen() {
     try {
       const res = await api.liveMapSnapshot();
       setPins(res.pins);
-      setError(null);
+      setConnectionLost(false);
       if (loaded.current) pushPins(res.pins);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Network error";
-      setError(msg);
+    } catch {
+      // Keep last known pins on the map; mark them stale so the UI shows they’re frozen.
+      const last = pinsRef.current;
+      if (last.length > 0) {
+        const frozen = last.map((p) => ({ ...p, stale: true }));
+        setPins(frozen);
+        if (loaded.current) pushPins(frozen);
+      }
+      setConnectionLost(true);
     } finally {
       setLoading(false);
     }
@@ -147,7 +155,7 @@ export function LivePatrollerMapScreen() {
 
   function handleLoad() {
     loaded.current = true;
-    pushPins(pins);
+    pushPins(pinsRef.current);
   }
 
   const active = pins.filter((p) => !p.stale).length;
@@ -162,16 +170,19 @@ export function LivePatrollerMapScreen() {
       p.patrol_type === "responding",
   ).length;
 
+  const statusLine = loading
+    ? "Connecting…"
+    : connectionLost
+      ? pins.length > 0
+        ? "Connection lost · showing last known locations"
+        : "Connection lost · trying again…"
+      : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${cars} car · ${walks} walk · ${other} other`;
+
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={styles.statusBar}>
-        <View style={styles.statusDot} />
-        <Text style={styles.statusText}>
-          {loading
-            ? "Connecting…"
-            : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${cars} car · ${walks} walk · ${other} other`}
-        </Text>
-        {error && <Text style={styles.errorText}>⚠ {error}</Text>}
+        <View style={[styles.statusDot, connectionLost && styles.statusDotLost]} />
+        <Text style={[styles.statusText, connectionLost && styles.statusTextLost]}>{statusLine}</Text>
       </View>
 
       {loading ? (
@@ -200,7 +211,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
+  statusDotLost: { backgroundColor: colors.warning },
   statusText: { fontSize: 12, color: colors.textMuted, flex: 1 },
-  errorText: { fontSize: 12, color: colors.danger },
+  statusTextLost: { color: colors.warning, fontWeight: "600" },
   map: { flex: 1 },
 });
