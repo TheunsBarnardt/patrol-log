@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
 
   statsCard: {
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     padding: 18,
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
 
   suggestCard: {
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     overflow: "hidden",
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   quick: {
     flex: 1,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingVertical: 18,

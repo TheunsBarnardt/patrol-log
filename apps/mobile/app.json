@@ -3,7 +3,7 @@
     "name": "Patrol Log",
     "slug": "cpf-patrol-log",
     "owner": "cpf-patrol-log",
-    "version": "0.2.10",
+    "version": "0.2.11",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "patrollog",
