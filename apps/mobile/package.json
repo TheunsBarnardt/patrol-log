@@ -1,6 +1,6 @@
 {
   "name": "@patrol-log/mobile",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -10,7 +10,7 @@
     "web": "expo start --web --port 8082",
     "prebuild": "expo prebuild",
     "export:web": "expo export --platform web",
-    "deploy:web": "expo export --platform web && wrangler pages deploy dist --project-name patrol-log-mobile --branch master --commit-dirty=true",
+    "deploy:web": "expo export --platform web && wrangler pages deploy --project-name patrol-log-mobile --branch master --commit-dirty=true",
     "icons": "node scripts/generate-icons.mjs",
     "build:android:preview": "eas build -p android --profile preview",
     "build:android:prod": "eas build -p android --profile production"

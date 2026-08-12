@@ -10,13 +10,16 @@ const fromExtra = Constants.expoConfig?.extra?.apiBaseUrl as string | undefined;
 
 function resolveApiBaseUrl(): string {
   if (fromEnv) return fromEnv;
-  // Local Expo web → local API; production web/native → Cloudflare Worker.
-  if (
-    Platform.OS === "web" &&
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-  ) {
-    return "http://localhost:8787";
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://localhost:8787";
+    }
+    // Same-origin /api proxy on Pages — some mobile carriers time out on *.workers.dev
+    // while *.pages.dev still loads. Native builds keep talking to the Worker directly.
+    if (host.endsWith(".pages.dev") || host === "patrol-log-mobile.pages.dev") {
+      return `${window.location.origin}/api`;
+    }
   }
   return fromExtra || PRODUCTION_API;
 }
