@@ -320,9 +320,9 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   diagCard: {
-    backgroundColor: colors.cardBg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: "#fff",
+    borderWidth: 1.5,
+    borderColor: "#8A9BB5",
     borderRadius: radii.lg,
     padding: spacing.md,
     marginBottom: spacing.lg,
