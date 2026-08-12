@@ -12,7 +12,7 @@ import { api } from "../lib/api";
 import { getApiBaseUrl } from "../config";
 import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
-import { colors, spacing } from "../theme";
+import { colors, radii, spacing } from "../theme";
 import { APP_NAME, APP_VERSION } from "../version";
 
 interface Props {
@@ -128,7 +128,7 @@ export function ProfileDrawer({ visible, onClose }: Props) {
                   <Text style={styles.btnText}>{busy ? "Saving…" : "Save"}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.btn, { backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.border, flex: 1 }]}
+                  style={[styles.btn, { backgroundColor: colors.cardBg, borderWidth: 1.5, borderColor: colors.border, flex: 1 }]}
                   onPress={() => { setChangingPw(false); setCurrentPw(""); setNewPw(""); setConfirmPw(""); }}
                 >
                   <Text style={[styles.btnText, { color: colors.text }]}>Cancel</Text>
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
   },
   section: {
     backgroundColor: colors.cardBg,
-    borderRadius: 10,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     padding: spacing.md,
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: colors.border, marginBottom: spacing.md },
   menuItem: {
     paddingVertical: spacing.md,
-    borderRadius: 8,
+    borderRadius: radii.lg,
     backgroundColor: colors.cardBg,
     borderWidth: 1.5,
     borderColor: colors.border,
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
   menuItemText: { fontSize: 15, fontWeight: "600" },
   pwForm: {
     backgroundColor: colors.cardBg,
-    borderRadius: 10,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     padding: spacing.md,
@@ -236,11 +236,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 6,
+    borderRadius: radii.lg,
     padding: spacing.md,
     marginBottom: spacing.sm,
     fontSize: 15,
   },
-  btn: { borderRadius: 8, padding: spacing.md, alignItems: "center" },
+  btn: { borderRadius: radii.lg, padding: spacing.md, alignItems: "center" },
   btnText: { color: "#fff", fontWeight: "700" },
 });

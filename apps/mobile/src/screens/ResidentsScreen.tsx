@@ -1,52 +1,55 @@
-// WhatsApp-style residents directory.
+// WhatsApp-style residents directory — local list first, search in memory.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
-import { cacheGet, cacheSet, EMPTY_CACHE_HINT } from "../lib/offlineCache";
+import { cacheGet, cacheGetSync, cacheSet, EMPTY_CACHE_HINT } from "../lib/offlineCache";
 import { useConnectivityStore } from "../lib/connectivity";
 import { colors, radii, spacing } from "../theme";
 import type { ResidentRecord } from "@patrol-log/shared";
 
 export function ResidentsScreen() {
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<ResidentRecord[]>([]);
   const online = useConnectivityStore((s) => s.online);
+  const [q, setQ] = useState("");
+  const [list, setList] = useState<ResidentRecord[]>(
+    () => cacheGetSync<ResidentRecord[]>("residents")?.data ?? [],
+  );
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      if (q && q.length < 2) return;
-      api
-        .residents(q || undefined)
-        .then(async (r) => {
-          setResults(r.results);
-          if (!q) await cacheSet("residents", r.results);
-        })
-        .catch(async () => {
-          if (q) {
-            // Offline search: filter cached full list
-            const cached = await cacheGet<ResidentRecord[]>("residents");
-            if (cached?.data) {
-              const term = q.toLowerCase();
-              setResults(
-                cached.data.filter(
-                  (r) =>
-                    r.name.toLowerCase().includes(term) ||
-                    r.phone.includes(term) ||
-                    r.address.toLowerCase().includes(term),
-                ),
-              );
-            } else setResults([]);
-            return;
-          }
-          const cached = await cacheGet<ResidentRecord[]>("residents");
-          setResults(cached?.data ?? []);
-        });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [q]);
+    let cancelled = false;
+    void (async () => {
+      if (list.length === 0) {
+        const cached = await cacheGet<ResidentRecord[]>("residents");
+        if (!cancelled && cached?.data) setList(cached.data);
+      }
+      if (!online) return;
+      try {
+        const r = await api.residents();
+        if (cancelled) return;
+        setList(r.results);
+        await cacheSet("residents", r.results);
+      } catch {
+        // keep local list
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [online]);
+
+  const results = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return list;
+    if (term.length < 2) return [];
+    return list.filter(
+      (r) =>
+        r.name.toLowerCase().includes(term) ||
+        r.phone.includes(term) ||
+        r.address.toLowerCase().includes(term),
+    );
+  }, [list, q]);
 
   async function call(resident: ResidentRecord) {
     await api.residentTapToCall(resident.resident_id).catch(() => {});
@@ -68,30 +71,41 @@ export function ResidentsScreen() {
       <FlatList
         data={results}
         keyExtractor={(r) => r.resident_id}
+        initialNumToRender={24}
+        windowSize={11}
+        maxToRenderPerBatch={24}
         ListEmptyComponent={() => (
           <Text style={styles.empty}>
             {q.length > 0 && q.length < 2
               ? "Type at least 2 characters"
-              : !online && results.length === 0
-                ? EMPTY_CACHE_HINT
-                : "No residents found"}
+              : list.length === 0
+                ? !online
+                  ? EMPTY_CACHE_HINT
+                  : "No residents found"
+                : "No matches"}
           </Text>
         )}
         renderItem={({ item }) => (
           <Pressable
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-            onPress={() => call(item)}
+            onPress={() => void call(item)}
           >
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{item.name.slice(0, 1).toUpperCase()}</Text>
             </View>
             <View style={styles.body}>
               <View style={styles.topLine}>
-                <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.name} numberOfLines={1}>
+                  {item.name}
+                </Text>
                 <FontAwesome5 name="phone-alt" size={14} color={colors.primary} solid />
               </View>
-              <Text style={styles.preview} numberOfLines={1}>{item.phone}</Text>
-              <Text style={styles.preview} numberOfLines={1}>{item.address}</Text>
+              <Text style={styles.preview} numberOfLines={1}>
+                {item.phone}
+              </Text>
+              <Text style={styles.preview} numberOfLines={1}>
+                {item.address}
+              </Text>
             </View>
           </Pressable>
         )}
@@ -106,7 +120,7 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 14,

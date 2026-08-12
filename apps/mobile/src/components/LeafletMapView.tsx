@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { HtmlMapHost, type HtmlMapHostHandle } from "./HtmlMapHost";
 import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
+import { radii } from "../theme";
 
 export interface LeafletPin {
   id: string;
@@ -118,6 +119,6 @@ export function LeafletMapView({ pins, defaultCenter = [-25.842, 28.178], defaul
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, overflow: "hidden", borderRadius: 6 },
+  container: { flex: 1, overflow: "hidden", borderRadius: radii.lg },
   webview: { flex: 1, backgroundColor: "transparent" },
 });

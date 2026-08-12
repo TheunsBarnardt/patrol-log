@@ -68,16 +68,23 @@ export function CapturePatrolScreen({ navigation }: Props) {
   const needsVehicle = patrolType ? patrolTypeRequiresVehicle(patrolType) : false;
 
   useEffect(() => {
-    api
-      .vehicles()
-      .then(async (r) => {
+    let cancelled = false;
+    void (async () => {
+      const cached = await cacheGet<VehicleRecord[]>("vehicles");
+      if (!cancelled && cached?.data) setVehicles(cached.data);
+      if (!useConnectivityStore.getState().online) return;
+      try {
+        const r = await api.vehicles();
+        if (cancelled) return;
         setVehicles(r.results);
         await cacheSet("vehicles", r.results);
-      })
-      .catch(async () => {
-        const cached = await cacheGet<VehicleRecord[]>("vehicles");
-        setVehicles(cached?.data ?? []);
-      });
+      } catch {
+        // keep cached
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -276,7 +283,7 @@ const webInputStyle: Record<string, string | number> = {
   borderWidth: 1.5,
   borderStyle: "solid",
   borderColor: colors.border,
-  borderRadius: 8,
+  borderRadius: radii.lg,
   padding: 14,
   fontSize: 16,
   fontWeight: "600",
@@ -290,7 +297,7 @@ const styles = StyleSheet.create({
   hint: {
     backgroundColor: colors.primarySoft,
     borderRadius: radii.lg,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.lg,
@@ -311,7 +318,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: radii.lg,
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1.5,
     borderColor: colors.border,
@@ -323,7 +330,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: radii.lg,
     padding: spacing.md,
     fontSize: 16,
     fontWeight: "600",
@@ -335,7 +342,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: radii.lg,
     padding: spacing.md,
   },
   vehicleRowOn: { backgroundColor: colors.primary, borderColor: colors.primary },
@@ -345,7 +352,7 @@ const styles = StyleSheet.create({
   submit: {
     marginTop: spacing.lg,
     backgroundColor: colors.primary,
-    borderRadius: 28,
+    borderRadius: radii.lg,
     paddingVertical: 16,
     alignItems: "center",
   },

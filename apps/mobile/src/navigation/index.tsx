@@ -9,6 +9,7 @@ import { OfflineBanner } from "../components/OfflineBanner";
 import { ProfileDrawer } from "../components/ProfileDrawer";
 import { startConnectivityMonitoring } from "../lib/connectivity";
 import { flushOutbox, refreshOutboxCount } from "../lib/outbox";
+import { useCacheSyncStore } from "../lib/cacheSync";
 import { LoginScreen } from "../screens/LoginScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { CommencePatrolScreen } from "../screens/CommencePatrolScreen";
@@ -96,8 +97,10 @@ export function RootNavigator() {
   useEffect(() => {
     if (status !== "authenticated") return;
     void refreshOutboxCount();
+    useCacheSyncStore.getState().startBackgroundSync();
     return startConnectivityMonitoring(() => {
       void flushOutbox();
+      useCacheSyncStore.getState().startBackgroundSync();
     });
   }, [status]);
 

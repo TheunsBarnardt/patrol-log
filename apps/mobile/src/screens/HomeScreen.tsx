@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome5 } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -9,8 +9,10 @@ import { useMessagingStore } from "../store/messaging";
 import { api } from "../lib/api";
 import { registerPushToken } from "../lib/notifications";
 import { cacheGet, cacheSet } from "../lib/offlineCache";
+import { useConnectivityStore } from "../lib/connectivity";
+import { useCacheSyncStore, type FeatureStatus } from "../lib/cacheSync";
 import { storage } from "../lib/storage";
-import type { ActivePatrolResponse, PatrollerStats, StatsPeriod } from "@patrol-log/shared";
+import type { ActivePatrolResponse, MessageChannel, PatrollerStats, StatsPeriod } from "@patrol-log/shared";
 import { colors, radii, spacing } from "../theme";
 
 async function readCachedActivePatrol(): Promise<ActivePatrolResponse | null> {
@@ -38,6 +40,7 @@ export function HomeScreen({ navigation }: Props) {
   const profile = useAuthStore((s) => s.profile);
   const setUnreadCount = useMessagingStore((s) => s.setUnreadCount);
   const unreadCount = useMessagingStore((s) => s.unreadCount);
+  const features = useCacheSyncStore((s) => s.features);
   const [activePatrol, setActivePatrol] = useState<ActivePatrolResponse | null>(null);
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("month");
   const [stats, setStats] = useState<PatrollerStats | null>(null);
@@ -45,19 +48,29 @@ export function HomeScreen({ navigation }: Props) {
 
   async function refreshUnread() {
     try {
+      if (!useConnectivityStore.getState().online) {
+        const cached = await cacheGet<MessageChannel[]>("messageChannels");
+        if (cached?.data) {
+          setUnreadCount(cached.data.reduce((sum, ch) => sum + ch.unreadCount, 0));
+        }
+        return;
+      }
       const res = await api.messageChannels();
+      await cacheSet("messageChannels", res.channels);
       setUnreadCount(res.channels.reduce((sum, ch) => sum + ch.unreadCount, 0));
     } catch {}
   }
 
   const refreshStats = useCallback(async (period: StatsPeriod) => {
+    const cached = await cacheGet<PatrollerStats>(`stats:${period}`);
+    if (cached?.data) setStats(cached.data);
+    if (!useConnectivityStore.getState().online) return;
     try {
       const s = await api.myPatrolStats(period);
       setStats(s);
       await cacheSet(`stats:${period}`, s);
     } catch {
-      const cached = await cacheGet<PatrollerStats>(`stats:${period}`);
-      setStats(cached?.data ?? null);
+      // keep cached
     }
   }, []);
 
@@ -190,21 +203,27 @@ export function HomeScreen({ navigation }: Props) {
           <SuggestRow
             icon="map-marker-alt"
             title="Live map"
-            subtitle="See who’s out now"
+            subtitle={syncSubtitle(features.liveMap, "See who’s out now")}
+            sync={features.liveMap}
             onPress={() => navigation.navigate("LivePatrollerMap")}
           />
           <View style={styles.divider} />
           <SuggestRow
             icon="fire"
             title="Hotspots"
-            subtitle="Recent incidents nearby"
+            subtitle={syncSubtitle(features.hotspots, "Recent incidents nearby")}
+            sync={features.hotspots}
             onPress={() => navigation.navigate("HotspotsMap")}
           />
           <View style={styles.divider} />
           <SuggestRow
             icon="comment"
             title="Messages"
-            subtitle={unreadCount > 0 ? `${unreadCount} unread` : "Sector & broadcast"}
+            subtitle={syncSubtitle(
+              features.messages,
+              unreadCount > 0 ? `${unreadCount} unread` : "Sector & broadcast",
+            )}
+            sync={features.messages}
             badge={unreadCount > 0 ? unreadCount : undefined}
             onPress={() => navigation.navigate("Messaging")}
           />
@@ -215,22 +234,32 @@ export function HomeScreen({ navigation }: Props) {
           <Quick
             icon="home"
             label="Residents"
+            sync={features.residents}
             onPress={() => navigation.navigate("Residents")}
           />
           <Quick
             icon="user-friends"
             label="Members"
+            sync={features.members}
             onPress={() => navigation.navigate("Members")}
           />
           <Quick
             icon="phone-alt"
             label="Emergency"
+            sync={features.emergency}
             onPress={() => navigation.navigate("EmergencyContacts")}
           />
         </View>
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function syncSubtitle(status: FeatureStatus, ready: string): string {
+  if (status === "loading") return "Downloading…";
+  if (status === "error") return "Tap to open · retry when online";
+  if (status === "idle") return "Waiting to sync…";
+  return ready;
 }
 
 function SuggestRow({
@@ -240,6 +269,7 @@ function SuggestRow({
   onPress,
   badge,
   live,
+  sync,
 }: {
   icon: IconName;
   title: string;
@@ -247,7 +277,9 @@ function SuggestRow({
   onPress: () => void;
   badge?: number;
   live?: boolean;
+  sync?: FeatureStatus;
 }) {
+  const downloading = sync === "loading" || sync === "idle";
   return (
     <Pressable
       style={({ pressed }) => [
@@ -258,7 +290,11 @@ function SuggestRow({
       onPress={onPress}
     >
       <View style={[styles.suggestIcon, live && styles.suggestIconLive]}>
-        <FontAwesome5 name={icon} size={15} color={live ? colors.danger : colors.text} solid />
+        {downloading && !live ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <FontAwesome5 name={icon} size={15} color={live ? colors.danger : colors.text} solid />
+        )}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.suggestTitle, live && styles.suggestTitleLive]}>{title}</Text>
@@ -278,17 +314,26 @@ function Quick({
   icon,
   label,
   onPress,
+  sync,
 }: {
   icon: IconName;
   label: string;
   onPress: () => void;
+  sync?: FeatureStatus;
 }) {
+  const downloading = sync === "loading" || sync === "idle";
   return (
     <Pressable style={({ pressed }) => [styles.quick, pressed && styles.pressed]} onPress={onPress}>
       <View style={styles.quickIcon}>
-        <FontAwesome5 name={icon} size={16} color={colors.text} solid />
+        {downloading ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <FontAwesome5 name={icon} size={16} color={colors.text} solid />
+        )}
       </View>
       <Text style={styles.quickLabel}>{label}</Text>
+      {downloading ? <Text style={styles.quickProgress}>Downloading…</Text> : null}
+      {sync === "error" ? <Text style={styles.quickError}>Offline</Text> : null}
     </Pressable>
   );
 }
@@ -333,7 +378,7 @@ const styles = StyleSheet.create({
   statBox: {
     flex: 1,
     backgroundColor: colors.bg,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     paddingVertical: 12,
     alignItems: "center",
   },
@@ -405,6 +450,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   quickLabel: { fontSize: 13, fontWeight: "600", color: colors.text },
+  quickProgress: { fontSize: 10, fontWeight: "600", color: colors.primary, marginTop: -4 },
+  quickError: { fontSize: 10, fontWeight: "600", color: colors.danger, marginTop: -4 },
 
   badge: {
     minWidth: 22,

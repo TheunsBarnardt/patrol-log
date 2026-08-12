@@ -71,16 +71,23 @@ export function CommencePatrolScreen({ navigation }: Props) {
   const deviceToken = useAuthStore((s) => s.deviceToken);
 
   useEffect(() => {
-    api
-      .vehicles()
-      .then(async (r) => {
+    let cancelled = false;
+    void (async () => {
+      const cached = await cacheGet<VehicleRecord[]>("vehicles");
+      if (!cancelled && cached?.data) setVehicles(cached.data);
+      if (!useConnectivityStore.getState().online) return;
+      try {
+        const r = await api.vehicles();
+        if (cancelled) return;
         setVehicles(r.results);
         await cacheSet("vehicles", r.results);
-      })
-      .catch(async () => {
-        const cached = await cacheGet<VehicleRecord[]>("vehicles");
-        if (cached?.data) setVehicles(cached.data);
-      });
+      } catch {
+        // keep cached
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -90,14 +97,36 @@ export function CommencePatrolScreen({ navigation }: Props) {
       return;
     }
     searchTimer.current = setTimeout(async () => {
+      const filterMembers = (list: MemberRecord[]) =>
+        list.filter(
+          (m) => m.call_sign !== profile?.call_sign && !selectedMembers.some((s) => s.member_id === m.member_id),
+        );
+
+      if (!useConnectivityStore.getState().online) {
+        const cached = await cacheGet<MemberRecord[]>("members");
+        setMemberResults(filterMembers(cached?.data ?? []));
+        return;
+      }
       try {
         const r = await api.members(memberQuery);
+        setMemberResults(filterMembers(r.results));
+      } catch {
+        const cached = await cacheGet<MemberRecord[]>("members");
+        if (!cached?.data) {
+          setMemberResults([]);
+          return;
+        }
+        const term = memberQuery.toLowerCase();
         setMemberResults(
-          r.results.filter(
-            (m) => m.call_sign !== profile?.call_sign && !selectedMembers.some((s) => s.member_id === m.member_id),
+          filterMembers(
+            cached.data.filter(
+              (m) =>
+                m.name.toLowerCase().includes(term) ||
+                m.call_sign.toLowerCase().includes(term),
+            ),
           ),
         );
-      } catch {}
+      }
     }, 300);
   }, [memberQuery, selectedMembers, profile]);
 
@@ -557,7 +586,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minWidth: "46%",
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     paddingVertical: 16,
     paddingHorizontal: 14,
     flexDirection: "row",
@@ -594,7 +623,7 @@ const styles = StyleSheet.create({
   },
   fieldBtn: {
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 20,
@@ -607,7 +636,7 @@ const styles = StyleSheet.create({
   fieldPlaceholder: { fontSize: 17, fontWeight: "500", color: colors.textMuted },
   fieldInput: {
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 20,
@@ -620,7 +649,7 @@ const styles = StyleSheet.create({
 
   searchField: {
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 18,
@@ -633,7 +662,7 @@ const styles = StyleSheet.create({
   results: {
     marginTop: spacing.sm,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     overflow: "hidden",
@@ -655,7 +684,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 14,
@@ -675,7 +704,7 @@ const styles = StyleSheet.create({
   },
   startBtn: {
     backgroundColor: colors.primary,
-    borderRadius: 28,
+    borderRadius: radii.lg,
     paddingVertical: 17,
     alignItems: "center",
   },
@@ -709,7 +738,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 14,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     padding: 16,

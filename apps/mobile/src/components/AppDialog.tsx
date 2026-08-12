@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
     minWidth: 88,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     alignItems: "center",
   },
   btnPrimary: { backgroundColor: colors.primary },

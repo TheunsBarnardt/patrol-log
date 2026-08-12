@@ -8,6 +8,7 @@ import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
 import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
 import { cacheGet, cacheSet } from "../lib/offlineCache";
+import { useConnectivityStore } from "../lib/connectivity";
 import { colors, spacing } from "../theme";
 import type { HotspotPeriod, HotspotPin } from "@patrol-log/shared";
 
@@ -111,26 +112,47 @@ export function HotspotsMapScreen() {
     setLoading(true);
     setError(null);
     const key = `hotspots:${period}` as const;
-    api
-      .hotspots(period)
-      .then(async (r) => {
+    let cancelled = false;
+    void (async () => {
+      const cached = await cacheGet<HotspotPin[]>(key);
+      if (!cancelled && cached?.data?.length) {
+        setPins(cached.data);
+        if (loaded.current) pushPins(cached.data);
+        setLoading(false);
+      }
+
+      if (!useConnectivityStore.getState().online) {
+        if (!cancelled) {
+          if (!cached?.data?.length) setError("Offline · no saved hotspots for this period");
+          else setError("Offline · showing saved hotspots");
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const r = await api.hotspots(period);
+        if (cancelled) return;
         setPins(r.pins);
         await cacheSet(key, r.pins);
         if (loaded.current) pushPins(r.pins);
-      })
-      .catch(async () => {
-        const cached = await cacheGet<HotspotPin[]>(key);
+        setError(null);
+      } catch {
+        if (cancelled) return;
         if (cached?.data?.length) {
-          setPins(cached.data);
-          if (loaded.current) pushPins(cached.data);
           setError("Connection lost · showing last known hotspots");
         } else if (pinsRef.current.length > 0) {
           setError("Connection lost · showing last known hotspots");
         } else {
           setError("Connection lost · connect once to load hotspots");
         }
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [period]);
 
   function handleLoad() {

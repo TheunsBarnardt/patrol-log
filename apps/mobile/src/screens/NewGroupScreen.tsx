@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 14,
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   secondaryBtn: {
     flex: 1,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radii.lg,
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1.5,
     borderColor: colors.border,
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   primaryBtn: {
     flex: 1,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radii.lg,
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",

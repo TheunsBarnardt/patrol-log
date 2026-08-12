@@ -1,6 +1,6 @@
-// WhatsApp-style members directory (chat-list layout).
+// WhatsApp-style members directory (chat-list layout) — local list first.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -16,7 +16,7 @@ import { FontAwesome5 } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
-import { cacheGet, cacheSet, EMPTY_CACHE_HINT } from "../lib/offlineCache";
+import { cacheGet, cacheGetSync, cacheSet, EMPTY_CACHE_HINT } from "../lib/offlineCache";
 import { notify } from "../lib/notify";
 import { useConnectivityStore } from "../lib/connectivity";
 import { useAuthStore } from "../store/auth";
@@ -29,41 +29,44 @@ export function MembersScreen({ navigation }: Props) {
   const myId = useAuthStore((s) => s.profile?.patroller_id);
   const online = useConnectivityStore((s) => s.online);
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<MemberRecord[]>([]);
+  const [list, setList] = useState<MemberRecord[]>(
+    () => cacheGetSync<MemberRecord[]>("members")?.data ?? [],
+  );
   const [expanded, setExpanded] = useState<string | null>(null);
   const [messagingId, setMessagingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      if (q && q.length < 2) return;
-      api
-        .members(q || undefined)
-        .then(async (r) => {
-          setResults(r.results);
-          if (!q) await cacheSet("members", r.results);
-        })
-        .catch(async () => {
-          const cached = await cacheGet<MemberRecord[]>("members");
-          if (!cached?.data) {
-            setResults([]);
-            return;
-          }
-          if (!q) {
-            setResults(cached.data);
-            return;
-          }
-          const term = q.toLowerCase();
-          setResults(
-            cached.data.filter(
-              (m) =>
-                m.name.toLowerCase().includes(term) ||
-                m.call_sign.toLowerCase().includes(term),
-            ),
-          );
-        });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [q]);
+    let cancelled = false;
+    void (async () => {
+      if (list.length === 0) {
+        const cached = await cacheGet<MemberRecord[]>("members");
+        if (!cancelled && cached?.data) setList(cached.data);
+      }
+      if (!online) return;
+      try {
+        const r = await api.members();
+        if (cancelled) return;
+        setList(r.results);
+        await cacheSet("members", r.results);
+      } catch {
+        // keep local list
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [online]);
+
+  const results = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return list;
+    if (term.length < 2) return [];
+    return list.filter(
+      (m) =>
+        m.name.toLowerCase().includes(term) ||
+        m.call_sign.toLowerCase().includes(term),
+    );
+  }, [list, q]);
 
   async function call(phone: string, memberId?: string) {
     if (memberId) await api.memberTapToCall(memberId).catch(() => {});
@@ -110,13 +113,18 @@ export function MembersScreen({ navigation }: Props) {
       <FlatList
         data={results}
         keyExtractor={(m) => m.member_id}
+        initialNumToRender={24}
+        windowSize={11}
+        maxToRenderPerBatch={24}
         ListEmptyComponent={() => (
           <Text style={styles.empty}>
             {q.length > 0 && q.length < 2
               ? "Type at least 2 characters"
-              : !online && results.length === 0
-                ? EMPTY_CACHE_HINT
-                : "No members found"}
+              : list.length === 0
+                ? !online
+                  ? EMPTY_CACHE_HINT
+                  : "No members found"
+                : "No matches"}
           </Text>
         )}
         renderItem={({ item }) => {
@@ -132,7 +140,9 @@ export function MembersScreen({ navigation }: Props) {
                 </View>
                 <View style={styles.body}>
                   <View style={styles.topLine}>
-                    <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.name} numberOfLines={1}>
+                      {item.name}
+                    </Text>
                     <View style={styles.actions}>
                       {!isSelf && (
                         <Pressable
@@ -151,7 +161,7 @@ export function MembersScreen({ navigation }: Props) {
                       )}
                       <Pressable
                         hitSlop={10}
-                        onPress={() => call(item.phone, item.member_id)}
+                        onPress={() => void call(item.phone, item.member_id)}
                         style={styles.actionBtn}
                         accessibilityLabel={`Call ${item.call_sign}`}
                       >
@@ -187,14 +197,16 @@ export function MembersScreen({ navigation }: Props) {
                   <Pressable
                     key={`${item.member_id}-${i}`}
                     style={styles.nokRow}
-                    onPress={() => call(nok.phone)}
+                    onPress={() => void call(nok.phone)}
                   >
                     <View style={styles.nokAvatar}>
                       <FontAwesome5 name="user" size={12} color={colors.textMuted} solid />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.nokName}>{nok.name}</Text>
-                      <Text style={styles.preview}>{nok.relationship} · {nok.phone}</Text>
+                      <Text style={styles.preview}>
+                        {nok.relationship} · {nok.phone}
+                      </Text>
                     </View>
                     <FontAwesome5 name="phone-alt" size={13} color={colors.primary} solid />
                   </Pressable>
@@ -213,7 +225,7 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginVertical: spacing.sm,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 14,

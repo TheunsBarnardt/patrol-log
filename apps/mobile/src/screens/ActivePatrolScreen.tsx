@@ -24,7 +24,7 @@ import { isNetworkError, useConnectivityStore } from "../lib/connectivity";
 import { enqueueStandDown } from "../lib/outbox";
 import { storage } from "../lib/storage";
 import { useAuthStore } from "../store/auth";
-import { colors, spacing } from "../theme";
+import { colors, radii, spacing } from "../theme";
 import {
   parseSqliteUtc,
   patrolTypeRequiresVehicle,
@@ -643,8 +643,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   liveHint: {
     backgroundColor: colors.primarySoft,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
     borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.sm,
@@ -659,7 +659,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBg,
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 6,
+    borderRadius: radii.lg,
     padding: spacing.md,
     fontSize: 16,
     marginVertical: spacing.sm,
@@ -667,7 +667,7 @@ const styles = StyleSheet.create({
   standDownPrimary: {
     backgroundColor: colors.primary,
     paddingVertical: 16,
-    borderRadius: 28,
+    borderRadius: radii.lg,
     alignItems: "center",
     marginTop: spacing.sm,
   },
@@ -676,14 +676,14 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.border,
     padding: spacing.md,
-    borderRadius: 16,
+    borderRadius: radii.lg,
     alignItems: "center",
     marginTop: spacing.sm,
   },
   standDownMember: {
     backgroundColor: colors.primary,
     paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: radii.lg,
     alignItems: "center",
     marginTop: spacing.sm,
   },
@@ -694,7 +694,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 16,
+    borderRadius: radii.lg,
     padding: spacing.md,
     marginTop: spacing.md,
   },
@@ -706,7 +706,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: radii.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
   },
@@ -714,7 +714,7 @@ const styles = StyleSheet.create({
   results: {
     marginTop: spacing.sm,
     backgroundColor: colors.cardBg,
-    borderRadius: 12,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     overflow: "hidden",
@@ -735,7 +735,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: radii.lg,
     alignItems: "center",
     marginTop: spacing.sm,
   },

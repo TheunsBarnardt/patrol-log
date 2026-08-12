@@ -29,9 +29,10 @@ export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };
 
 export const radii = { sm: 8, md: 12, lg: 16, xl: 28 };
 
-/** Shared chrome for light-gray cards / search bars that sit on white. */
+/** Shared chrome for light-gray cards / search bars / type tiles that sit on white. */
 export const mutedCard = {
   backgroundColor: colors.surfaceMuted,
   borderWidth: 1.5,
   borderColor: colors.border,
+  borderRadius: radii.lg,
 } as const;

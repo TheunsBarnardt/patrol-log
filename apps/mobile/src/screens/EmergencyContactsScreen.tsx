@@ -21,18 +21,32 @@ export function EmergencyContactsScreen() {
   const online = useConnectivityStore((s) => s.online);
 
   useEffect(() => {
-    api
-      .emergencyContacts()
-      .then(async (r) => {
+    let cancelled = false;
+    void (async () => {
+      const cached = await cacheGet<EmergencyServiceRecord[]>("emergency");
+      if (!cancelled && cached?.data) {
+        setResults(cached.data);
+        setLoading(false);
+      }
+      if (!online) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+      try {
+        const r = await api.emergencyContacts();
+        if (cancelled) return;
         setResults(r.results);
         await cacheSet("emergency", r.results);
-      })
-      .catch(async () => {
-        const cached = await cacheGet<EmergencyServiceRecord[]>("emergency");
-        setResults(cached?.data ?? []);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+      } catch {
+        if (!cancelled && !cached?.data) setResults([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [online]);
 
   const filtered = useMemo(() => {
     const term = q.toLowerCase().trim();
@@ -129,7 +143,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     marginBottom: spacing.sm,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 18,
@@ -149,7 +163,7 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     padding: 18,
@@ -171,7 +185,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.bg,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     paddingVertical: 12,
     paddingHorizontal: 14,
     gap: 12,

@@ -10,6 +10,7 @@ import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
 import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
 import { cacheGet, cacheSet } from "../lib/offlineCache";
+import { useConnectivityStore } from "../lib/connectivity";
 import { colors, spacing } from "../theme";
 import type { LiveMapPin } from "@patrol-log/shared";
 
@@ -148,16 +149,33 @@ export function LivePatrollerMapScreen() {
   }
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
       const cached = await cacheGet<LiveMapPin[]>("liveMap");
-      if (cached?.data?.length) {
+      if (!cancelled && cached?.data?.length) {
         setPins(cached.data.map((p) => ({ ...p, stale: true })));
         setLoading(false);
+        setConnectionLost(true);
       }
+
+      const online = useConnectivityStore.getState().online;
+      if (!online) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
       await refresh();
-      timer.current = setInterval(refresh, POLL_INTERVAL);
+      if (cancelled) return;
+      timer.current = setInterval(() => {
+        if (!useConnectivityStore.getState().online) {
+          setConnectionLost(true);
+          return;
+        }
+        void refresh();
+      }, POLL_INTERVAL);
     })();
     return () => {
+      cancelled = true;
       if (timer.current) clearInterval(timer.current);
     };
   }, []);

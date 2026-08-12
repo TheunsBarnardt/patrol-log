@@ -17,6 +17,8 @@ import { FontAwesome5 } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
+import { cacheGet, cacheGetSync, cacheSet } from "../lib/offlineCache";
+import { useConnectivityStore } from "../lib/connectivity";
 import { showLocalNotification } from "../lib/notifications";
 import { useMessagingStore } from "../store/messaging";
 import { parseSqliteUtc, type MessageChannel } from "@patrol-log/shared";
@@ -47,8 +49,13 @@ function initials(name: string) {
 }
 
 export function MessagingScreen({ navigation }: Props) {
-  const [channels, setChannels] = useState<MessageChannel[]>([]);
-  const [loading, setLoading] = useState(true);
+  const online = useConnectivityStore((s) => s.online);
+  const [channels, setChannels] = useState<MessageChannel[]>(
+    () => cacheGetSync<MessageChannel[]>("messageChannels")?.data ?? [],
+  );
+  const [loading, setLoading] = useState(
+    () => !(cacheGetSync<MessageChannel[]>("messageChannels")?.data?.length),
+  );
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,9 +63,26 @@ export function MessagingScreen({ navigation }: Props) {
   const prevUnreadRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
+    const cached = await cacheGet<MessageChannel[]>("messageChannels");
+    if (cached?.data?.length) {
+      setChannels((prev) => (prev.length === 0 ? cached.data : prev));
+      if (!useConnectivityStore.getState().online) {
+        useMessagingStore
+          .getState()
+          .setUnreadCount(cached.data.reduce((sum, ch) => sum + ch.unreadCount, 0));
+      }
+      setLoading(false);
+    }
+
+    if (!useConnectivityStore.getState().online) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await api.messageChannels();
       setChannels(res.channels);
+      await cacheSet("messageChannels", res.channels);
       const unread = res.channels.reduce((sum, ch) => sum + ch.unreadCount, 0);
       useMessagingStore.getState().setUnreadCount(unread);
       if (
@@ -74,6 +98,7 @@ export function MessagingScreen({ navigation }: Props) {
       prevUnreadRef.current = unread;
     } catch (err) {
       console.warn("[messaging] failed to fetch channels", err);
+      if (cached?.data) setChannels(cached.data);
     } finally {
       setLoading(false);
     }
@@ -81,11 +106,12 @@ export function MessagingScreen({ navigation }: Props) {
 
   useEffect(() => {
     void refresh();
+    if (!online) return;
     timer.current = setInterval(() => void refresh(), POLL_MS);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
-  }, [refresh]);
+  }, [refresh, online]);
 
   useEffect(() => {
     const unsub = navigation.addListener("focus", () => void refresh());
@@ -251,7 +277,7 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginTop: spacing.sm,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: 14,
@@ -277,7 +303,7 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderRadius: 16,
+    borderRadius: radii.lg,
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1.5,
     borderColor: colors.border,
@@ -337,7 +363,9 @@ const styles = StyleSheet.create({
   },
   menuCard: {
     backgroundColor: "#fff",
-    borderRadius: 12,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     minWidth: 200,
     paddingVertical: 6,
     shadowColor: "#000",

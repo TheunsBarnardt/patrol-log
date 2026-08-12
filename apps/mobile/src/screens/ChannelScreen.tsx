@@ -18,11 +18,14 @@ import { FontAwesome5 } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
+import { cacheGet, cacheGetSync, cacheSet } from "../lib/offlineCache";
+import { useConnectivityStore } from "../lib/connectivity";
 import { showLocalNotification } from "../lib/notifications";
+import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
 import { useMessagingStore } from "../store/messaging";
-import { parseSqliteUtc, type Message, type MessageChannelMember } from "@patrol-log/shared";
-import { colors, spacing } from "../theme";
+import { parseSqliteUtc, type Message, type MessageChannel, type MessageChannelMember } from "@patrol-log/shared";
+import { colors, radii, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Channel">;
 
@@ -73,7 +76,17 @@ function MessageBubble({
 
 async function refreshUnreadBadge() {
   try {
+    if (!useConnectivityStore.getState().online) {
+      const cached = await cacheGet<MessageChannel[]>("messageChannels");
+      if (cached?.data) {
+        useMessagingStore
+          .getState()
+          .setUnreadCount(cached.data.reduce((sum, ch) => sum + ch.unreadCount, 0));
+      }
+      return;
+    }
     const channels = await api.messageChannels();
+    await cacheSet("messageChannels", channels.channels);
     useMessagingStore
       .getState()
       .setUnreadCount(channels.channels.reduce((sum, ch) => sum + ch.unreadCount, 0));
@@ -88,8 +101,12 @@ export function ChannelScreen({ navigation, route }: Props) {
   const profile = useAuthStore((s) => s.profile);
   const myId = profile?.patroller_id ?? "";
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState<Message[]>(
+    () => cacheGetSync<Message[]>(`messageThread:${channelId}`)?.data ?? [],
+  );
+  const [loading, setLoading] = useState(
+    () => !(cacheGetSync<Message[]>(`messageThread:${channelId}`)?.data?.length),
+  );
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [urgent, setUrgent] = useState(false);
@@ -97,21 +114,34 @@ export function ChannelScreen({ navigation, route }: Props) {
   const [kind, setKind] = useState<"chat" | "group">(kindParam ?? "chat");
   const [memberCount, setMemberCount] = useState(countParam ?? 0);
   const [infoOpen, setInfoOpen] = useState(false);
-  const [members, setMembers] = useState<MessageChannelMember[]>([]);
+  const [members, setMembers] = useState<MessageChannelMember[]>(
+    () => cacheGetSync<MessageChannelMember[]>(`messageMembers:${channelId}`)?.data ?? [],
+  );
   const flatListRef = useRef<FlatList<Message>>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const primedRef = useRef(false);
 
   useEffect(() => {
-    void api
-      .channelMembers(channelId)
-      .then((res) => {
+    let cancelled = false;
+    void (async () => {
+      const cached = await cacheGet<MessageChannelMember[]>(`messageMembers:${channelId}`);
+      if (!cancelled && cached?.data?.length) setMembers(cached.data);
+      if (!useConnectivityStore.getState().online) return;
+      try {
+        const res = await api.channelMembers(channelId);
+        if (cancelled) return;
         setMembers(res.members);
         setKind(res.kind);
         setMemberCount(res.members.length);
-      })
-      .catch(() => {});
+        await cacheSet(`messageMembers:${channelId}`, res.members);
+      } catch {
+        /* keep cache */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [channelId]);
 
   useLayoutEffect(() => {
@@ -134,6 +164,21 @@ export function ChannelScreen({ navigation, route }: Props) {
   }, [navigation, channelName, kind, memberCount, members.length]);
 
   const refresh = useCallback(async () => {
+    const cached = await cacheGet<Message[]>(`messageThread:${channelId}`);
+    if (cached?.data?.length) {
+      setMessages((prev) => (prev.length === 0 ? cached.data : prev));
+      if (!primedRef.current) {
+        seenIdsRef.current = new Set(cached.data.map((m) => m.id));
+        primedRef.current = true;
+      }
+      setLoading(false);
+    }
+
+    if (!useConnectivityStore.getState().online) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await api.channelMessages(channelId);
       const next = [...res.messages].reverse();
@@ -157,8 +202,10 @@ export function ChannelScreen({ navigation, route }: Props) {
       }
 
       setMessages(next);
+      await cacheSet(`messageThread:${channelId}`, next);
     } catch (err) {
       console.warn("[channel] fetch failed", err);
+      if (cached?.data) setMessages(cached.data);
     } finally {
       setLoading(false);
     }
@@ -168,8 +215,10 @@ export function ChannelScreen({ navigation, route }: Props) {
     primedRef.current = false;
     seenIdsRef.current = new Set();
     void refresh();
-    void api.markChannelRead(channelId).then(() => refreshUnreadBadge());
-    timer.current = setInterval(() => void refresh(), POLL_MS);
+    if (useConnectivityStore.getState().online) {
+      void api.markChannelRead(channelId).then(() => refreshUnreadBadge());
+      timer.current = setInterval(() => void refresh(), POLL_MS);
+    }
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
@@ -184,17 +233,26 @@ export function ChannelScreen({ navigation, route }: Props) {
   async function send() {
     const body = text.trim();
     if (!body || sending) return;
+    if (!useConnectivityStore.getState().online) {
+      notify("Needs connection", "Sending messages requires an internet connection.");
+      return;
+    }
     setSending(true);
     try {
       const msg = await api.sendMessage(channelId, { body, priority: urgent ? "urgent" : "normal" });
       seenIdsRef.current.add(msg.id);
-      setMessages((prev) => [...prev, msg]);
+      setMessages((prev) => {
+        const next = [...prev, msg];
+        void cacheSet(`messageThread:${channelId}`, next);
+        return next;
+      });
       setText("");
       setUrgent(false);
       setInputHeight(COMPOSE_H);
       void refreshUnreadBadge();
     } catch (err) {
       console.warn("[channel] send failed", err);
+      notify("Message", "Could not send. Try again when you’re online.");
     } finally {
       setSending(false);
     }
@@ -477,7 +535,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginHorizontal: 20,
     height: 44,
-    borderRadius: 22,
+    borderRadius: radii.lg,
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1.5,
     borderColor: colors.border,

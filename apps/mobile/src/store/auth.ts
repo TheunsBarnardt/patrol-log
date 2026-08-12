@@ -33,7 +33,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     const [token, profileJson] = await Promise.all([storage.getDeviceToken(), storage.getProfile()]);
     if (token && profileJson) {
       try {
-        set({ status: "authenticated", profile: JSON.parse(profileJson), deviceToken: token });
+        set({
+          status: "authenticated",
+          profile: JSON.parse(profileJson),
+          deviceToken: token,
+        });
         return;
       } catch {}
     }
@@ -45,6 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     await storage.clearDeviceToken();
     await storage.clearProfile();
     await storage.clearActivePatrolCache();
+    // Keep directory/map caches on device (WhatsApp-style).
     set({ status: "unauthenticated", profile: null, deviceToken: null });
   },
 }));
