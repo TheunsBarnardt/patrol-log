@@ -303,6 +303,8 @@ const styles = StyleSheet.create({
   statsCard: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: "#8A9BB5",
     padding: 18,
     marginBottom: spacing.md,
   },
@@ -332,6 +334,8 @@ const styles = StyleSheet.create({
   cta: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: "#8A9BB5",
     paddingVertical: 22,
     paddingHorizontal: 22,
     flexDirection: "row",
@@ -342,6 +346,8 @@ const styles = StyleSheet.create({
   ctaSecondary: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: "#8A9BB5",
     paddingVertical: 18,
     paddingHorizontal: 22,
     flexDirection: "row",
@@ -349,7 +355,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: spacing.xl,
   },
-  ctaLive: { backgroundColor: colors.danger, marginBottom: spacing.xl },
+  ctaLive: {
+    backgroundColor: colors.danger,
+    borderColor: "#B00510",
+    marginBottom: spacing.xl,
+  },
   ctaTitle: { fontSize: 22, fontWeight: "700", color: colors.text, letterSpacing: -0.3 },
   ctaTitleLive: { color: "#fff" },
   ctaSub: { fontSize: 14, color: colors.textMuted, marginTop: 4, fontWeight: "500" },
@@ -375,6 +385,8 @@ const styles = StyleSheet.create({
   suggestCard: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: "#8A9BB5",
     overflow: "hidden",
     marginBottom: spacing.xl,
   },
@@ -402,6 +414,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: "#8A9BB5",
     paddingVertical: 18,
     alignItems: "center",
     gap: 10,
