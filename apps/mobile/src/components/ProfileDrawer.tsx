@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../lib/api";
+import { API_BASE_URL } from "../config";
 import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
@@ -18,6 +19,16 @@ interface Props {
   visible: boolean;
   onClose: () => void;
 }
+
+type NetCheck =
+  | { status: "idle" }
+  | { status: "running" }
+  | {
+      status: "ok" | "fail";
+      latencyMs: number;
+      detail: string;
+      at: string;
+    };
 
 function formatAccessLevel(level: string) {
   return level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -31,8 +42,58 @@ export function ProfileDrawer({ visible, onClose }: Props) {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [busy, setBusy] = useState(false);
+  const [netCheck, setNetCheck] = useState<NetCheck>({ status: "idle" });
 
   if (!profile) return null;
+
+  async function runNetworkCheck() {
+    setNetCheck({ status: "running" });
+    const started = Date.now();
+    const url = `${API_BASE_URL.replace(/\/$/, "")}/health`;
+    try {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 12_000) : null;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal: controller?.signal,
+      });
+      if (timer) clearTimeout(timer);
+      const latencyMs = Date.now() - started;
+      const text = await res.text();
+      let bodyHint = text.slice(0, 120);
+      try {
+        const json = JSON.parse(text) as { ok?: boolean; env?: string };
+        bodyHint = json.ok ? `ok · env=${json.env ?? "?"}` : bodyHint;
+      } catch {
+        /* keep raw slice */
+      }
+      if (!res.ok) {
+        setNetCheck({
+          status: "fail",
+          latencyMs,
+          detail: `HTTP ${res.status}: ${bodyHint}`,
+          at: new Date().toISOString(),
+        });
+        return;
+      }
+      setNetCheck({
+        status: "ok",
+        latencyMs,
+        detail: bodyHint,
+        at: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      const latencyMs = Date.now() - started;
+      const name = err?.name === "AbortError" ? "timeout (>12s)" : (err?.message ?? String(err));
+      setNetCheck({
+        status: "fail",
+        latencyMs,
+        detail: name,
+        at: new Date().toISOString(),
+      });
+    }
+  }
 
   async function handleLogout() {
     onClose();
@@ -86,6 +147,35 @@ export function ProfileDrawer({ visible, onClose }: Props) {
           <View style={styles.section}>
             <Row label="App" value={APP_NAME} />
             <Row label="Version" value={APP_VERSION} />
+            <Row label="API" value={API_BASE_URL.replace(/^https?:\/\//, "")} />
+          </View>
+
+          <Text style={styles.aboutTitle}>Network check</Text>
+          <View style={styles.section}>
+            <Text style={styles.netHint}>
+              Run this on mobile data (Wi‑Fi off). Screenshot the result if it fails.
+            </Text>
+            <TouchableOpacity
+              style={[styles.netBtn, netCheck.status === "running" && { opacity: 0.6 }]}
+              onPress={() => void runNetworkCheck()}
+              disabled={netCheck.status === "running"}
+            >
+              <Text style={styles.netBtnText}>
+                {netCheck.status === "running" ? "Checking…" : "Test API connection"}
+              </Text>
+            </TouchableOpacity>
+            {netCheck.status === "ok" || netCheck.status === "fail" ? (
+              <>
+                <Row
+                  label="Result"
+                  value={netCheck.status === "ok" ? `OK · ${netCheck.latencyMs} ms` : `FAIL · ${netCheck.latencyMs} ms`}
+                />
+                <Text style={[styles.netDetail, netCheck.status === "fail" && { color: colors.danger }]}>
+                  {netCheck.detail}
+                </Text>
+                <Text style={styles.netMeta}>{netCheck.at}</Text>
+              </>
+            ) : null}
           </View>
 
           <View style={styles.divider} />
@@ -200,6 +290,17 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
+  netHint: { fontSize: 13, color: colors.textMuted, marginBottom: spacing.sm, lineHeight: 18 },
+  netBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  netBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  netDetail: { fontSize: 12, color: colors.text, marginTop: 4, fontWeight: "600" },
+  netMeta: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
   section: {
     backgroundColor: colors.cardBg,
     borderRadius: 10,
