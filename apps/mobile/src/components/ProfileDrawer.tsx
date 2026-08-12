@@ -1,8 +1,6 @@
 import { useState } from "react";
 import {
-  Linking,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +10,6 @@ import {
 } from "react-native";
 import { api } from "../lib/api";
 import { getApiBaseUrl } from "../config";
-import { runNetworkDiagnostics, type DiagReport } from "../lib/diagnostics";
 import { notify } from "../lib/notify";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
@@ -35,31 +32,8 @@ export function ProfileDrawer({ visible, onClose }: Props) {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [busy, setBusy] = useState(false);
-  const [diagBusy, setDiagBusy] = useState(false);
-  const [diagReport, setDiagReport] = useState<DiagReport | null>(null);
 
   if (!profile) return null;
-
-  async function runNetworkCheck() {
-    setDiagBusy(true);
-    try {
-      setDiagReport(await runNetworkDiagnostics());
-    } finally {
-      setDiagBusy(false);
-    }
-  }
-
-  async function openLogLink() {
-    if (!diagReport?.logLink) return;
-    try {
-      await Linking.openURL(diagReport.logLink);
-    } catch {
-      if (Platform.OS === "web" && navigator.clipboard) {
-        await navigator.clipboard.writeText(diagReport.logText);
-        notify("Copied", "Diagnostic log copied.");
-      }
-    }
-  }
 
   async function handleLogout() {
     onClose();
@@ -95,7 +69,6 @@ export function ProfileDrawer({ visible, onClose }: Props) {
       <View style={styles.sheet}>
         <View style={styles.handle} />
         <ScrollView>
-          {/* Profile header */}
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{profile.call_sign}</Text>
           </View>
@@ -116,46 +89,8 @@ export function ProfileDrawer({ visible, onClose }: Props) {
             <Row label="API" value={getApiBaseUrl().replace(/^https?:\/\//, "")} />
           </View>
 
-          <Text style={styles.aboutTitle}>Network check</Text>
-          <View style={styles.section}>
-            <Text style={styles.netHint}>
-              Run this on mobile data (Wi‑Fi off). Screenshot or open the log link if it fails.
-            </Text>
-            <TouchableOpacity
-              style={[styles.netBtn, diagBusy && { opacity: 0.6 }]}
-              onPress={() => void runNetworkCheck()}
-              disabled={diagBusy}
-            >
-              <Text style={styles.netBtnText}>
-                {diagBusy ? "Checking…" : "Test API connection"}
-              </Text>
-            </TouchableOpacity>
-            {diagReport ? (
-              <>
-                <Row
-                  label="Result"
-                  value={`${diagReport.overall.toUpperCase()}${
-                    diagReport.checks.find((c) => c.id === "health")?.ms != null
-                      ? ` · ${diagReport.checks.find((c) => c.id === "health")!.ms} ms`
-                      : ""
-                  }`}
-                />
-                {diagReport.needsAttention ? (
-                  <TouchableOpacity style={[styles.netBtn, { marginTop: spacing.sm }]} onPress={() => void openLogLink()}>
-                    <Text style={styles.netBtnText}>Open log link (WhatsApp)</Text>
-                  </TouchableOpacity>
-                ) : null}
-                <Text style={[styles.netDetail, diagReport.needsAttention && { color: colors.danger }]}>
-                  {diagReport.logText}
-                </Text>
-                <Text style={styles.netMeta}>{diagReport.at}</Text>
-              </>
-            ) : null}
-          </View>
-
           <View style={styles.divider} />
 
-          {/* Change password */}
           {!changingPw ? (
             <TouchableOpacity style={styles.menuItem} onPress={() => setChangingPw(true)}>
               <Text style={styles.menuItemText}>🔒  Change password</Text>
@@ -265,17 +200,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
-  netHint: { fontSize: 13, color: colors.textMuted, marginBottom: spacing.sm, lineHeight: 18 },
-  netBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
-  netBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  netDetail: { fontSize: 12, color: colors.text, marginTop: 4, fontWeight: "600" },
-  netMeta: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
   section: {
     backgroundColor: colors.cardBg,
     borderRadius: 10,
