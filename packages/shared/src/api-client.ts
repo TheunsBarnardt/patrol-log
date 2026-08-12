@@ -3,6 +3,8 @@ import type {
   ActivePatrolResponse,
   AddPatrolGuestRequest,
   AddPatrolMembersRequest,
+  CapturePatrolRequest,
+  CapturePatrolResponse,
   CommencePatrolRequest,
   JoinablePatrolSummary,
   EmergencyServiceRecord,
@@ -116,6 +118,8 @@ export function createApiClient(opts: ApiClientOptions) {
 
     // patrols
     commencePatrol: (body: CommencePatrolRequest) => request<ActivePatrolResponse>("/patrols/commence", { method: "POST", body: JSON.stringify(body) }),
+    capturePatrol: (body: CapturePatrolRequest) =>
+      request<CapturePatrolResponse>("/patrols/capture", { method: "POST", body: JSON.stringify(body) }),
     activePatrol: () => request<ActivePatrolResponse | null>("/patrols/active/me"),
     joinablePatrols: () => request<{ results: JoinablePatrolSummary[] }>("/patrols/active"),
     joinPatrol: (patrolId: string) =>

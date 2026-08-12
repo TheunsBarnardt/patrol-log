@@ -187,6 +187,21 @@ export function HomeScreen({ navigation }: Props) {
           </Pressable>
         )}
 
+        {!activePatrol && (
+          <Pressable
+            style={({ pressed }) => [styles.ctaSecondary, pressed && styles.pressed]}
+            onPress={() => navigation.navigate("CapturePatrol")}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.ctaTitle}>Capture patrol</Text>
+              <Text style={styles.ctaSub}>Log a patrol you already completed</Text>
+            </View>
+            <View style={styles.ctaIcon}>
+              <FontAwesome5 name="clipboard-list" size={15} color={colors.primary} solid />
+            </View>
+          </Pressable>
+        )}
+
         <Text style={styles.section}>Suggestions</Text>
         <View style={styles.suggestCard}>
           <SuggestRow

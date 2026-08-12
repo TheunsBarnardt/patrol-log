@@ -3,7 +3,7 @@
     "name": "Patrol Log",
     "slug": "cpf-patrol-log",
     "owner": "cpf-patrol-log",
-    "version": "0.2.7",
+    "version": "0.2.8",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "patrollog",
@@ -20,7 +20,9 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Patrol Log captures your location to geo-stamp patrol start/end, update the live patroller map, and comply with the SARS logbook.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Always location so Patrol Log can update the live map while your phone is locked during a patrol.",
-        "UIBackgroundModes": ["location"],
+        "UIBackgroundModes": [
+          "location"
+        ],
         "ITSAppUsesNonExemptEncryption": false
       }
     },

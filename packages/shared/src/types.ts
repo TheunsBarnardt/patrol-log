@@ -161,6 +161,30 @@ export interface StandDownResponse {
   handoff?: { new_patrol_id: string; new_primary_call_sign: string };
 }
 
+/** Log a completed patrol after the fact (emergency / no time to commence). */
+export interface CapturePatrolRequest {
+  patrol_type: PatrolType;
+  /** ISO start time */
+  start_time: string;
+  /** ISO end time */
+  end_time: string;
+  /** Required for vehicle / monitoring / ops / responding; optional otherwise (defaults 0). */
+  distance_km?: number;
+  patrol_vehicle?: string;
+  reason?: StandDownReason;
+  guest_names?: string[];
+}
+
+export interface CapturePatrolResponse {
+  patrol_id: string;
+  start_time: string;
+  end_time: string;
+  distance_km: number;
+  patrol_type: PatrolType;
+  sars_compliant: boolean;
+  record_seal_hash: string;
+}
+
 // ── Hotspots ────────────────────────────────────────────────
 /** Managed hotspot (admin-defined). Rating 1–5; diameter in km. */
 export interface HotspotPin {

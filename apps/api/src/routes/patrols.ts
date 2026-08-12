@@ -8,6 +8,7 @@ import {
   patrolTypeRequiresVehicle,
   type AddPatrolGuestRequest,
   type AddPatrolMembersRequest,
+  type CapturePatrolRequest,
   type CommencePatrolRequest,
   type PatrollerStats,
   type StandDownMemberRequest,
@@ -184,6 +185,145 @@ patrolRoutes.post("/commence", requireAuth(), requireAccessLevel("patroller", "s
   await logAudit(db, "patrol.commenced", auth, { patrol_id: created.id, patrol_type: created.patrolType, vehicle_id: created.vehicleId });
 
   return c.json(await hydrateActivePatrol(db, created.id, auth.patroller.patroller_id));
+});
+
+/**
+ * Capture a completed patrol after the fact (emergency / no time to commence in-app).
+ * Creates a stood-down sealed record in one step — no live tracking.
+ */
+patrolRoutes.post("/capture", requireAuth(), requireAccessLevel("patroller", "sector_lead", "admin", "system_admin", "call_centre_agent"), async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<CapturePatrolRequest>().catch(() => null);
+  if (!body) throw new AppError("COMMENCE_INVALID_PATROL_TYPE");
+
+  const allowedTypes = ["foot", "vehicle", "static", "sector_monitoring", "ops", "responding"];
+  if (!allowedTypes.includes(body.patrol_type)) {
+    throw new AppError("COMMENCE_INVALID_PATROL_TYPE");
+  }
+
+  const db = getDb(c.env);
+
+  const myActive = await db.query.patrolMembers.findFirst({
+    where: (pm, { and, eq, isNull }) =>
+      and(eq(pm.patrollerId, auth.patroller.patroller_id), isNull(pm.endTime)),
+  });
+  if (myActive) throw new AppError("CAPTURE_ALREADY_ON_PATROL");
+
+  const startMs = Date.parse(body.start_time);
+  const endMs = Date.parse(body.end_time);
+  const nowMs = Date.now();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs || endMs > nowMs + 5 * 60_000) {
+    throw new AppError("CAPTURE_INVALID_TIMES");
+  }
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  if (nowMs - startMs > sevenDaysMs) {
+    throw new AppError("CAPTURE_TOO_OLD");
+  }
+
+  const needsVehicle = patrolTypeRequiresVehicle(body.patrol_type);
+  if (needsVehicle && !body.patrol_vehicle) {
+    throw new AppError("CAPTURE_VEHICLE_REQUIRED");
+  }
+
+  let vehicle: typeof vehicles.$inferSelect | undefined;
+  if (body.patrol_vehicle) {
+    vehicle = await db.query.vehicles.findFirst({
+      where: (v, { and, eq }) => and(eq(v.id, body.patrol_vehicle!), eq(v.cpfId, auth.patroller.cpf_id)),
+    });
+    if (!vehicle) throw new AppError("CAPTURE_INVALID_VEHICLE");
+  }
+
+  let distanceKm = 0;
+  if (needsVehicle) {
+    if (body.distance_km == null || !Number.isFinite(body.distance_km) || body.distance_km < 0) {
+      throw new AppError("CAPTURE_DISTANCE_REQUIRED");
+    }
+    distanceKm = Math.round(body.distance_km);
+  } else if (body.distance_km != null) {
+    if (!Number.isFinite(body.distance_km) || body.distance_km < 0) {
+      throw new AppError("CAPTURE_DISTANCE_REQUIRED");
+    }
+    distanceKm = Math.round(body.distance_km);
+  }
+
+  const startTime = new Date(startMs).toISOString();
+  const endTime = new Date(endMs).toISOString();
+  const reason = body.reason ?? "emergency";
+  // No live GPS for after-the-fact logs — not SARS-compliant for location stamps.
+  const sarsCompliant = false;
+
+  const [created] = await db.insert(patrols).values({
+    cpfId: auth.patroller.cpf_id,
+    sectorId: auth.patroller.sector_id,
+    primaryPatrollerId: auth.patroller.patroller_id,
+    patrolType: body.patrol_type,
+    vehicleId: vehicle?.id,
+    odometerStart: null,
+    odometerEnd: null,
+    distanceKm,
+    startTime,
+    endTime,
+    sarsCompliant,
+    state: "stood_down",
+    reason,
+  }).returning();
+
+  const seal = await sealRecord({
+    patrol_id: created.id,
+    primary_patroller_id: auth.patroller.patroller_id,
+    patrol_type: body.patrol_type,
+    vehicle_id: vehicle?.id ?? null,
+    odometer_start: null,
+    odometer_end: null,
+    distance_km: distanceKm,
+    start_time: startTime,
+    end_time: endTime,
+    start_location: null,
+    end_location: null,
+    sars_purpose: "CPF sector patrol",
+    sars_compliant: sarsCompliant,
+    reason,
+    captured_after_fact: true,
+  });
+  await db.update(patrols).set({ recordSealHash: seal }).where(eq(patrols.id, created.id));
+
+  await db.insert(patrolMembers).values({
+    patrolId: created.id,
+    patrollerId: auth.patroller.patroller_id,
+    role: "primary",
+    startTime,
+    endTime,
+  });
+
+  const guestNames = (body.guest_names ?? [])
+    .map((n) => (typeof n === "string" ? n.trim() : ""))
+    .filter((n) => n.length > 0);
+  for (const displayName of guestNames) {
+    await db.insert(patrolGuests).values({
+      patrolId: created.id,
+      displayName,
+      addedByPatrollerId: auth.patroller.patroller_id,
+      createdAt: endTime,
+    });
+  }
+
+  await logAudit(db, "patrol.captured", auth, {
+    patrol_id: created.id,
+    patrol_type: created.patrolType,
+    distance_km: distanceKm,
+    start_time: startTime,
+    end_time: endTime,
+  });
+
+  return c.json({
+    patrol_id: created.id,
+    start_time: startTime,
+    end_time: endTime,
+    distance_km: distanceKm,
+    patrol_type: created.patrolType,
+    sars_compliant: sarsCompliant,
+    record_seal_hash: seal,
+  });
 });
 
 patrolRoutes.get("/active/me", requireAuth(), async (c) => {

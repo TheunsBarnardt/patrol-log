@@ -26,6 +26,14 @@ export const ERROR_CODES = {
   JOIN_PATROL_UNAVAILABLE: { status: 409, message: "That patrol is not available to join" },
   JOIN_PATROL_ALREADY_MEMBER: { status: 409, message: "You are already on this patrol" },
 
+  // workflow/capture-patrol (log after the fact)
+  CAPTURE_INVALID_TIMES: { status: 422, message: "Enter a valid start and end time (end after start, not in the future)" },
+  CAPTURE_TOO_OLD: { status: 422, message: "Captured patrols can only be logged for the last 7 days" },
+  CAPTURE_DISTANCE_REQUIRED: { status: 422, message: "Enter kilometres travelled for this patrol" },
+  CAPTURE_VEHICLE_REQUIRED: { status: 422, message: "Choose a vehicle for this patrol type" },
+  CAPTURE_INVALID_VEHICLE: { status: 422, message: "Selected vehicle is not available for your sector" },
+  CAPTURE_ALREADY_ON_PATROL: { status: 409, message: "Stand down your active patrol before capturing a past one" },
+
   // vehicles
   VEHICLE_REGISTRATION_REQUIRED: { status: 422, message: "Enter the vehicle registration" },
   VEHICLE_DUPLICATE_REGISTRATION: { status: 409, message: "That registration is already registered to another patroller" },
