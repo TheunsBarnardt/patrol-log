@@ -4,6 +4,6 @@ import Constants from "expo-constants";
 export const APP_VERSION =
   Constants.expoConfig?.version ??
   Constants.nativeAppVersion ??
-  "0.2.2";
+  "0.2.3";
 
 export const APP_NAME = "Patrol Log";

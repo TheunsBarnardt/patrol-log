@@ -3,7 +3,7 @@
     "name": "Patrol Log",
     "slug": "cpf-patrol-log",
     "owner": "cpf-patrol-log",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "patrollog",
@@ -38,7 +38,9 @@
         "VIBRATE"
       ]
     },
-    "web": { "bundler": "metro" },
+    "web": {
+      "bundler": "metro"
+    },
     "plugins": [
       [
         "expo-location",
