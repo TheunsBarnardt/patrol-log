@@ -358,6 +358,12 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
+        <View style={styles.liveHint}>
+          <Text style={styles.liveHintText}>
+            Screen stays on while on patrol so live tracking continues. Locking the phone pauses updates until you unlock.
+          </Text>
+        </View>
+
         <Text style={styles.section}>Patrollers</Text>
         <View style={styles.divider} />
 
@@ -605,6 +611,15 @@ function decodeJti(jwt: string): string | null {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  liveHint: {
+    backgroundColor: colors.primarySoft,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  liveHintText: { fontSize: 13, color: colors.text, lineHeight: 18, fontWeight: "500" },
   section: { fontSize: 18, fontWeight: "700", marginTop: spacing.md },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
   card: { paddingVertical: spacing.sm, marginBottom: spacing.sm },
