@@ -9,6 +9,8 @@ const KEYS = {
   profile: "patrol_log.profile",
   /** Last known active patrol — survives overnight reloads / flaky /active/me. */
   activePatrol: "patrol_log.active_patrol",
+  /** Native background heartbeat session { patrolId, jti }. */
+  heartbeatSession: "patrol_log.heartbeat_session",
 };
 
 async function getItem(key: string): Promise<string | null> {
@@ -71,5 +73,14 @@ export const storage = {
   },
   async clearActivePatrolCache(): Promise<void> {
     await deleteItem(KEYS.activePatrol);
+  },
+  async getHeartbeatSession(): Promise<string | null> {
+    return getItem(KEYS.heartbeatSession);
+  },
+  async setHeartbeatSession(v: string): Promise<void> {
+    await setItem(KEYS.heartbeatSession, v);
+  },
+  async clearHeartbeatSession(): Promise<void> {
+    await deleteItem(KEYS.heartbeatSession);
   },
 };

@@ -19,7 +19,8 @@
       "bundleIdentifier": "com.example.patrollog",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Patrol Log captures your location to geo-stamp patrol start/end, update the live patroller map, and comply with the SARS logbook.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Patrol Log captures your location while on patrol to update the live map for other patrollers and dispatch.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Always location so Patrol Log can update the live map while your phone is locked during a patrol.",
+        "UIBackgroundModes": ["location"],
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -33,6 +34,9 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
         "CALL_PHONE",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE"
@@ -45,7 +49,10 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Patrol Log needs your location while you're on patrol."
+          "locationAlwaysAndWhenInUsePermission": "Allow Always location so Patrol Log can update the live map while your phone is locked during a patrol.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       "expo-secure-store",

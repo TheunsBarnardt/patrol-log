@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -360,7 +361,9 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
       <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
         <View style={styles.liveHint}>
           <Text style={styles.liveHintText}>
-            Screen stays on while on patrol so live tracking continues. Locking the phone pauses updates until you unlock.
+            {Platform.OS === "web"
+              ? "On the website, leave this tab open (screen stays on) so live tracking continues. Locking the phone pauses updates until you unlock."
+              : "Allow “Always” / background location when prompted so the live map keeps updating while your phone is locked. Android shows a persistent Patrol Log notification while tracking."}
           </Text>
         </View>
 

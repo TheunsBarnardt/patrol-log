@@ -1,15 +1,19 @@
 // Heartbeat loop: while on patrol, grab GPS and POST to the live map.
 // Uses a dedicated fetch so failures never force logout.
 //
-// Screen lock / background: browsers freeze timers when the display sleeps.
-// Mitigation: keep the screen awake while on patrol (Wake Lock / expo-keep-awake),
-// watch GPS continuously, and flush immediately when the app becomes visible again.
+// Native (iOS/Android): background location task keeps sending with screen locked.
+// Web: browsers freeze JS when locked — wake lock + resume flush only.
 
 import * as Location from "expo-location";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import { getApiBaseUrl } from "../config";
 import { storage } from "./storage";
 import { showLocalNotification } from "./notifications";
+import {
+  postHeartbeatFromLocation,
+  startNativeBackgroundHeartbeat,
+  stopNativeBackgroundHeartbeat,
+} from "./heartbeatTask";
 
 const INTERVAL_MS = 30_000;
 
@@ -18,6 +22,7 @@ let currentPatrolId: string | null = null;
 let currentJti: string | null = null;
 let running = false;
 let sending = false;
+let nativeBackground = false;
 let lastCoords: {
   lat: number;
   lng: number;
@@ -37,6 +42,7 @@ export async function startHeartbeat(patrolId: string, deviceTokenJti: string) {
   currentPatrolId = patrolId;
   currentJti = deviceTokenJti;
   running = true;
+  nativeBackground = false;
 
   const permission = await Location.requestForegroundPermissionsAsync();
   if (permission.status !== "granted") {
@@ -44,6 +50,16 @@ export async function startHeartbeat(patrolId: string, deviceTokenJti: string) {
     return;
   }
 
+  if (Platform.OS !== "web") {
+    nativeBackground = await startNativeBackgroundHeartbeat(patrolId, deviceTokenJti);
+    if (nativeBackground) {
+      // Background task owns locked-screen updates; still send once now.
+      await sendOnce();
+      return;
+    }
+  }
+
+  // Web, or native without "Always" permission — foreground loop + wake lock.
   await startWatch();
   await acquireKeepAwake();
   attachLifecycle();
@@ -58,13 +74,15 @@ export function stopHeartbeat() {
   currentPatrolId = null;
   currentJti = null;
   lastCoords = null;
+  nativeBackground = false;
   void stopWatch();
   void releaseKeepAwake();
   detachLifecycle();
+  void stopNativeBackgroundHeartbeat();
 }
 
 function scheduleNext(ms: number) {
-  if (!running) return;
+  if (!running || nativeBackground) return;
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     void (async () => {
@@ -113,8 +131,6 @@ async function acquireKeepAwake() {
     return;
   }
   try {
-    // Keeps the display on so the browser does not freeze JS timers mid-patrol.
-    // If the user manually locks the phone, the OS releases this — we re-request on unlock.
     wakeLock = await navigator.wakeLock.request("screen");
     wakeLock.addEventListener("release", () => {
       wakeLock = null;
@@ -161,7 +177,7 @@ function onAppState(next: AppStateStatus) {
 }
 
 async function onBecameActive() {
-  if (!running) return;
+  if (!running || nativeBackground) return;
   await acquireKeepAwake();
   await sendOnce();
   scheduleNext(INTERVAL_MS);
@@ -174,8 +190,6 @@ async function resolveCoords(): Promise<{
   speed?: number;
   accuracy_m: number;
 } | null> {
-  // Prefer a fresh watched fix (≤90s) so we don't wait on a blocked getCurrentPosition
-  // when the OS is throttling after unlock.
   if (lastCoords && Date.now() - lastCoords.at < 90_000) {
     return {
       lat: lastCoords.lat,
@@ -228,6 +242,20 @@ async function sendOnce() {
     const coords = await resolveCoords();
     if (!coords) return;
 
+    if (Platform.OS !== "web") {
+      await postHeartbeatFromLocation(
+        { patrolId: currentPatrolId, jti: currentJti },
+        {
+          lat: coords.lat,
+          lng: coords.lng,
+          heading: coords.heading,
+          speed: coords.speed,
+          accuracy: coords.accuracy_m,
+        },
+      );
+      return;
+    }
+
     const timestamp = new Date().toISOString();
     const signature = await signHeartbeat(currentJti, currentPatrolId, timestamp);
     const token = await storage.getDeviceToken();
@@ -252,7 +280,6 @@ async function sendOnce() {
         timestamp,
         signature,
       }),
-      // Help some browsers complete the request when the tab is hiding.
       keepalive: true,
     });
 
