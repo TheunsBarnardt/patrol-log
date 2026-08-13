@@ -84,6 +84,7 @@ export async function postHeartbeatFromLocation(
     }),
   });
 
+  if (res.status === 429) return;
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     console.warn("[heartbeat-task] failed", res.status, text.slice(0, 160));

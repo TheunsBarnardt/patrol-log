@@ -8,6 +8,8 @@ import { colors } from "../theme";
 import { OfflineBanner } from "../components/OfflineBanner";
 import { ProfileDrawer } from "../components/ProfileDrawer";
 import { startConnectivityMonitoring } from "../lib/connectivity";
+import { ensureHeartbeatForActivePatrol } from "../lib/heartbeat";
+import { useKeepScreenOn } from "../lib/keepAwake";
 import { flushOutbox, refreshOutboxCount } from "../lib/outbox";
 import { useCacheSyncStore } from "../lib/cacheSync";
 import { LoginScreen } from "../screens/LoginScreen";
@@ -93,9 +95,11 @@ function BellIcon({ navigation }: { navigation: any }) {
 export function RootNavigator() {
   const status = useAuthStore((s) => s.status);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  useKeepScreenOn(status === "authenticated");
 
   useEffect(() => {
     if (status !== "authenticated") return;
+    void ensureHeartbeatForActivePatrol();
     void refreshOutboxCount();
     useCacheSyncStore.getState().startBackgroundSync();
     return startConnectivityMonitoring(() => {

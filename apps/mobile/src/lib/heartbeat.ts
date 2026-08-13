@@ -7,6 +7,7 @@
 import * as Location from "expo-location";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import { getApiBaseUrl } from "../config";
+import { refreshScreenLock } from "./keepAwake";
 import { storage } from "./storage";
 import { showLocalNotification } from "./notifications";
 import {
@@ -15,7 +16,9 @@ import {
   stopNativeBackgroundHeartbeat,
 } from "./heartbeatTask";
 
-const INTERVAL_MS = 30_000;
+const INTERVAL_MS = 20_000;
+const GEO_TIMEOUT_MS = 8_000;
+const COORDS_FRESH_MS = 180_000;
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let currentPatrolId: string | null = null;
@@ -32,12 +35,67 @@ let lastCoords: {
   at: number;
 } | null = null;
 let watchSub: Location.LocationSubscription | null = null;
-let wakeLock: { release: () => Promise<void>; addEventListener: (type: "release", fn: () => void) => void } | null =
-  null;
 let appStateSub: { remove: () => void } | null = null;
 let visibilityHandler: (() => void) | null = null;
 
+export function isHeartbeatRunning(): boolean {
+  return running && !!currentPatrolId;
+}
+
+/** Feed GPS from the live map so heartbeats never wait on a hanging getCurrentPosition. */
+export function noteLocalCoords(coords: {
+  lat: number;
+  lng: number;
+  heading?: number | null;
+  speed?: number | null;
+  accuracy?: number | null;
+}): void {
+  lastCoords = {
+    lat: coords.lat,
+    lng: coords.lng,
+    heading: coords.heading,
+    speed: coords.speed,
+    accuracy: coords.accuracy,
+    at: Date.now(),
+  };
+}
+
+export async function startHeartbeatForPatrol(patrolId: string): Promise<void> {
+  const token = await storage.getDeviceToken();
+  if (!token) return;
+  const jti = decodeJti(token);
+  if (!jti) return;
+  await startHeartbeat(patrolId, jti);
+}
+
+/** Resume tracking after app reload if an active patrol is still cached. */
+export async function ensureHeartbeatForActivePatrol(): Promise<string | null> {
+  if (running && currentPatrolId) {
+    if (!watchSub) void startWatch();
+    void sendOnce();
+    return currentPatrolId;
+  }
+  try {
+    const [raw, token] = await Promise.all([storage.getActivePatrolCache(), storage.getDeviceToken()]);
+    if (!raw || !token) return null;
+    const parsed = JSON.parse(raw) as { patrol_id?: string };
+    if (!parsed?.patrol_id) return null;
+    const jti = decodeJti(token);
+    if (!jti) return null;
+    await startHeartbeat(parsed.patrol_id, jti);
+    return parsed.patrol_id;
+  } catch (err) {
+    console.warn("[heartbeat] ensure failed", err);
+    return null;
+  }
+}
+
 export async function startHeartbeat(patrolId: string, deviceTokenJti: string) {
+  if (running && currentPatrolId === patrolId && currentJti === deviceTokenJti) {
+    if (!watchSub) await startWatch();
+    void sendOnce();
+    return;
+  }
   stopHeartbeat();
   currentPatrolId = patrolId;
   currentJti = deviceTokenJti;
@@ -51,17 +109,12 @@ export async function startHeartbeat(patrolId: string, deviceTokenJti: string) {
   }
 
   if (Platform.OS !== "web") {
+    // Locked-screen updates only. Foreground watch below still owns the open-app pin.
     nativeBackground = await startNativeBackgroundHeartbeat(patrolId, deviceTokenJti);
-    if (nativeBackground) {
-      // Background task owns locked-screen updates; still send once now.
-      await sendOnce();
-      return;
-    }
   }
 
-  // Web, or native without "Always" permission — foreground loop + wake lock.
   await startWatch();
-  await acquireKeepAwake();
+  await refreshScreenLock();
   attachLifecycle();
   await sendOnce();
   scheduleNext(INTERVAL_MS);
@@ -76,13 +129,12 @@ export function stopHeartbeat() {
   lastCoords = null;
   nativeBackground = false;
   void stopWatch();
-  void releaseKeepAwake();
   detachLifecycle();
   void stopNativeBackgroundHeartbeat();
 }
 
 function scheduleNext(ms: number) {
-  if (!running || nativeBackground) return;
+  if (!running) return;
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     void (async () => {
@@ -96,9 +148,9 @@ async function startWatch() {
   try {
     watchSub = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 15_000,
-        distanceInterval: 25,
+        accuracy: Location.Accuracy.High,
+        timeInterval: 10_000,
+        distanceInterval: 8,
         mayShowUserSettingsDialog: true,
       },
       (pos) => {
@@ -124,31 +176,6 @@ async function stopWatch() {
     /* ignore */
   }
   watchSub = null;
-}
-
-async function acquireKeepAwake() {
-  if (Platform.OS !== "web" || typeof navigator === "undefined" || !("wakeLock" in navigator)) {
-    return;
-  }
-  try {
-    wakeLock = await navigator.wakeLock.request("screen");
-    wakeLock.addEventListener("release", () => {
-      wakeLock = null;
-    });
-  } catch (err) {
-    console.warn("[heartbeat] wake lock unavailable", err);
-  }
-}
-
-async function releaseKeepAwake() {
-  try {
-    if (wakeLock) {
-      await wakeLock.release();
-      wakeLock = null;
-    }
-  } catch {
-    /* ignore */
-  }
 }
 
 function attachLifecycle() {
@@ -177,10 +204,66 @@ function onAppState(next: AppStateStatus) {
 }
 
 async function onBecameActive() {
-  if (!running || nativeBackground) return;
-  await acquireKeepAwake();
+  if (!running) return;
+  await refreshScreenLock();
   await sendOnce();
   scheduleNext(INTERVAL_MS);
+}
+
+function fromLastCoords(): {
+  lat: number;
+  lng: number;
+  heading?: number;
+  speed?: number;
+  accuracy_m: number;
+} | null {
+  if (!lastCoords) return null;
+  return {
+    lat: lastCoords.lat,
+    lng: lastCoords.lng,
+    heading: lastCoords.heading ?? undefined,
+    speed: lastCoords.speed ?? undefined,
+    accuracy_m: lastCoords.accuracy ?? 9999,
+  };
+}
+
+function getPositionWithTimeout(): Promise<Location.LocationObject> {
+  if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
+    return new Promise((resolve, reject) => {
+      const tid = setTimeout(() => reject(new Error("geolocation timeout")), GEO_TIMEOUT_MS);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          clearTimeout(tid);
+          resolve({
+            coords: {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              altitude: pos.coords.altitude,
+              accuracy: pos.coords.accuracy,
+              altitudeAccuracy: pos.coords.altitudeAccuracy,
+              heading: pos.coords.heading,
+              speed: pos.coords.speed,
+            },
+            timestamp: pos.timestamp,
+          } as Location.LocationObject);
+        },
+        (err) => {
+          clearTimeout(tid);
+          reject(err);
+        },
+        { enableHighAccuracy: true, timeout: GEO_TIMEOUT_MS, maximumAge: 30_000 },
+      );
+    });
+  }
+  return Promise.race([
+    Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+      mayShowUserSettingsDialog: false,
+    }),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("geolocation timeout")), GEO_TIMEOUT_MS);
+    }),
+  ]);
 }
 
 async function resolveCoords(): Promise<{
@@ -190,20 +273,11 @@ async function resolveCoords(): Promise<{
   speed?: number;
   accuracy_m: number;
 } | null> {
-  if (lastCoords && Date.now() - lastCoords.at < 90_000) {
-    return {
-      lat: lastCoords.lat,
-      lng: lastCoords.lng,
-      heading: lastCoords.heading ?? undefined,
-      speed: lastCoords.speed ?? undefined,
-      accuracy_m: lastCoords.accuracy ?? 9999,
-    };
+  if (lastCoords && Date.now() - lastCoords.at < COORDS_FRESH_MS) {
+    return fromLastCoords();
   }
   try {
-    const pos = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-      mayShowUserSettingsDialog: false,
-    });
+    const pos = await getPositionWithTimeout();
     lastCoords = {
       lat: pos.coords.latitude,
       lng: pos.coords.longitude,
@@ -212,25 +286,10 @@ async function resolveCoords(): Promise<{
       accuracy: pos.coords.accuracy,
       at: Date.now(),
     };
-    return {
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude,
-      heading: pos.coords.heading ?? undefined,
-      speed: pos.coords.speed ?? undefined,
-      accuracy_m: pos.coords.accuracy ?? 9999,
-    };
+    return fromLastCoords();
   } catch (err) {
     console.warn("[heartbeat] getCurrentPosition failed", err);
-    if (lastCoords) {
-      return {
-        lat: lastCoords.lat,
-        lng: lastCoords.lng,
-        heading: lastCoords.heading ?? undefined,
-        speed: lastCoords.speed ?? undefined,
-        accuracy_m: lastCoords.accuracy ?? 9999,
-      };
-    }
-    return null;
+    return fromLastCoords();
   }
 }
 
@@ -238,6 +297,9 @@ async function sendOnce() {
   if (!currentPatrolId || !currentJti || !running) return;
   if (sending) return;
   sending = true;
+  const watchdog = setTimeout(() => {
+    sending = false;
+  }, 12_000);
   try {
     const coords = await resolveCoords();
     if (!coords) return;
@@ -283,6 +345,7 @@ async function sendOnce() {
       keepalive: true,
     });
 
+    if (res.status === 429) return;
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       console.warn("[heartbeat] failed", res.status, text.slice(0, 160));
@@ -299,6 +362,7 @@ async function sendOnce() {
   } catch (err) {
     console.warn("[heartbeat] failed", err);
   } finally {
+    clearTimeout(watchdog);
     sending = false;
   }
 }
@@ -314,4 +378,15 @@ function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeJti(jwt: string): string | null {
+  try {
+    const [, payload] = jwt.split(".");
+    if (!payload) return null;
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof json.jti === "string" ? json.jti : null;
+  } catch {
+    return null;
+  }
 }

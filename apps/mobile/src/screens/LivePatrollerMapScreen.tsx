@@ -4,13 +4,16 @@
 // Markers: Uber-style car / walk / stationary + call-sign labels.
 
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Location from "expo-location";
 import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
+import { ensureHeartbeatForActivePatrol, noteLocalCoords, startHeartbeatForPatrol } from "../lib/heartbeat";
 import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
 import { cacheGet, cacheSet } from "../lib/offlineCache";
-import { useConnectivityStore } from "../lib/connectivity";
+import { storage } from "../lib/storage";
+import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
 import type { LiveMapPin } from "@patrol-log/shared";
 
@@ -102,9 +105,25 @@ window.updatePins=function(json){
   });
   if(!fitted&&pins.length>0){
     fitted=true;
-    var lls=pins.map(function(p){return[p.lat,p.lng]});
-    map.fitBounds(L.latLngBounds(lls),{padding:[40,40],maxZoom:14});
+    function fit(){
+      try{
+        map.invalidateSize({animate:false});
+        var lls=pins.map(function(p){return[p.lat,p.lng]});
+        map.fitBounds(L.latLngBounds(lls),{padding:[40,40],maxZoom:14});
+      }catch(e){}
+    }
+    fit();
+    setTimeout(fit,250);
+    setTimeout(fit,700);
   }
+};
+var selfMarker=null;
+window.updateSelf=function(lat,lng){
+  if(typeof lat!=='number'||typeof lng!=='number'||!isFinite(lat)||!isFinite(lng))return;
+  if(selfMarker){selfMarker.setLatLng([lat,lng]);return;}
+  selfMarker=L.circleMarker([lat,lng],{
+    radius:8,color:'#fff',weight:3,fillColor:'#2563EB',fillOpacity:1
+  }).bindPopup('You').addTo(map);
 };
 </script>
 </body>
@@ -112,6 +131,7 @@ window.updatePins=function(json){
 }
 
 export function LivePatrollerMapScreen() {
+  const myCallSign = useAuthStore((s) => s.profile?.call_sign);
   const [pins, setPins] = useState<LiveMapPin[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectionLost, setConnectionLost] = useState(false);
@@ -119,28 +139,59 @@ export function LivePatrollerMapScreen() {
   const loaded = useRef(false);
   const pinsRef = useRef<LiveMapPin[]>([]);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const htmlRef = useRef(buildLiveMapHtml());
+  const selfRef = useRef<{ lat: number; lng: number; at: number } | null>(null);
+  const myPatrolIdRef = useRef<string | null>(null);
+  const myCallSignRef = useRef(myCallSign);
+  myCallSignRef.current = myCallSign;
   pinsRef.current = pins;
 
-  function pushPins(p: LiveMapPin[]) {
-    hostRef.current?.injectJavaScript(
-      `window.updatePins(${JSON.stringify(JSON.stringify(p))}); true;`,
-    );
+  function overlaySelf(list: LiveMapPin[]): LiveMapPin[] {
+    const self = selfRef.current;
+    if (!self || Date.now() - self.at > 45_000) return list;
+    const patrolId = myPatrolIdRef.current;
+    const callSign = myCallSignRef.current;
+    return list.map((p) => {
+      if ((patrolId && p.patrol_id === patrolId) || (callSign && p.call_sign === callSign)) {
+        return {
+          ...p,
+          lat: self.lat,
+          lng: self.lng,
+          stale: false,
+          last_update: new Date().toISOString(),
+        };
+      }
+      return p;
+    });
+  }
+
+  function publishPins(list: LiveMapPin[]) {
+    const next = overlaySelf(list);
+    pinsRef.current = next;
+    setPins(next);
+    if (loaded.current) {
+      hostRef.current?.injectJavaScript(
+        `window.updatePins(${JSON.stringify(JSON.stringify(next))}); true;`,
+      );
+    }
+  }
+
+  function pushSelf(lat: number, lng: number) {
+    hostRef.current?.injectJavaScript(`window.updateSelf(${lat},${lng}); true;`);
+    publishPins(pinsRef.current);
   }
 
   async function refresh() {
     try {
       const res = await api.liveMapSnapshot();
-      setPins(res.pins);
       setConnectionLost(false);
       await cacheSet("liveMap", res.pins);
-      if (loaded.current) pushPins(res.pins);
+      publishPins(res.pins);
     } catch {
       const cached = await cacheGet<LiveMapPin[]>("liveMap");
       const last = pinsRef.current.length > 0 ? pinsRef.current : cached?.data ?? [];
       if (last.length > 0) {
-        const frozen = last.map((p) => ({ ...p, stale: true }));
-        setPins(frozen);
-        if (loaded.current) pushPins(frozen);
+        publishPins(last.map((p) => ({ ...p, stale: true })));
       }
       setConnectionLost(true);
     } finally {
@@ -151,26 +202,42 @@ export function LivePatrollerMapScreen() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      const cachedId = await ensureHeartbeatForActivePatrol();
+      if (cachedId) myPatrolIdRef.current = cachedId;
+      try {
+        const active = await api.activePatrol();
+        if (cancelled) return;
+        if (active?.patrol_id) {
+          myPatrolIdRef.current = active.patrol_id;
+          try {
+            await storage.setActivePatrolCache(JSON.stringify(active));
+          } catch {
+            /* ignore */
+          }
+          await startHeartbeatForPatrol(active.patrol_id);
+        }
+      } catch {
+        /* cache path already tried */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
       const cached = await cacheGet<LiveMapPin[]>("liveMap");
       if (!cancelled && cached?.data?.length) {
-        setPins(cached.data.map((p) => ({ ...p, stale: true })));
+        publishPins(cached.data.map((p) => ({ ...p, stale: true })));
         setLoading(false);
         setConnectionLost(true);
-      }
-
-      const online = useConnectivityStore.getState().online;
-      if (!online) {
-        if (!cancelled) setLoading(false);
-        return;
       }
 
       await refresh();
       if (cancelled) return;
       timer.current = setInterval(() => {
-        if (!useConnectivityStore.getState().online) {
-          setConnectionLost(true);
-          return;
-        }
         void refresh();
       }, POLL_INTERVAL);
     })();
@@ -180,9 +247,83 @@ export function LivePatrollerMapScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") void refresh();
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    let sub: Location.LocationSubscription | null = null;
+    let webWatchId: number | null = null;
+    let cancelled = false;
+
+    function onFix(
+      lat: number,
+      lng: number,
+      extra?: { heading?: number | null; speed?: number | null; accuracy?: number | null },
+    ) {
+      selfRef.current = { lat, lng, at: Date.now() };
+      noteLocalCoords({ lat, lng, heading: extra?.heading, speed: extra?.speed, accuracy: extra?.accuracy });
+      if (loaded.current) pushSelf(lat, lng);
+    }
+
+    if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.geolocation) {
+      webWatchId = navigator.geolocation.watchPosition(
+        (pos) =>
+          onFix(pos.coords.latitude, pos.coords.longitude, {
+            heading: pos.coords.heading,
+            speed: pos.coords.speed,
+            accuracy: pos.coords.accuracy,
+          }),
+        (err) => console.warn("[live-map] geolocation", err.message),
+        { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 },
+      );
+    }
+
+    void (async () => {
+      try {
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (perm.status !== "granted" || cancelled || webWatchId != null) return;
+        sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 5_000,
+            distanceInterval: 5,
+            mayShowUserSettingsDialog: false,
+          },
+          (pos) =>
+            onFix(pos.coords.latitude, pos.coords.longitude, {
+              heading: pos.coords.heading,
+              speed: pos.coords.speed,
+              accuracy: pos.coords.accuracy,
+            }),
+        );
+      } catch (err) {
+        console.warn("[live-map] self watch failed", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (webWatchId != null && typeof navigator !== "undefined") {
+        navigator.geolocation.clearWatch(webWatchId);
+      }
+      try {
+        sub?.remove();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
+
   function handleLoad() {
     loaded.current = true;
-    pushPins(pinsRef.current);
+    publishPins(pinsRef.current);
+    if (selfRef.current) pushSelf(selfRef.current.lat, selfRef.current.lng);
+    hostRef.current?.injectJavaScript(
+      "try{if(typeof map!=='undefined')map.invalidateSize({animate:false});}catch(e){} true;",
+    );
   }
 
   const active = pins.filter((p) => !p.stale).length;
@@ -212,16 +353,14 @@ export function LivePatrollerMapScreen() {
         <Text style={[styles.statusText, connectionLost && styles.statusTextLost]}>{statusLine}</Text>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={colors.primary} style={{ flex: 1 }} />
-      ) : (
-        <HtmlMapHost
-          ref={hostRef}
-          html={buildLiveMapHtml()}
-          style={styles.map}
-          onLoad={handleLoad}
-        />
-      )}
+      <View style={styles.map}>
+        <HtmlMapHost ref={hostRef} html={htmlRef.current} style={styles.mapFill} onLoad={handleLoad} />
+        {loading && (
+          <View style={styles.mapOverlay}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -241,5 +380,12 @@ const styles = StyleSheet.create({
   statusDotLost: { backgroundColor: colors.warning },
   statusText: { fontSize: 12, color: colors.textMuted, flex: 1 },
   statusTextLost: { color: colors.warning, fontWeight: "600" },
-  map: { flex: 1 },
+  map: { flex: 1, backgroundColor: "#e8e0d8" },
+  mapFill: { flex: 1 },
+  mapOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(232,224,216,0.55)",
+  },
 });

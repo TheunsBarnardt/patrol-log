@@ -4,7 +4,7 @@
 
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { AppError, type HeartbeatRequest, type LiveMapPin } from "@patrol-log/shared";
+import { AppError, parseSqliteUtc, type HeartbeatRequest, type LiveMapPin } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
@@ -34,7 +34,8 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
 
   // Priority 2 — rate limit (1 per 20s): check last_seen_at on the row.
   const existing = await db.query.livePins.findFirst({ where: eq(livePins.patrolId, body.patrol_id) });
-  if (existing && new Date(existing.lastSeenAt) > new Date(Date.now() - 20_000)) {
+  const lastSeen = existing ? parseSqliteUtc(existing.lastSeenAt)?.getTime() ?? 0 : 0;
+  if (existing && lastSeen > Date.now() - 15_000) {
     throw new AppError("LIVE_MAP_HEARTBEAT_RATE_LIMITED");
   }
 
@@ -105,8 +106,8 @@ liveMap.get("/snapshot", requireAuth(), async (c) => {
         heading: r.heading ?? undefined,
         speed: r.speed ?? undefined,
         last_update: r.lastSeenAt,
-        duration_on_patrol_min: Math.floor((now - new Date(patrol.startTime).getTime()) / 60_000),
-        stale: now - new Date(r.lastSeenAt).getTime() > STALE_THRESHOLD_MS,
+        duration_on_patrol_min: Math.floor((now - (parseSqliteUtc(patrol.startTime)?.getTime() ?? new Date(patrol.startTime).getTime())) / 60_000),
+        stale: now - (parseSqliteUtc(r.lastSeenAt)?.getTime() ?? 0) > STALE_THRESHOLD_MS,
         out_of_sector: r.outOfSector,
       };
     }),

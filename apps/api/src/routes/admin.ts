@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   AppError,
+  parseSqliteUtc,
   type DashboardOverview,
   type LiveMapPin,
   type PatrolDetailReport,
@@ -177,8 +178,8 @@ admin.get("/live-map", async (c) => {
         heading: r.heading ?? undefined,
         speed: r.speed ?? undefined,
         last_update: r.lastSeenAt,
-        duration_on_patrol_min: Math.floor((now - new Date(patrol.startTime).getTime()) / 60_000),
-        stale: now - new Date(r.lastSeenAt).getTime() > STALE_MS,
+        duration_on_patrol_min: Math.floor((now - (parseSqliteUtc(patrol.startTime)?.getTime() ?? new Date(patrol.startTime).getTime())) / 60_000),
+        stale: now - (parseSqliteUtc(r.lastSeenAt)?.getTime() ?? 0) > STALE_MS,
       };
     }),
   );
