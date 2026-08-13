@@ -4,14 +4,21 @@
 // Markers: Uber-style car / walk / stationary + call-sign labels.
 
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Platform, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome5 } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
 import { ensureHeartbeatForActivePatrol, noteLocalCoords, startHeartbeatForPatrol } from "../lib/heartbeat";
 import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
 import { cacheGet, cacheSet } from "../lib/offlineCache";
+import {
+  bindPatrolTrack,
+  formatTrackKm,
+  getPatrolTrack,
+  subscribePatrolTrack,
+} from "../lib/patrolTrack";
 import { storage } from "../lib/storage";
 import { useAuthStore } from "../store/auth";
 import { colors, spacing } from "../theme";
@@ -38,6 +45,9 @@ ${tileLayerJs}
 
 var markers={};
 var fitted=false;
+var follow=true;
+var pathLine=null;
+var pathLatLngs=[];
 var MOVING=0.8;
 
 function esc(s){
@@ -103,7 +113,7 @@ window.updatePins=function(json){
   Object.keys(markers).forEach(function(id){
     if(!seen[id]){map.removeLayer(markers[id]);delete markers[id];}
   });
-  if(!fitted&&pins.length>0){
+  if(!fitted&&pins.length>0&&!selfMarker){
     fitted=true;
     function fit(){
       try{
@@ -118,12 +128,44 @@ window.updatePins=function(json){
   }
 };
 var selfMarker=null;
+map.on('dragstart',function(){ follow=false; });
+window.setFollow=function(on){
+  follow=!!on;
+  if(follow && selfMarker){
+    try{ map.panTo(selfMarker.getLatLng(),{animate:true}); }catch(e){}
+  }
+};
 window.updateSelf=function(lat,lng){
   if(typeof lat!=='number'||typeof lng!=='number'||!isFinite(lat)||!isFinite(lng))return;
-  if(selfMarker){selfMarker.setLatLng([lat,lng]);return;}
-  selfMarker=L.circleMarker([lat,lng],{
-    radius:8,color:'#fff',weight:3,fillColor:'#2563EB',fillOpacity:1
-  }).bindPopup('You').addTo(map);
+  var ll=[lat,lng];
+  if(selfMarker){selfMarker.setLatLng(ll);}
+  else {
+    selfMarker=L.circleMarker(ll,{
+      radius:9,color:'#fff',weight:3,fillColor:'#2563EB',fillOpacity:1
+    }).bindPopup('You').addTo(map);
+    if(follow) try{ map.setView(ll, Math.max(map.getZoom(),16), {animate:false}); }catch(e){}
+  }
+  if(follow && selfMarker){
+    try{ map.panTo(ll,{animate:true,duration:0.35}); }catch(e){}
+  }
+};
+window.appendPath=function(lat,lng){
+  if(typeof lat!=='number'||typeof lng!=='number'||!isFinite(lat)||!isFinite(lng))return;
+  pathLatLngs.push([lat,lng]);
+  if(!pathLine){
+    pathLine=L.polyline(pathLatLngs,{color:'#0B3D8C',weight:5,opacity:0.85,lineJoin:'round',lineCap:'round'}).addTo(map);
+    if(pathLine.bringToBack) pathLine.bringToBack();
+  } else {
+    pathLine.addLatLng([lat,lng]);
+  }
+};
+window.setPath=function(json){
+  try{ pathLatLngs=JSON.parse(json)||[]; }catch(e){ pathLatLngs=[]; }
+  if(pathLine){ try{ map.removeLayer(pathLine); }catch(e){} pathLine=null; }
+  if(pathLatLngs.length>0){
+    pathLine=L.polyline(pathLatLngs,{color:'#0B3D8C',weight:5,opacity:0.85,lineJoin:'round',lineCap:'round'}).addTo(map);
+    if(pathLine.bringToBack) pathLine.bringToBack();
+  }
 };
 </script>
 </body>
@@ -135,6 +177,8 @@ export function LivePatrollerMapScreen() {
   const [pins, setPins] = useState<LiveMapPin[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectionLost, setConnectionLost] = useState(false);
+  const [km, setKm] = useState(0);
+  const [following, setFollowing] = useState(true);
   const hostRef = useRef<HtmlMapHostHandle>(null);
   const loaded = useRef(false);
   const pinsRef = useRef<LiveMapPin[]>([]);
@@ -176,6 +220,18 @@ export function LivePatrollerMapScreen() {
     }
   }
 
+  function pushPathToMap() {
+    const pts = getPatrolTrack().points.map((p) => [p.lat, p.lng]);
+    hostRef.current?.injectJavaScript(
+      `window.setPath(${JSON.stringify(JSON.stringify(pts))}); true;`,
+    );
+  }
+
+  function recenter() {
+    setFollowing(true);
+    hostRef.current?.injectJavaScript("window.setFollow(true); true;");
+  }
+
   function pushSelf(lat: number, lng: number) {
     hostRef.current?.injectJavaScript(`window.updateSelf(${lat},${lng}); true;`);
     publishPins(pinsRef.current);
@@ -203,7 +259,10 @@ export function LivePatrollerMapScreen() {
     let cancelled = false;
     void (async () => {
       const cachedId = await ensureHeartbeatForActivePatrol();
-      if (cachedId) myPatrolIdRef.current = cachedId;
+      if (cachedId) {
+        myPatrolIdRef.current = cachedId;
+        await bindPatrolTrack(cachedId);
+      }
       try {
         const active = await api.activePatrol();
         if (cancelled) return;
@@ -215,6 +274,7 @@ export function LivePatrollerMapScreen() {
             /* ignore */
           }
           await startHeartbeatForPatrol(active.patrol_id);
+          await bindPatrolTrack(active.patrol_id);
         }
       } catch {
         /* cache path already tried */
@@ -245,6 +305,29 @@ export function LivePatrollerMapScreen() {
       cancelled = true;
       if (timer.current) clearInterval(timer.current);
     };
+  }, []);
+
+  useEffect(() => {
+    const lastLen = { n: 0 };
+    return subscribePatrolTrack((snap) => {
+      setKm(snap.km);
+      if (!loaded.current) return;
+      if (snap.points.length === 0) {
+        lastLen.n = 0;
+        pushPathToMap();
+        return;
+      }
+      if (snap.points.length <= lastLen.n || lastLen.n === 0) {
+        lastLen.n = snap.points.length;
+        pushPathToMap();
+        return;
+      }
+      const p = snap.points[snap.points.length - 1];
+      if (p) {
+        hostRef.current?.injectJavaScript(`window.appendPath(${p.lat},${p.lng}); true;`);
+      }
+      lastLen.n = snap.points.length;
+    });
   }, []);
 
   useEffect(() => {
@@ -321,6 +404,8 @@ export function LivePatrollerMapScreen() {
     loaded.current = true;
     publishPins(pinsRef.current);
     if (selfRef.current) pushSelf(selfRef.current.lat, selfRef.current.lng);
+    pushPathToMap();
+    if (following) hostRef.current?.injectJavaScript("window.setFollow(true); true;");
     hostRef.current?.injectJavaScript(
       "try{if(typeof map!=='undefined')map.invalidateSize({animate:false});}catch(e){} true;",
     );
@@ -328,15 +413,6 @@ export function LivePatrollerMapScreen() {
 
   const active = pins.filter((p) => !p.stale).length;
   const stale = pins.filter((p) => p.stale).length;
-  const cars = pins.filter((p) => p.patrol_type === "vehicle").length;
-  const walks = pins.filter((p) => p.patrol_type === "foot").length;
-  const other = pins.filter(
-    (p) =>
-      p.patrol_type === "static" ||
-      p.patrol_type === "sector_monitoring" ||
-      p.patrol_type === "ops" ||
-      p.patrol_type === "responding",
-  ).length;
 
   const statusLine = loading
     ? "Connecting…"
@@ -344,7 +420,7 @@ export function LivePatrollerMapScreen() {
       ? pins.length > 0
         ? "Connection lost · showing last known locations"
         : "Connection lost · trying again…"
-      : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${cars} car · ${walks} walk · ${other} other`;
+      : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${formatTrackKm(km)}`;
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
@@ -360,6 +436,13 @@ export function LivePatrollerMapScreen() {
             <ActivityIndicator color={colors.primary} />
           </View>
         )}
+        <View style={styles.kmBadge} pointerEvents="none">
+          <Text style={styles.kmValue}>{formatTrackKm(km)}</Text>
+          <Text style={styles.kmLabel}>this patrol</Text>
+        </View>
+        <Pressable style={styles.recenter} onPress={recenter} accessibilityLabel="Center on me">
+          <FontAwesome5 name="location-arrow" size={16} color="#fff" />
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -387,5 +470,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(232,224,216,0.55)",
+  },
+  kmBadge: {
+    position: "absolute",
+    top: spacing.sm,
+    left: spacing.sm,
+    backgroundColor: "rgba(11,20,32,0.88)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  kmValue: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  kmLabel: { color: "rgba(255,255,255,0.75)", fontSize: 10, fontWeight: "600", marginTop: 1 },
+  recenter: {
+    position: "absolute",
+    right: spacing.md,
+    bottom: spacing.md,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
 });

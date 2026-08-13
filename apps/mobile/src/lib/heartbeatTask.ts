@@ -8,6 +8,7 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { Platform } from "react-native";
 import { getApiBaseUrl } from "../config";
+import { appendTrackPoint } from "./patrolTrack";
 import { storage } from "./storage";
 import { showLocalNotification } from "./notifications";
 
@@ -53,6 +54,11 @@ export async function postHeartbeatFromLocation(
     accuracy?: number | null;
   },
 ): Promise<void> {
+  appendTrackPoint(session.patrolId, {
+    lat: coords.lat,
+    lng: coords.lng,
+    accuracy: coords.accuracy,
+  });
   const now = Date.now();
   if (now - lastSentAt < MIN_SEND_GAP_MS) return;
   lastSentAt = now;

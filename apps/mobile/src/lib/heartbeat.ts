@@ -8,6 +8,7 @@ import * as Location from "expo-location";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import { getApiBaseUrl } from "../config";
 import { refreshScreenLock } from "./keepAwake";
+import { appendTrackPoint, bindPatrolTrack } from "./patrolTrack";
 import { storage } from "./storage";
 import { showLocalNotification } from "./notifications";
 import {
@@ -58,6 +59,13 @@ export function noteLocalCoords(coords: {
     accuracy: coords.accuracy,
     at: Date.now(),
   };
+  if (currentPatrolId) {
+    appendTrackPoint(currentPatrolId, {
+      lat: coords.lat,
+      lng: coords.lng,
+      accuracy: coords.accuracy,
+    });
+  }
 }
 
 export async function startHeartbeatForPatrol(patrolId: string): Promise<void> {
@@ -108,8 +116,9 @@ export async function startHeartbeat(patrolId: string, deviceTokenJti: string) {
     return;
   }
 
+  await bindPatrolTrack(patrolId);
+
   if (Platform.OS !== "web") {
-    // Locked-screen updates only. Foreground watch below still owns the open-app pin.
     nativeBackground = await startNativeBackgroundHeartbeat(patrolId, deviceTokenJti);
   }
 
@@ -154,14 +163,13 @@ async function startWatch() {
         mayShowUserSettingsDialog: true,
       },
       (pos) => {
-        lastCoords = {
+        noteLocalCoords({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           heading: pos.coords.heading,
           speed: pos.coords.speed,
           accuracy: pos.coords.accuracy,
-          at: Date.now(),
-        };
+        });
       },
     );
   } catch (err) {

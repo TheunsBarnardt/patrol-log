@@ -20,6 +20,7 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { startHeartbeat, stopHeartbeat } from "../lib/heartbeat";
+import { clearPatrolTrack, formatTrackKm, subscribePatrolTrack } from "../lib/patrolTrack";
 import { isNetworkError, useConnectivityStore } from "../lib/connectivity";
 import { enqueueStandDown } from "../lib/outbox";
 import { storage } from "../lib/storage";
@@ -58,6 +59,8 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [odometerEnd, setOdometerEnd] = useState("");
   const [distanceKm, setDistanceKm] = useState("");
+  const [gpsKm, setGpsKm] = useState(0);
+  const distanceEdited = useRef(false);
   const [busy, setBusy] = useState(false);
   const [standingDownCallSign, setStandingDownCallSign] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +77,15 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   const deviceToken = useAuthStore((s) => s.deviceToken);
   const profile = useAuthStore((s) => s.profile);
   patrolRef.current = patrol;
+
+  useEffect(() => {
+    return subscribePatrolTrack((snap) => {
+      setGpsKm(snap.km);
+      if (!distanceEdited.current && snap.km >= 0.05) {
+        setDistanceKm(snap.km < 10 ? snap.km.toFixed(1) : String(Math.round(snap.km)));
+      }
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -302,6 +314,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
         await enqueueStandDown(id, body);
         stopHeartbeat();
         await storage.clearActivePatrolCache();
+        await clearPatrolTrack();
         notify("Saved offline", "Stand-down will sync when you’re back online.");
         navigation.replace("Home");
       };
@@ -315,6 +328,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
         await api.standDown(id, body);
         stopHeartbeat();
         await storage.clearActivePatrolCache();
+        await clearPatrolTrack();
         navigation.replace("Home");
       } catch (err: any) {
         if (isNetworkError(err)) {
@@ -430,6 +444,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
               <View style={styles.odoHint}>
                 <Text style={styles.odoHintText}>
                   No start odometer was recorded. Enter kilometres travelled on this patrol.
+                  {gpsKm >= 0.05 ? ` GPS tracked ${formatTrackKm(gpsKm)}.` : ""}
                 </Text>
               </View>
               <Text style={[styles.cardLine, { marginTop: spacing.sm, fontWeight: "700" }]}>
@@ -438,7 +453,7 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
               <TextInput
                 style={styles.input}
                 value={distanceKm}
-                onChangeText={(v) => { setDistanceKm(v); setError(null); }}
+                onChangeText={(v) => { distanceEdited.current = true; setDistanceKm(v); setError(null); }}
                 placeholder="e.g. 12"
                 keyboardType="numeric"
               />

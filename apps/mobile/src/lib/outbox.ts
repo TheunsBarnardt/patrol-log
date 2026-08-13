@@ -5,6 +5,7 @@ import { api } from "./api";
 import { bulkStorage } from "./bulkStorage";
 import { useConnectivityStore } from "./connectivity";
 import { storage } from "./storage";
+import { clearPatrolTrack } from "./patrolTrack";
 import { notify } from "./notify";
 
 const OUTBOX_KEY = "patrol_log.outbox";
@@ -105,6 +106,7 @@ export async function flushOutbox(): Promise<{ ok: number; fail: number }> {
         } else {
           await api.standDown(item.payload.patrolId, item.payload.body);
           await storage.clearActivePatrolCache();
+          await clearPatrolTrack();
         }
         ok += 1;
       } catch (err) {

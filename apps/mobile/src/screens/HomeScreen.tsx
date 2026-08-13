@@ -12,6 +12,7 @@ import { cacheGet, cacheSet } from "../lib/offlineCache";
 import { useConnectivityStore } from "../lib/connectivity";
 import { useCacheSyncStore, type FeatureStatus } from "../lib/cacheSync";
 import { storage } from "../lib/storage";
+import { clearPatrolTrack } from "../lib/patrolTrack";
 import type { ActivePatrolResponse, MessageChannel, PatrollerStats, StatsPeriod } from "@patrol-log/shared";
 import { colors, radii, spacing } from "../theme";
 
@@ -99,6 +100,7 @@ export function HomeScreen({ navigation }: Props) {
             } catch {}
           } else {
             await storage.clearActivePatrolCache();
+            await clearPatrolTrack();
           }
         })
         .catch(() => {
