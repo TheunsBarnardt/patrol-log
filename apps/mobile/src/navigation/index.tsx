@@ -8,10 +8,12 @@ import { colors } from "../theme";
 import { OfflineBanner } from "../components/OfflineBanner";
 import { ProfileDrawer } from "../components/ProfileDrawer";
 import { startConnectivityMonitoring } from "../lib/connectivity";
-import { ensureHeartbeatForActivePatrol } from "../lib/heartbeat";
+import { ensureHeartbeatForActivePatrol, startHeartbeatForPatrol } from "../lib/heartbeat";
 import { useKeepScreenOn } from "../lib/keepAwake";
 import { flushOutbox, refreshOutboxCount } from "../lib/outbox";
 import { useCacheSyncStore } from "../lib/cacheSync";
+import { api } from "../lib/api";
+import { storage } from "../lib/storage";
 import { LoginScreen } from "../screens/LoginScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { CommencePatrolScreen } from "../screens/CommencePatrolScreen";
@@ -99,7 +101,22 @@ export function RootNavigator() {
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    void ensureHeartbeatForActivePatrol();
+    void (async () => {
+      const existing = await ensureHeartbeatForActivePatrol();
+      if (existing) return;
+      try {
+        const p = await api.activePatrol();
+        if (!p?.patrol_id) return;
+        try {
+          await storage.setActivePatrolCache(JSON.stringify(p));
+        } catch {
+          /* ignore */
+        }
+        await startHeartbeatForPatrol(p.patrol_id);
+      } catch {
+        /* not on patrol */
+      }
+    })();
     void refreshOutboxCount();
     useCacheSyncStore.getState().startBackgroundSync();
     return startConnectivityMonitoring(() => {

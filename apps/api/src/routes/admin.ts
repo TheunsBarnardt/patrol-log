@@ -12,6 +12,7 @@ import {
   type PatrolType,
   type StatsPeriod,
 } from "@patrol-log/shared";
+import { toLiveMapPin } from "../lib/live-pin.js";
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, requireAccessLevel, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
@@ -146,8 +147,6 @@ export const admin = new Hono<AppContext>();
 // Admin + sector lead + call centre. Patrollers use the mobile app / My details only (no admin API).
 admin.use("*", requireAuth(), requireAccessLevel("system_admin", "admin", "sector_lead", "call_centre_agent"));
 
-const STALE_MS = 2 * 60_000;
-
 admin.get("/live-map", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
@@ -167,20 +166,7 @@ admin.get("/live-map", async (c) => {
         const vehicle = await db.query.vehicles.findFirst({ where: eq(vehicles.id, patrol.vehicleId) });
         vehicleRegistration = vehicle?.registration;
       }
-      return {
-        patrol_id: r.patrolId,
-        call_sign: r.callSign,
-        patrol_type: patrol.patrolType ?? "foot",
-        patrol_vehicle: patrol.vehicleId ?? undefined,
-        vehicle_registration: vehicleRegistration,
-        lat: r.lat,
-        lng: r.lng,
-        heading: r.heading ?? undefined,
-        speed: r.speed ?? undefined,
-        last_update: r.lastSeenAt,
-        duration_on_patrol_min: Math.floor((now - (parseSqliteUtc(patrol.startTime)?.getTime() ?? new Date(patrol.startTime).getTime())) / 60_000),
-        stale: now - (parseSqliteUtc(r.lastSeenAt)?.getTime() ?? 0) > STALE_MS,
-      };
+      return toLiveMapPin({ pin: r, patrol, vehicleRegistration, now });
     }),
   );
 

@@ -8,7 +8,7 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { Platform } from "react-native";
 import { getApiBaseUrl } from "../config";
-import { appendTrackPoint } from "./patrolTrack";
+import { appendTrackPoint, bindPatrolTrack, trailForHeartbeat } from "./patrolTrack";
 import { storage } from "./storage";
 import { showLocalNotification } from "./notifications";
 
@@ -54,6 +54,7 @@ export async function postHeartbeatFromLocation(
     accuracy?: number | null;
   },
 ): Promise<void> {
+  await bindPatrolTrack(session.patrolId);
   appendTrackPoint(session.patrolId, {
     lat: coords.lat,
     lng: coords.lng,
@@ -87,6 +88,7 @@ export async function postHeartbeatFromLocation(
       accuracy_m: coords.accuracy ?? 9999,
       timestamp,
       signature,
+      trail: trailForHeartbeat(),
     }),
   });
 

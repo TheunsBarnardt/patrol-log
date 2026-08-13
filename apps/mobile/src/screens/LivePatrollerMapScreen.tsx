@@ -44,6 +44,9 @@ var map = L.map('map',{zoomControl:true}).setView([-25.842,28.178],12);
 ${tileLayerJs}
 
 var markers={};
+var peerLines={};
+var selectedId=null;
+var selfPatrolId=null;
 var fitted=false;
 var follow=true;
 var pathLine=null;
@@ -52,6 +55,11 @@ var MOVING=0.8;
 
 function esc(s){
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function colorFor(cs){
+  var h=0,s=String(cs||'');
+  for(var i=0;i<s.length;i++) h=((h<<5)-h)+s.charCodeAt(i)|0;
+  return 'hsl('+(((h%360)+360)%360)+',70%,38%)';
 }
 function movementOf(p){
   if(p.patrol_type==='vehicle') return 'car';
@@ -92,8 +100,40 @@ function popupHtml(p){
   if(p.vehicle_registration) lines.push('Vehicle: '+esc(p.vehicle_registration));
   lines.push(p.duration_on_patrol_min+' min on patrol');
   if(p.speed!=null) lines.push(Math.round(p.speed*3.6)+' km/h');
+  if(p.path_km!=null && p.path_km>0) lines.push(p.path_km+' km covered');
   if(p.stale) lines.push('<span style="color:#F59E0B">⚠ stale</span>');
+  lines.push('<span style="color:#6B7280">Tap pin to highlight route</span>');
   return lines.join('<br/>');
+}
+window.setSelfPatrolId=function(id){ selfPatrolId=id||null; };
+window.selectPeer=function(id){
+  selectedId=(selectedId===id)?null:id;
+  restylePeerPaths();
+};
+function restylePeerPaths(){
+  Object.keys(peerLines).forEach(function(id){
+    var line=peerLines[id];
+    if(!line) return;
+    var on=selectedId===id;
+    try{ line.setStyle({weight:on?7:4, opacity:on?0.95:0.42}); }catch(e){}
+    if(on && line.bringToFront) line.bringToFront();
+  });
+  if(pathLine && pathLine.bringToBack) pathLine.bringToBack();
+}
+function setPeerPath(id, pts, cs){
+  if(peerLines[id]){ try{ map.removeLayer(peerLines[id]); }catch(e){} delete peerLines[id]; }
+  if(selfPatrolId && id===selfPatrolId) return;
+  if(!pts || pts.length<2) return;
+  var on=selectedId===id;
+  var line=L.polyline(pts,{
+    color:colorFor(cs),
+    weight:on?7:4,
+    opacity:on?0.95:0.42,
+    lineJoin:'round',
+    lineCap:'round'
+  }).addTo(map);
+  line.on('click', function(){ window.selectPeer(id); });
+  peerLines[id]=line;
 }
 window.updatePins=function(json){
   var pins=JSON.parse(json);
@@ -109,10 +149,17 @@ window.updatePins=function(json){
     } else {
       markers[p.patrol_id]=L.marker([p.lat,p.lng],{icon:icon}).bindPopup(popup).addTo(map);
     }
+    markers[p.patrol_id].off('click');
+    markers[p.patrol_id].on('click', function(){ window.selectPeer(p.patrol_id); });
+    setPeerPath(p.patrol_id, p.path||[], p.call_sign);
   });
   Object.keys(markers).forEach(function(id){
     if(!seen[id]){map.removeLayer(markers[id]);delete markers[id];}
   });
+  Object.keys(peerLines).forEach(function(id){
+    if(!seen[id]){ try{ map.removeLayer(peerLines[id]); }catch(e){} delete peerLines[id]; }
+  });
+  restylePeerPaths();
   if(!fitted&&pins.length>0&&!selfMarker){
     fitted=true;
     function fit(){
@@ -262,12 +309,18 @@ export function LivePatrollerMapScreen() {
       if (cachedId) {
         myPatrolIdRef.current = cachedId;
         await bindPatrolTrack(cachedId);
+        hostRef.current?.injectJavaScript(
+          `window.setSelfPatrolId(${JSON.stringify(cachedId)}); true;`,
+        );
       }
       try {
         const active = await api.activePatrol();
         if (cancelled) return;
         if (active?.patrol_id) {
           myPatrolIdRef.current = active.patrol_id;
+          hostRef.current?.injectJavaScript(
+            `window.setSelfPatrolId(${JSON.stringify(active.patrol_id)}); true;`,
+          );
           try {
             await storage.setActivePatrolCache(JSON.stringify(active));
           } catch {
@@ -402,6 +455,11 @@ export function LivePatrollerMapScreen() {
 
   function handleLoad() {
     loaded.current = true;
+    if (myPatrolIdRef.current) {
+      hostRef.current?.injectJavaScript(
+        `window.setSelfPatrolId(${JSON.stringify(myPatrolIdRef.current)}); true;`,
+      );
+    }
     publishPins(pinsRef.current);
     if (selfRef.current) pushSelf(selfRef.current.lat, selfRef.current.lng);
     pushPathToMap();
@@ -420,7 +478,7 @@ export function LivePatrollerMapScreen() {
       ? pins.length > 0
         ? "Connection lost · showing last known locations"
         : "Connection lost · trying again…"
-      : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${formatTrackKm(km)}`;
+      : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${formatTrackKm(km)} · tap a pin to see their route`;
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>

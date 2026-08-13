@@ -300,6 +300,8 @@ export const livePins = sqliteTable("live_pins", {
     .default(sql`datetime('now')`),
   outOfSector: integer("out_of_sector", { mode: "boolean" }).notNull().default(false),
   lastOutOfSectorAlertAt: text("last_out_of_sector_alert_at"),
+  /** Downsampled [lat, lng][] trail for this active patrol (cleared on stand-down with the pin). */
+  pathJson: text("path_json", { mode: "json" }).$type<[number, number][]>().notNull().default(sql`'[]'`),
 }, (t) => ({
   cpfSectorIdx: index("live_pins_cpf_sector_idx").on(t.cpfId, t.sectorId),
   lastSeenIdx: index("live_pins_last_seen_idx").on(t.lastSeenAt),

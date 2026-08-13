@@ -56,11 +56,11 @@ function emit() {
 }
 
 function schedulePersist() {
-  if (persistTimer) return;
+  if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     persistTimer = null;
     void persist();
-  }, 2000);
+  }, 250);
 }
 
 async function persist() {
@@ -71,6 +71,15 @@ async function persist() {
   } catch (err) {
     console.warn("[patrol-track] persist failed", err);
   }
+}
+
+/** Flush to disk now — call before logout / background. Does not clear the trail. */
+export async function flushPatrolTrack(): Promise<void> {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  await persist();
 }
 
 async function hydrate(id: string) {
@@ -118,6 +127,10 @@ export async function bindPatrolTrack(id: string): Promise<void> {
 
 export function getPatrolTrack(): TrackSnapshot {
   return snapshot();
+}
+
+export function trailForHeartbeat(): { lat: number; lng: number }[] {
+  return points.slice(-800).map((p) => ({ lat: p.lat, lng: p.lng }));
 }
 
 export function subscribePatrolTrack(fn: (snap: TrackSnapshot) => void): () => void {
@@ -184,4 +197,17 @@ export function formatTrackKm(km: number): string {
   if (km < 0.05) return "0 km";
   if (km < 10) return `${km.toFixed(1)} km`;
   return `${Math.round(km * 10) / 10} km`;
+}
+
+export function roundedTrackKm(km: number): number {
+  return Math.max(0, Math.round(km));
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") void flushPatrolTrack();
+  });
+  window.addEventListener("pagehide", () => {
+    void flushPatrolTrack();
+  });
 }

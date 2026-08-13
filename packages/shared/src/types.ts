@@ -274,6 +274,8 @@ export interface HeartbeatRequest {
   accuracy_m: number;
   timestamp: string;
   signature: string;
+  /** Local GPS trail so other patrollers can see this route (grid scan). */
+  trail?: Array<{ lat: number; lng: number }>;
 }
 
 /** Uber-style map glyph: driving, on foot, or standing still. */
@@ -294,6 +296,10 @@ export interface LiveMapPin {
   last_update: string;
   duration_on_patrol_min: number;
   stale: boolean;
+  /** Downsampled [lat, lng] trail for this patrol. */
+  path?: [number, number][];
+  /** Approximate km along `path`. */
+  path_km?: number;
 }
 
 export type LiveMapMessage =

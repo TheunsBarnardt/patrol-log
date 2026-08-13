@@ -8,7 +8,7 @@ import * as Location from "expo-location";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import { getApiBaseUrl } from "../config";
 import { refreshScreenLock } from "./keepAwake";
-import { appendTrackPoint, bindPatrolTrack } from "./patrolTrack";
+import { appendTrackPoint, bindPatrolTrack, trailForHeartbeat } from "./patrolTrack";
 import { storage } from "./storage";
 import { showLocalNotification } from "./notifications";
 import {
@@ -326,6 +326,12 @@ async function sendOnce() {
       return;
     }
 
+    appendTrackPoint(currentPatrolId, {
+      lat: coords.lat,
+      lng: coords.lng,
+      accuracy: coords.accuracy_m,
+    });
+
     const timestamp = new Date().toISOString();
     const signature = await signHeartbeat(currentJti, currentPatrolId, timestamp);
     const token = await storage.getDeviceToken();
@@ -349,6 +355,7 @@ async function sendOnce() {
         accuracy_m: coords.accuracy_m,
         timestamp,
         signature,
+        trail: trailForHeartbeat(),
       }),
       keepalive: true,
     });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { adminFetch } from "../lib/api";
@@ -23,6 +23,12 @@ function movementLabel(m: LiveMapMovement): string {
   if (m === "car") return "In vehicle";
   if (m === "walk") return "On foot";
   return "Stationary";
+}
+
+function pathColor(callSign: string): string {
+  let h = 0;
+  for (let i = 0; i < callSign.length; i++) h = (h << 5) - h + callSign.charCodeAt(i);
+  return `hsl(${((h % 360) + 360) % 360} 70% 38%)`;
 }
 
 const MOVING_MS = 0.8; // m/s — below this, don't rotate heading
@@ -135,6 +141,7 @@ function typeCaption(type: PatrolType): string {
 
 export function LiveMapPage() {
   const [pins, setPins] = useState<LiveMapPin[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -188,6 +195,7 @@ export function LiveMapPage() {
         <span className="text-sm text-gray-500">
           {cars} car · {walks} walk · {stationary} stationary
         </span>
+        <span className="text-sm text-gray-500">Click a pin to highlight that patrol’s route</span>
         {lastRefresh && (
           <span className="ml-auto text-xs text-gray-400">
             Last updated {lastRefresh.toLocaleTimeString()} · every 30s
@@ -216,8 +224,34 @@ export function LiveMapPage() {
             maxZoom={19}
           />
           <AutoFit pins={pins} />
+          {pins.map((p) => {
+            const path = p.path;
+            if (!path || path.length < 2) return null;
+            const on = selectedId === p.patrol_id;
+            return (
+              <Polyline
+                key={`path-${p.patrol_id}`}
+                positions={path}
+                pathOptions={{
+                  color: pathColor(p.call_sign),
+                  weight: on ? 7 : 4,
+                  opacity: on ? 0.95 : 0.42,
+                }}
+                eventHandlers={{
+                  click: () => setSelectedId((cur) => (cur === p.patrol_id ? null : p.patrol_id)),
+                }}
+              />
+            );
+          })}
           {pins.map((p) => (
-            <Marker key={p.patrol_id} position={[p.lat, p.lng]} icon={icons.get(p.patrol_id)}>
+            <Marker
+              key={p.patrol_id}
+              position={[p.lat, p.lng]}
+              icon={icons.get(p.patrol_id)}
+              eventHandlers={{
+                click: () => setSelectedId((cur) => (cur === p.patrol_id ? null : p.patrol_id)),
+              }}
+            >
               <Popup>
                 <div className="text-sm">
                   <p className="mb-1 text-base font-bold">{p.call_sign}</p>
@@ -227,6 +261,9 @@ export function LiveMapPage() {
                     <p className="text-gray-600">Vehicle: {p.vehicle_registration}</p>
                   )}
                   <p className="text-gray-600">{p.duration_on_patrol_min} min on patrol</p>
+                  {p.path_km != null && p.path_km > 0 && (
+                    <p className="text-gray-600">{p.path_km} km covered</p>
+                  )}
                   {p.speed != null && (
                     <p className="text-xs text-gray-500">{Math.round(p.speed * 3.6)} km/h</p>
                   )}
@@ -236,6 +273,7 @@ export function LiveMapPage() {
                     {p.stale ? "⚠ Stale — " : "✓ Live — "}
                     {formatAge(p.last_update)}
                   </p>
+                  <p className="mt-1 text-xs text-gray-400">Click pin to highlight route</p>
                 </div>
               </Popup>
             </Marker>

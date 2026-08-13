@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { PatrollerProfile } from "@patrol-log/shared";
 import { storage } from "../lib/storage";
 import { stopHeartbeat } from "../lib/heartbeat";
-import { clearPatrolTrack } from "../lib/patrolTrack";
+import { flushPatrolTrack } from "../lib/patrolTrack";
 
 interface AuthState {
   status: "bootstrapping" | "unauthenticated" | "authenticated";
@@ -26,8 +26,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   setUnauthenticated() {
+    void flushPatrolTrack();
     stopHeartbeat();
-    void clearPatrolTrack();
     set({ status: "unauthenticated", profile: null, deviceToken: null });
   },
 
@@ -47,12 +47,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   async signOut() {
+    await flushPatrolTrack();
     stopHeartbeat();
     await storage.clearDeviceToken();
     await storage.clearProfile();
     await storage.clearActivePatrolCache();
-    await clearPatrolTrack();
-    // Keep directory/map caches on device (WhatsApp-style).
+    // Keep directory/map caches and the active patrol GPS trail (same phone, same patrol).
     set({ status: "unauthenticated", profile: null, deviceToken: null });
   },
 }));

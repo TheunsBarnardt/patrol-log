@@ -11,10 +11,10 @@ import { getDb } from "../db/index.js";
 import { livePins, patrols, vehicles } from "../db/schema.js";
 import { verifyHeartbeat } from "../lib/tokens.js";
 import { logAudit } from "../lib/audit.js";
+import { toLiveMapPin } from "../lib/live-pin.js";
+import { mergePatrolPath, parsePathJson } from "../lib/trail.js";
 
 export const liveMap = new Hono<AppContext>();
-
-const STALE_THRESHOLD_MS = 2 * 60_000;
 
 liveMap.post("/heartbeat", requireAuth(), async (c) => {
   const auth = getAuth(c);
@@ -39,6 +39,8 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
     throw new AppError("LIVE_MAP_HEARTBEAT_RATE_LIMITED");
   }
 
+  const pathJson = mergePatrolPath(parsePathJson(existing?.pathJson), body.trail, body.lat, body.lng);
+
   // Upsert pin — no polygon boundary checks (boundaries removed).
   await db
     .insert(livePins)
@@ -54,6 +56,7 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
       accuracyM: body.accuracy_m,
       lastSeenAt: new Date().toISOString(),
       outOfSector: false,
+      pathJson,
     })
     .onConflictDoUpdate({
       target: livePins.patrolId,
@@ -65,6 +68,7 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
         accuracyM: body.accuracy_m,
         lastSeenAt: new Date().toISOString(),
         outOfSector: false,
+        pathJson,
       },
     });
 
@@ -95,21 +99,7 @@ liveMap.get("/snapshot", requireAuth(), async (c) => {
         const vehicle = await db.query.vehicles.findFirst({ where: eq(vehicles.id, patrol.vehicleId) });
         vehicleRegistration = vehicle?.registration;
       }
-      return {
-        patrol_id: r.patrolId,
-        call_sign: r.callSign,
-        patrol_type: patrol.patrolType ?? "foot",
-        patrol_vehicle: patrol.vehicleId ?? undefined,
-        vehicle_registration: vehicleRegistration,
-        lat: r.lat,
-        lng: r.lng,
-        heading: r.heading ?? undefined,
-        speed: r.speed ?? undefined,
-        last_update: r.lastSeenAt,
-        duration_on_patrol_min: Math.floor((now - (parseSqliteUtc(patrol.startTime)?.getTime() ?? new Date(patrol.startTime).getTime())) / 60_000),
-        stale: now - (parseSqliteUtc(r.lastSeenAt)?.getTime() ?? 0) > STALE_THRESHOLD_MS,
-        out_of_sector: r.outOfSector,
-      };
+      return toLiveMapPin({ pin: r, patrol, vehicleRegistration, now });
     }),
   );
 

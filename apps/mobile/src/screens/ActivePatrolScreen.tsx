@@ -20,7 +20,7 @@ import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { startHeartbeat, stopHeartbeat } from "../lib/heartbeat";
-import { clearPatrolTrack, formatTrackKm, subscribePatrolTrack } from "../lib/patrolTrack";
+import { clearPatrolTrack, formatTrackKm, getPatrolTrack, roundedTrackKm, subscribePatrolTrack } from "../lib/patrolTrack";
 import { isNetworkError, useConnectivityStore } from "../lib/connectivity";
 import { enqueueStandDown } from "../lib/outbox";
 import { storage } from "../lib/storage";
@@ -258,12 +258,13 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     const isVehicle = patrol ? patrolTypeRequiresVehicle(patrol.patrol_type) : false;
     const useOdometer = !!isPrimary && isVehicle && patrol?.odometer_start != null;
     const useDistance = !!isPrimary && isVehicle && patrol?.odometer_start == null;
-    /** Offline / failed load: optional km if they were the driver. */
-    const offlineDistance =
-      !patrol && distanceKm.trim() !== "" ? Number(distanceKm) : NaN;
-
+    const gpsKm = getPatrolTrack().km;
+    const gpsRounded = gpsKm >= 0.05 ? roundedTrackKm(gpsKm) : NaN;
+    const typedDist = distanceKm.trim() === "" ? NaN : Number(distanceKm);
+    const dist = Number.isFinite(typedDist) && typedDist >= 0 ? typedDist : gpsRounded;
     const endOdo = odometerEnd.trim() === "" ? NaN : Number(odometerEnd);
-    const dist = distanceKm.trim() === "" ? NaN : Number(distanceKm);
+    /** Offline / failed load: optional km if they were the driver. */
+    const offlineDistance = !patrol && Number.isFinite(dist) ? dist : NaN;
 
     if (useOdometer) {
       if (!Number.isFinite(endOdo)) {
@@ -300,13 +301,16 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
     setError(null);
     try {
       const loc = await captureGps();
-      const body = {
-        odometer_end: useOdometer ? endOdo : undefined,
-        distance_km: useDistance
+      const travelledKm = useOdometer
+        ? undefined
+        : Number.isFinite(dist)
           ? Math.round(dist)
           : Number.isFinite(offlineDistance)
             ? Math.round(offlineDistance)
-            : undefined,
+            : undefined;
+      const body = {
+        odometer_end: useOdometer ? endOdo : undefined,
+        distance_km: travelledKm,
         end_location: loc,
       };
 

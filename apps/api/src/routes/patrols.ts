@@ -679,6 +679,8 @@ patrolRoutes.post("/:patrol_id/stand-down", requireAuth(), async (c) => {
       }
       distanceKm = Math.round(body.distance_km);
     }
+  } else if (body.distance_km != null && Number.isFinite(body.distance_km) && body.distance_km >= 0) {
+    distanceKm = Math.round(body.distance_km);
   }
 
   const sarsCompliant = patrol.sarsCompliant && isGeoSarsCompliant(body.end_location);
