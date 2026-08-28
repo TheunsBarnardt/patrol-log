@@ -1,6 +1,8 @@
 /**
- * Proxy CARTO/OSM raster tiles through Pages — same-origin for mobile carriers.
+ * Proxy OpenStreetMap raster tiles through Pages — same-origin for mobile carriers.
  * /map-tiles/{z}/{x}/{y}.png
+ *
+ * OSM tile usage: identify the app, cache, and do not scrape. No API key.
  */
 
 type PagesContext = {
@@ -15,11 +17,14 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     return new Response("Bad tile path", { status: 400 });
   }
   const clean = path.endsWith(".png") ? path : `${path}.png`;
-  // Use a fixed subdomain — proxy doesn't need round-robin.
-  const target = `https://a.basemaps.cartocdn.com/rastertiles/voyager/${clean}`;
+  const target = `https://tile.openstreetmap.org/${clean}`;
 
   try {
     const upstream = await fetch(target, {
+      headers: {
+        Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
+        "User-Agent": "PatrolLog/1.0 (https://patrol-log-mobile.pages.dev; map tile proxy)",
+      },
       cf: { cacheTtl: 86400, cacheEverything: true },
     } as RequestInit);
     const headers = new Headers();

@@ -1,7 +1,7 @@
 import { getMapAssetOrigin } from "../config";
 
 /**
- * Leaflet + CARTO tiles via same-origin Pages proxies (works on blocked mobile CDNs).
+ * Leaflet + OpenStreetMap tiles via same-origin Pages proxies (works on blocked mobile CDNs).
  *
  * Mobile Safari / Chrome / Android WebView often paint tiles once, then go gray:
  * the map container is height:100% of a flex parent that later resizes (address
@@ -20,7 +20,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;position:fix
 .leaflet-tile-container img{max-width:none!important;-webkit-user-select:none}
 ${extraHeadCss}
 </style>`,
-    tileLayerJs: `L.tileLayer('${origin}/map-tiles/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap © CARTO'}).addTo(map);
+    tileLayerJs: `L.tileLayer('${origin}/map-tiles/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
 ${mapKeepAliveJs()}`,
   };
 }

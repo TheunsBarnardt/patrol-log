@@ -27,6 +27,8 @@ export const cpfs = sqliteTable("cpfs", {
   createdAt: text("created_at")
     .notNull()
     .default(sql`datetime('now')`),
+  /** When false, mobile apps cannot see live pins. Admin live map is unchanged. */
+  mobileLiveMapEnabled: integer("mobile_live_map_enabled", { mode: "boolean" }).notNull().default(true),
 });
 
 export const sectors = sqliteTable("sectors", {

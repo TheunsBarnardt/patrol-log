@@ -144,13 +144,19 @@ export function LiveMapPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mobileVisible, setMobileVisible] = useState(true);
+  const [savingVisibility, setSavingVisibility] = useState(false);
+  const savingVisibilityRef = useRef(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     async function refresh() {
       try {
-        const data = await adminFetch<{ pins: LiveMapPin[] }>("/admin/live-map");
+        const data = await adminFetch<{ pins: LiveMapPin[]; mobile_live_map_enabled?: boolean }>("/admin/live-map");
         setPins(data.pins);
+        if (typeof data.mobile_live_map_enabled === "boolean" && !savingVisibilityRef.current) {
+          setMobileVisible(data.mobile_live_map_enabled);
+        }
         setLastRefresh(new Date());
         setError(null);
       } catch (err) {
@@ -164,6 +170,26 @@ export function LiveMapPage() {
       if (timer.current) clearInterval(timer.current);
     };
   }, []);
+
+  async function toggleMobileVisible(next: boolean) {
+    const prev = mobileVisible;
+    setMobileVisible(next);
+    savingVisibilityRef.current = true;
+    setSavingVisibility(true);
+    try {
+      await adminFetch<{ mobile_live_map_enabled: boolean }>("/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ mobile_live_map_enabled: next }),
+      });
+    } catch (err) {
+      setMobileVisible(prev);
+      const msg = err instanceof Error ? err.message : "Could not save";
+      setError(msg);
+    } finally {
+      savingVisibilityRef.current = false;
+      setSavingVisibility(false);
+    }
+  }
 
   const icons = useMemo(() => {
     const map = new Map<string, L.DivIcon>();
@@ -180,6 +206,24 @@ export function LiveMapPage() {
   return (
     <>
       <PageHeader title="Live Patroller Map" />
+
+      <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 accent-blue-700"
+          checked={mobileVisible}
+          disabled={savingVisibility}
+          onChange={(e) => void toggleMobileVisible(e.target.checked)}
+        />
+        <span>
+          <span className="block text-sm font-semibold text-gray-800">Show live locations on mobile</span>
+          <span className="mt-0.5 block text-xs text-gray-500">
+            {mobileVisible
+              ? "Patrollers can see each other on the app live map. This admin map always stays on."
+              : "Mobile app hides other patrollers. GPS still updates on this admin map."}
+          </span>
+        </span>
+      </label>
 
       <div className="mb-4 flex flex-wrap items-center gap-4">
         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700">
@@ -218,9 +262,9 @@ export function LiveMapPage() {
           zoomControl
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-            subdomains="abcd"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            subdomains="abc"
             maxZoom={19}
           />
           <AutoFit pins={pins} />

@@ -158,7 +158,7 @@ export function createApiClient(opts: ApiClientOptions) {
 
     // live map (polling mode — POC)
     heartbeat: (body: HeartbeatRequest) => request<HeartbeatResponse>("/live-map/heartbeat", { method: "POST", body: JSON.stringify(body) }),
-    liveMapSnapshot: () => request<{ pins: LiveMapPin[] }>("/live-map/snapshot"),
+    liveMapSnapshot: () => request<{ pins: LiveMapPin[]; sharing_enabled?: boolean }>("/live-map/snapshot"),
 
     // vehicles (available to any authenticated patroller)
     vehicles: () => request<{ results: VehicleRecord[] }>("/vehicles"),

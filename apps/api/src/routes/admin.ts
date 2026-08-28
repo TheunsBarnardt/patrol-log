@@ -18,6 +18,7 @@ import { requireAuth, requireAccessLevel, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
 import {
   auditLog,
+  cpfs,
   devices,
   emergencyServices,
   incidents,
@@ -171,7 +172,29 @@ admin.get("/live-map", async (c) => {
     }),
   );
 
-  return c.json({ pins });
+  const cpf = await db.query.cpfs.findFirst({ where: eq(cpfs.id, auth.patroller.cpf_id) });
+
+  return c.json({
+    pins,
+    mobile_live_map_enabled: cpf?.mobileLiveMapEnabled !== false,
+  });
+});
+
+admin.patch("/settings", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{ mobile_live_map_enabled?: boolean }>().catch(() => null);
+  if (!body || typeof body.mobile_live_map_enabled !== "boolean") {
+    throw new AppError("PATROL_INVALID_INPUT", { reason: "mobile_live_map_enabled must be true or false" });
+  }
+  const db = getDb(c.env);
+  await db
+    .update(cpfs)
+    .set({ mobileLiveMapEnabled: body.mobile_live_map_enabled })
+    .where(eq(cpfs.id, auth.patroller.cpf_id));
+  await logAudit(db, "admin.settings.updated", auth, {
+    mobile_live_map_enabled: body.mobile_live_map_enabled,
+  });
+  return c.json({ mobile_live_map_enabled: body.mobile_live_map_enabled });
 });
 
 admin.get("/stats", async (c) => {

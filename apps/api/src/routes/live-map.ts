@@ -8,7 +8,7 @@ import { AppError, parseSqliteUtc, type HeartbeatRequest, type LiveMapPin } from
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
-import { livePins, patrols, patrollers, vehicles } from "../db/schema.js";
+import { livePins, patrols, patrollers, vehicles, cpfs } from "../db/schema.js";
 import { verifyHeartbeat } from "../lib/tokens.js";
 import { logAudit } from "../lib/audit.js";
 import { toLiveMapPin } from "../lib/live-pin.js";
@@ -84,6 +84,11 @@ liveMap.get("/snapshot", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
 
+  const cpf = await db.query.cpfs.findFirst({ where: eq(cpfs.id, auth.patroller.cpf_id) });
+  if (cpf?.mobileLiveMapEnabled === false) {
+    return c.json({ pins: [] as LiveMapPin[], sharing_enabled: false });
+  }
+
   // system_admin = whole CPF; everyone else = own sector. Pins stay until stand-down.
   const scope =
     auth.patroller.access_level === "system_admin"
@@ -109,5 +114,5 @@ liveMap.get("/snapshot", requireAuth(), async (c) => {
     }),
   );
 
-  return c.json({ pins });
+  return c.json({ pins, sharing_enabled: true });
 });

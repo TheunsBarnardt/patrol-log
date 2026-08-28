@@ -227,6 +227,7 @@ export function LivePatrollerMapScreen() {
   const [km, setKm] = useState(0);
   const [following, setFollowing] = useState(true);
   const [isPassenger, setIsPassenger] = useState(false);
+  const [sharingEnabled, setSharingEnabled] = useState(true);
   const hostRef = useRef<HtmlMapHostHandle>(null);
   const loaded = useRef(false);
   const pinsRef = useRef<LiveMapPin[]>([]);
@@ -291,8 +292,11 @@ export function LivePatrollerMapScreen() {
     try {
       const res = await api.liveMapSnapshot();
       setConnectionLost(false);
-      await cacheSet("liveMap", res.pins);
-      publishPins(res.pins);
+      const sharing = res.sharing_enabled !== false;
+      setSharingEnabled(sharing);
+      const pins = sharing ? res.pins : [];
+      await cacheSet("liveMap", pins);
+      publishPins(pins);
     } catch {
       const cached = await cacheGet<LiveMapPin[]>("liveMap");
       const last = pinsRef.current.length > 0 ? pinsRef.current : cached?.data ?? [];
@@ -482,13 +486,15 @@ export function LivePatrollerMapScreen() {
       ? pins.length > 0
         ? "Connection lost · showing last known locations"
         : "Connection lost · trying again…"
-      : `${active} live${stale > 0 ? ` · ${stale} stale` : ""}${isPassenger ? "" : ` · ${formatTrackKm(km)}`} · tap a pin to see their route`;
+      : !sharingEnabled
+        ? "Live locations hidden by dispatch · your GPS still updates for admin"
+        : `${active} live${stale > 0 ? ` · ${stale} stale` : ""}${isPassenger ? "" : ` · ${formatTrackKm(km)}`} · tap a pin to see their route`;
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={styles.statusBar}>
-        <View style={[styles.statusDot, connectionLost && styles.statusDotLost]} />
-        <Text style={[styles.statusText, connectionLost && styles.statusTextLost]}>{statusLine}</Text>
+        <View style={[styles.statusDot, (connectionLost || !sharingEnabled) && styles.statusDotLost]} />
+        <Text style={[styles.statusText, (connectionLost || !sharingEnabled) && styles.statusTextLost]}>{statusLine}</Text>
       </View>
 
       <View style={styles.map}>
