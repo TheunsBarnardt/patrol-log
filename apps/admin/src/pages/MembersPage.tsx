@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetch, authStore } from "../lib/api";
-import { DataTable, PageHeader, RowActions, StatusBadge } from "../components/DataTable";
+import { DataTable, DupHint, PageHeader, RowActions, StatusBadge } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
 import { parseCsv, CsvImportButton } from "../components/CsvImport";
+import { duplicateIds, normalizeName, normalizePhone } from "../lib/duplicates";
 
 interface Member {
   id: string; callSign: string; name: string; phone: string | null; address: string | null;
@@ -115,7 +116,13 @@ export function MembersPage() {
     },
   });
 
-  const rows = (data?.results ?? []).filter((r) =>
+  const all = data?.results ?? [];
+  const dupCallSign = duplicateIds(all, (r) => r.id, (r) => r.callSign.trim().toUpperCase());
+  const dupName = duplicateIds(all, (r) => r.id, (r) => normalizeName(r.name));
+  const dupPhone = duplicateIds(all, (r) => r.id, (r) => normalizePhone(r.phone));
+  const dupRows = new Set([...dupCallSign, ...dupName, ...dupPhone]);
+
+  const rows = all.filter((r) =>
     !search ||
     r.name.toLowerCase().includes(search.toLowerCase()) ||
     r.callSign.toLowerCase().includes(search.toLowerCase()),
@@ -168,15 +175,41 @@ export function MembersPage() {
         }
       />
 
+      {dupRows.size > 0 && (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {dupRows.size} member{dupRows.size === 1 ? "" : "s"} highlighted — same call sign, name, or phone as another record.
+        </p>
+      )}
+
       {isLoading ? <p className="text-sm text-gray-500">Loading…</p> : (
         <DataTable
           rows={rows}
           keyExtractor={(r) => r.id}
+          rowClassName={(r) =>
+            dupRows.has(r.id) ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-gray-50"
+          }
           columns={[
-            { header: "Call sign", render: (r) => <span className="font-mono font-bold">{r.callSign}</span> },
-            { header: "Name", render: (r) => <span className="font-medium">{r.name}</span> },
+            {
+              header: "Call sign",
+              render: (r) => (
+                <DupHint show={dupCallSign.has(r.id)}>
+                  <span className="font-mono font-bold">{r.callSign}</span>
+                </DupHint>
+              ),
+            },
+            {
+              header: "Name",
+              render: (r) => (
+                <DupHint show={dupName.has(r.id)}>
+                  <span className="font-medium">{r.name}</span>
+                </DupHint>
+              ),
+            },
             { header: "Sector", render: (r) => <span className="font-mono text-xs">{sectorLabel(r)}</span> },
-            { header: "Phone", render: (r) => r.phone ?? "—" },
+            {
+              header: "Phone",
+              render: (r) => <DupHint show={dupPhone.has(r.id)}>{r.phone ?? "—"}</DupHint>,
+            },
             { header: "Access", render: (r) => <span className="capitalize text-xs">{r.accessLevel.replace(/_/g, " ")}</span> },
             { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
             { header: "", className: "text-right", render: (r) => <RowActions onEdit={() => openEdit(r)} /> },

@@ -11,11 +11,13 @@ export function DataTable<T>({
   columns,
   keyExtractor,
   emptyMessage = "No records",
+  rowClassName,
 }: {
   rows: T[];
   columns: Column<T>[];
   keyExtractor?: (row: T, index: number) => string | number;
   emptyMessage?: string;
+  rowClassName?: (row: T) => string | undefined;
 }) {
   if (rows.length === 0) {
     return (
@@ -43,7 +45,7 @@ export function DataTable<T>({
           {rows.map((row, i) => (
             <tr
               key={keyExtractor ? keyExtractor(row, i) : (row as { id?: string }).id ?? i}
-              className="hover:bg-gray-50 transition-colors"
+              className={`${rowClassName?.(row) ?? "hover:bg-gray-50"} transition-colors`}
             >
               {columns.map((c, j) => (
                 <td key={j} className={`px-4 py-3 ${c.className ?? ""}`}>
@@ -78,6 +80,16 @@ export function PageHeader({ title, action, search, onSearch }: {
       )}
       <div className="ml-auto">{action}</div>
     </div>
+  );
+}
+
+export function DupHint({ show, children }: { show: boolean; children: ReactNode }) {
+  if (!show) return <>{children}</>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <span className="rounded bg-amber-200 px-1.5 py-0.5 font-medium text-amber-950">{children}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800">duplicate</span>
+    </span>
   );
 }
 

@@ -21,13 +21,15 @@ export function toLiveMapPin(opts: {
     startTime: string;
   };
   vehicleRegistration?: string;
+  /** Always the primary's call sign — joined passengers must not appear as their own pin. */
+  callSign?: string;
   now: number;
 }): LiveMapPin {
   const path = parsePathJson(opts.pin.pathJson);
   const startMs = parseSqliteUtc(opts.patrol.startTime)?.getTime() ?? new Date(opts.patrol.startTime).getTime();
   return {
     patrol_id: opts.pin.patrolId,
-    call_sign: opts.pin.callSign,
+    call_sign: opts.callSign ?? opts.pin.callSign,
     patrol_type: opts.patrol.patrolType ?? "foot",
     patrol_vehicle: opts.patrol.vehicleId ?? undefined,
     vehicle_registration: opts.vehicleRegistration,

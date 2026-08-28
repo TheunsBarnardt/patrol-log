@@ -86,8 +86,9 @@ export async function ensureHeartbeatForActivePatrol(): Promise<string | null> {
   try {
     const [raw, token] = await Promise.all([storage.getActivePatrolCache(), storage.getDeviceToken()]);
     if (!raw || !token) return null;
-    const parsed = JSON.parse(raw) as { patrol_id?: string };
+    const parsed = JSON.parse(raw) as { patrol_id?: string; my_role?: string };
     if (!parsed?.patrol_id) return null;
+    if (parsed.my_role === "joined") return parsed.patrol_id;
     const jti = decodeJti(token);
     if (!jti) return null;
     await startHeartbeat(parsed.patrol_id, jti);

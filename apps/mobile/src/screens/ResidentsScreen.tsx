@@ -1,7 +1,16 @@
-// WhatsApp-style residents directory — local list first, search in memory.
+// WhatsApp-style residents directory — local list first, paged from the API, A–Z.
 
-import { useEffect, useMemo, useState } from "react";
-import { FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
@@ -10,26 +19,71 @@ import { useConnectivityStore } from "../lib/connectivity";
 import { colors, radii, spacing } from "../theme";
 import type { ResidentRecord } from "@patrol-log/shared";
 
+const PAGE_SIZE = 50;
+
+function byName(a: ResidentRecord, b: ResidentRecord) {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+function mergeById(existing: ResidentRecord[], incoming: ResidentRecord[]): ResidentRecord[] {
+  const map = new Map(existing.map((r) => [r.resident_id, r]));
+  for (const r of incoming) map.set(r.resident_id, r);
+  return [...map.values()].sort(byName);
+}
+
 export function ResidentsScreen() {
   const online = useConnectivityStore((s) => s.online);
   const [q, setQ] = useState("");
-  const [list, setList] = useState<ResidentRecord[]>(
-    () => cacheGetSync<ResidentRecord[]>("residents")?.data ?? [],
+  const [catalog, setCatalog] = useState<ResidentRecord[]>(
+    () => [...(cacheGetSync<ResidentRecord[]>("residents")?.data ?? [])].sort(byName),
+  );
+  const [searchHits, setSearchHits] = useState<ResidentRecord[] | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const nextOffset = useRef(0);
+  const searchOffset = useRef(0);
+  const searchGen = useRef(0);
+
+  const loadCatalog = useCallback(
+    async (offset: number, append: boolean) => {
+      if (!online) return;
+      const r = await api.residents(undefined, { offset, limit: PAGE_SIZE });
+      const page = [...r.results].sort(byName);
+      setCatalog((prev) => {
+        const next = append ? mergeById(prev, page) : page;
+        void cacheSet("residents", next);
+        return next;
+      });
+      nextOffset.current = r.next_offset ?? offset + page.length;
+      setHasMore(!!r.has_more);
+    },
+    [online],
+  );
+
+  const loadSearch = useCallback(
+    async (term: string, offset: number, append: boolean, gen: number) => {
+      if (!online) return;
+      const r = await api.residents(term, { offset, limit: PAGE_SIZE });
+      if (searchGen.current !== gen) return;
+      const page = [...r.results].sort(byName);
+      setSearchHits((prev) => (append && prev ? mergeById(prev, page) : page));
+      searchOffset.current = r.next_offset ?? offset + page.length;
+      setSearchHasMore(!!r.has_more);
+    },
+    [online],
   );
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (list.length === 0) {
+      if (catalog.length === 0) {
         const cached = await cacheGet<ResidentRecord[]>("residents");
-        if (!cancelled && cached?.data) setList(cached.data);
+        if (!cancelled && cached?.data) setCatalog([...cached.data].sort(byName));
       }
       if (!online) return;
       try {
-        const r = await api.residents();
-        if (cancelled) return;
-        setList(r.results);
-        await cacheSet("residents", r.results);
+        await loadCatalog(0, false);
       } catch {
         // keep local list
       }
@@ -39,17 +93,51 @@ export function ResidentsScreen() {
     };
   }, [online]);
 
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length === 0) {
+      setSearchHits(null);
+      setSearchHasMore(false);
+      return;
+    }
+    if (term.length < 2) {
+      setSearchHits([]);
+      setSearchHasMore(false);
+      return;
+    }
+    const gen = ++searchGen.current;
+    const t = setTimeout(() => {
+      void loadSearch(term, 0, false, gen).catch(() => {
+        if (searchGen.current === gen) setSearchHits([]);
+      });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, loadSearch]);
+
+  const term = q.trim();
+  const searching = term.length > 0;
   const results = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    if (!term) return list;
-    if (term.length < 2) return [];
-    return list.filter(
-      (r) =>
-        r.name.toLowerCase().includes(term) ||
-        r.phone.includes(term) ||
-        r.address.toLowerCase().includes(term),
-    );
-  }, [list, q]);
+    if (!searching) return catalog;
+    return searchHits ?? [];
+  }, [searching, catalog, searchHits]);
+
+  const canLoadMore = searching ? searchHasMore : hasMore;
+
+  async function loadMore() {
+    if (loadingMore || !canLoadMore || !online) return;
+    setLoadingMore(true);
+    try {
+      if (searching && term.length >= 2) {
+        await loadSearch(term, searchOffset.current, true, searchGen.current);
+      } else if (!searching) {
+        await loadCatalog(nextOffset.current, true);
+      }
+    } catch {
+      /* keep what we have */
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   async function call(resident: ResidentRecord) {
     await api.residentTapToCall(resident.resident_id).catch(() => {});
@@ -76,15 +164,30 @@ export function ResidentsScreen() {
         maxToRenderPerBatch={24}
         ListEmptyComponent={() => (
           <Text style={styles.empty}>
-            {q.length > 0 && q.length < 2
+            {term.length > 0 && term.length < 2
               ? "Type at least 2 characters"
-              : list.length === 0
+              : catalog.length === 0
                 ? !online
                   ? EMPTY_CACHE_HINT
                   : "No residents found"
                 : "No matches"}
           </Text>
         )}
+        ListFooterComponent={
+          canLoadMore && term.length !== 1 ? (
+            <Pressable
+              style={({ pressed }) => [styles.loadMore, pressed && styles.loadMorePressed]}
+              onPress={() => void loadMore()}
+              disabled={loadingMore}
+            >
+              {loadingMore ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <Text style={styles.loadMoreText}>Load more</Text>
+              )}
+            </Pressable>
+          ) : null
+        }
         renderItem={({ item }) => (
           <Pressable
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}
@@ -130,6 +233,18 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text },
   empty: { textAlign: "center", color: colors.textMuted, marginTop: 40, fontWeight: "500" },
+  loadMore: {
+    marginHorizontal: spacing.md,
+    marginVertical: spacing.md,
+    paddingVertical: 12,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: "center",
+  },
+  loadMorePressed: { opacity: 0.7 },
+  loadMoreText: { fontSize: 15, fontWeight: "700", color: colors.primary },
   row: {
     flexDirection: "row",
     alignItems: "center",

@@ -26,10 +26,16 @@ function ilikeCol(col: any, pattern: string) {
   return sql`${col} LIKE ${pattern}`;
 }
 
+const RESIDENTS_PAGE = 50;
+
 directory.get("/residents", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const q = (c.req.query("q") ?? "").trim();
   if (q && q.length < 2) throw new AppError("RESIDENTS_SEARCH_TERM_TOO_SHORT");
+
+  const offset = Math.max(0, Number(c.req.query("offset") ?? 0) || 0);
+  const limitRaw = Number(c.req.query("limit") ?? RESIDENTS_PAGE) || RESIDENTS_PAGE;
+  const limit = Math.min(100, Math.max(1, limitRaw));
 
   const db = getDb(c.env);
   const rows = await db
@@ -47,12 +53,19 @@ directory.get("/residents", requireAuth(), async (c) => {
           : sql`true`,
       ),
     )
-    .limit(100);
+    .orderBy(sql`${residents.name} COLLATE NOCASE`)
+    .limit(limit + 1)
+    .offset(offset);
 
-  await logAudit(db, "residents.searched", auth, { q, result_count: rows.length });
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+
+  await logAudit(db, "residents.searched", auth, { q, result_count: page.length, offset });
 
   return c.json({
-    results: rows.map((r) => ({ resident_id: r.id, name: r.name, phone: r.phone, address: r.address })),
+    results: page.map((r) => ({ resident_id: r.id, name: r.name, phone: r.phone, address: r.address })),
+    has_more: hasMore,
+    next_offset: hasMore ? offset + page.length : undefined,
   });
 });
 

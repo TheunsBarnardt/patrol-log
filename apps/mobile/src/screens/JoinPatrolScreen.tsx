@@ -14,9 +14,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation";
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
-import { startHeartbeat } from "../lib/heartbeat";
 import { useConnectivityStore } from "../lib/connectivity";
-import { useAuthStore } from "../store/auth";
 import { colors, radii, spacing } from "../theme";
 import { parseSqliteUtc, type JoinablePatrolSummary, type PatrolType } from "@patrol-log/shared";
 
@@ -35,7 +33,6 @@ export function JoinPatrolScreen({ navigation }: Props) {
   const [rows, setRows] = useState<JoinablePatrolSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState<string | null>(null);
-  const deviceToken = useAuthStore((s) => s.deviceToken);
 
   const refresh = useCallback(async () => {
     try {
@@ -60,10 +57,6 @@ export function JoinPatrolScreen({ navigation }: Props) {
     setJoiningId(patrol.patrol_id);
     try {
       const joined = await api.joinPatrol(patrol.patrol_id);
-      if (deviceToken) {
-        const jti = decodeJti(deviceToken);
-        if (jti) await startHeartbeat(joined.patrol_id, jti);
-      }
       notify("Joined patrol", `You're on ${patrol.primary_patroller_call_sign}'s patrol as a passenger.`);
       navigation.replace("ActivePatrol", { patrolId: joined.patrol_id });
     } catch (err: any) {
@@ -128,16 +121,6 @@ export function JoinPatrolScreen({ navigation }: Props) {
 function formatStart(iso: string): string {
   const d = parseSqliteUtc(iso) ?? new Date(iso);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function decodeJti(jwt: string): string | null {
-  try {
-    const [, payload] = jwt.split(".");
-    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
-    return typeof json.jti === "string" ? json.jti : null;
-  } catch {
-    return null;
-  }
 }
 
 const styles = StyleSheet.create({

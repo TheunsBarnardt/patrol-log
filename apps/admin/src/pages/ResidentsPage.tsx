@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminFetch } from "../lib/api";
-import { DataTable, PageHeader, RowActions } from "../components/DataTable";
+import { DataTable, DupHint, PageHeader, RowActions } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls } from "../components/Modal";
 import { parseCsv, CsvImportButton } from "../components/CsvImport";
+import { duplicateIds, normalizeName, normalizePhone } from "../lib/duplicates";
 
 interface Resident { id: string; name: string; phone: string; address: string; sectorId: string; cpfId: string }
 
@@ -42,7 +43,12 @@ export function ResidentsPage() {
     },
   });
 
-  const rows = (data?.results ?? []).filter((r) =>
+  const all = data?.results ?? [];
+  const dupName = duplicateIds(all, (r) => r.id, (r) => normalizeName(r.name));
+  const dupPhone = duplicateIds(all, (r) => r.id, (r) => normalizePhone(r.phone));
+  const dupRows = new Set([...dupName, ...dupPhone]);
+
+  const rows = all.filter((r) =>
     !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.phone.includes(search),
   );
 
@@ -85,13 +91,32 @@ export function ResidentsPage() {
         }
       />
 
+      {dupRows.size > 0 && (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {dupRows.size} resident{dupRows.size === 1 ? "" : "s"} highlighted — same name or phone as another record.
+        </p>
+      )}
+
       {isLoading ? <p className="text-sm text-gray-500">Loading…</p> : (
         <DataTable
           rows={rows}
           keyExtractor={(r) => r.id}
+          rowClassName={(r) =>
+            dupRows.has(r.id) ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-gray-50"
+          }
           columns={[
-            { header: "Name", render: (r) => <span className="font-medium">{r.name}</span> },
-            { header: "Phone", render: (r) => r.phone },
+            {
+              header: "Name",
+              render: (r) => (
+                <DupHint show={dupName.has(r.id)}>
+                  <span className="font-medium">{r.name}</span>
+                </DupHint>
+              ),
+            },
+            {
+              header: "Phone",
+              render: (r) => <DupHint show={dupPhone.has(r.id)}>{r.phone}</DupHint>,
+            },
             { header: "Address", render: (r) => <span className="text-gray-500">{r.address}</span> },
             {
               header: "", className: "text-right",

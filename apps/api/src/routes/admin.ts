@@ -153,20 +153,21 @@ admin.get("/live-map", async (c) => {
 
   // Pins stay until stand-down (active patrol only) — no time-based disappearance.
   const rows = await db
-    .select({ pin: livePins, patrol: patrols })
+    .select({ pin: livePins, patrol: patrols, primary: patrollers })
     .from(livePins)
     .innerJoin(patrols, eq(patrols.id, livePins.patrolId))
+    .innerJoin(patrollers, eq(patrollers.id, patrols.primaryPatrollerId))
     .where(and(tenantScope(auth, livePins), eq(patrols.state, "active")));
 
   const now = Date.now();
   const pins: LiveMapPin[] = await Promise.all(
-    rows.map(async ({ pin: r, patrol }) => {
+    rows.map(async ({ pin: r, patrol, primary }) => {
       let vehicleRegistration: string | undefined;
       if (patrol.vehicleId) {
         const vehicle = await db.query.vehicles.findFirst({ where: eq(vehicles.id, patrol.vehicleId) });
         vehicleRegistration = vehicle?.registration;
       }
-      return toLiveMapPin({ pin: r, patrol, vehicleRegistration, now });
+      return toLiveMapPin({ pin: r, patrol, vehicleRegistration, callSign: primary.callSign, now });
     }),
   );
 

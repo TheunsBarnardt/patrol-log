@@ -10,7 +10,7 @@ import { FontAwesome5 } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { HtmlMapHost, type HtmlMapHostHandle } from "../components/HtmlMapHost";
 import { api } from "../lib/api";
-import { ensureHeartbeatForActivePatrol, noteLocalCoords, startHeartbeatForPatrol } from "../lib/heartbeat";
+import { ensureHeartbeatForActivePatrol, noteLocalCoords, startHeartbeatForPatrol, stopHeartbeat } from "../lib/heartbeat";
 import { mapBootstrapHtml, mapLeafletScript } from "../lib/mapAssets";
 import { cacheGet, cacheSet } from "../lib/offlineCache";
 import {
@@ -226,6 +226,7 @@ export function LivePatrollerMapScreen() {
   const [connectionLost, setConnectionLost] = useState(false);
   const [km, setKm] = useState(0);
   const [following, setFollowing] = useState(true);
+  const [isPassenger, setIsPassenger] = useState(false);
   const hostRef = useRef<HtmlMapHostHandle>(null);
   const loaded = useRef(false);
   const pinsRef = useRef<LiveMapPin[]>([]);
@@ -233,6 +234,7 @@ export function LivePatrollerMapScreen() {
   const htmlRef = useRef(buildLiveMapHtml());
   const selfRef = useRef<{ lat: number; lng: number; at: number } | null>(null);
   const myPatrolIdRef = useRef<string | null>(null);
+  const myRoleRef = useRef<"primary" | "joined" | null>(null);
   const myCallSignRef = useRef(myCallSign);
   myCallSignRef.current = myCallSign;
   pinsRef.current = pins;
@@ -240,10 +242,11 @@ export function LivePatrollerMapScreen() {
   function overlaySelf(list: LiveMapPin[]): LiveMapPin[] {
     const self = selfRef.current;
     if (!self || Date.now() - self.at > 45_000) return list;
-    const patrolId = myPatrolIdRef.current;
     const callSign = myCallSignRef.current;
+    // Only overlay onto *your* pin. Passengers must not move the primary's marker.
+    if (!callSign || myRoleRef.current === "joined") return list;
     return list.map((p) => {
-      if ((patrolId && p.patrol_id === patrolId) || (callSign && p.call_sign === callSign)) {
+      if (p.call_sign === callSign) {
         return {
           ...p,
           lat: self.lat,
@@ -306,28 +309,28 @@ export function LivePatrollerMapScreen() {
     let cancelled = false;
     void (async () => {
       const cachedId = await ensureHeartbeatForActivePatrol();
-      if (cachedId) {
-        myPatrolIdRef.current = cachedId;
-        await bindPatrolTrack(cachedId);
-        hostRef.current?.injectJavaScript(
-          `window.setSelfPatrolId(${JSON.stringify(cachedId)}); true;`,
-        );
-      }
+      if (cachedId) myPatrolIdRef.current = cachedId;
       try {
         const active = await api.activePatrol();
         if (cancelled) return;
         if (active?.patrol_id) {
           myPatrolIdRef.current = active.patrol_id;
-          hostRef.current?.injectJavaScript(
-            `window.setSelfPatrolId(${JSON.stringify(active.patrol_id)}); true;`,
-          );
+          myRoleRef.current = active.my_role;
+          setIsPassenger(active.my_role === "joined");
           try {
             await storage.setActivePatrolCache(JSON.stringify(active));
           } catch {
             /* ignore */
           }
-          await startHeartbeatForPatrol(active.patrol_id);
-          await bindPatrolTrack(active.patrol_id);
+          if (active.my_role === "joined") {
+            stopHeartbeat();
+          } else {
+            hostRef.current?.injectJavaScript(
+              `window.setSelfPatrolId(${JSON.stringify(active.patrol_id)}); true;`,
+            );
+            await startHeartbeatForPatrol(active.patrol_id);
+            await bindPatrolTrack(active.patrol_id);
+          }
         }
       } catch {
         /* cache path already tried */
@@ -363,6 +366,7 @@ export function LivePatrollerMapScreen() {
   useEffect(() => {
     const lastLen = { n: 0 };
     return subscribePatrolTrack((snap) => {
+      if (myRoleRef.current === "joined") return;
       setKm(snap.km);
       if (!loaded.current) return;
       if (snap.points.length === 0) {
@@ -455,14 +459,14 @@ export function LivePatrollerMapScreen() {
 
   function handleLoad() {
     loaded.current = true;
-    if (myPatrolIdRef.current) {
+    if (myPatrolIdRef.current && myRoleRef.current !== "joined") {
       hostRef.current?.injectJavaScript(
         `window.setSelfPatrolId(${JSON.stringify(myPatrolIdRef.current)}); true;`,
       );
     }
     publishPins(pinsRef.current);
     if (selfRef.current) pushSelf(selfRef.current.lat, selfRef.current.lng);
-    pushPathToMap();
+    if (myRoleRef.current !== "joined") pushPathToMap();
     if (following) hostRef.current?.injectJavaScript("window.setFollow(true); true;");
     hostRef.current?.injectJavaScript(
       "try{if(typeof map!=='undefined')map.invalidateSize({animate:false});}catch(e){} true;",
@@ -478,7 +482,7 @@ export function LivePatrollerMapScreen() {
       ? pins.length > 0
         ? "Connection lost · showing last known locations"
         : "Connection lost · trying again…"
-      : `${active} live${stale > 0 ? ` · ${stale} stale` : ""} · ${formatTrackKm(km)} · tap a pin to see their route`;
+      : `${active} live${stale > 0 ? ` · ${stale} stale` : ""}${isPassenger ? "" : ` · ${formatTrackKm(km)}`} · tap a pin to see their route`;
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
@@ -494,10 +498,12 @@ export function LivePatrollerMapScreen() {
             <ActivityIndicator color={colors.primary} />
           </View>
         )}
-        <View style={styles.kmBadge} pointerEvents="none">
-          <Text style={styles.kmValue}>{formatTrackKm(km)}</Text>
-          <Text style={styles.kmLabel}>this patrol</Text>
-        </View>
+        {!isPassenger && (
+          <View style={styles.kmBadge} pointerEvents="none">
+            <Text style={styles.kmValue}>{formatTrackKm(km)}</Text>
+            <Text style={styles.kmLabel}>this patrol</Text>
+          </View>
+        )}
         <Pressable style={styles.recenter} onPress={recenter} accessibilityLabel="Center on me">
           <FontAwesome5 name="location-arrow" size={16} color="#fff" />
         </Pressable>

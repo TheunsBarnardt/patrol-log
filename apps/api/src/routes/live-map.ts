@@ -8,7 +8,7 @@ import { AppError, parseSqliteUtc, type HeartbeatRequest, type LiveMapPin } from
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
-import { livePins, patrols, vehicles } from "../db/schema.js";
+import { livePins, patrols, patrollers, vehicles } from "../db/schema.js";
 import { verifyHeartbeat } from "../lib/tokens.js";
 import { logAudit } from "../lib/audit.js";
 import { toLiveMapPin } from "../lib/live-pin.js";
@@ -31,6 +31,11 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
   const db = getDb(c.env);
   const patrol = await db.query.patrols.findFirst({ where: eq(patrols.id, body.patrol_id) });
   if (!patrol || patrol.state !== "active") throw new AppError("LIVE_MAP_HEARTBEAT_PATROL_NOT_ACTIVE");
+
+  // Passengers share the primary's pin — do not move it to the joiner's phone.
+  if (patrol.primaryPatrollerId !== auth.patroller.patroller_id) {
+    return c.json({ ok: true, out_of_sector: false });
+  }
 
   // Priority 2 — rate limit (1 per 20s): check last_seen_at on the row.
   const existing = await db.query.livePins.findFirst({ where: eq(livePins.patrolId, body.patrol_id) });
@@ -86,20 +91,21 @@ liveMap.get("/snapshot", requireAuth(), async (c) => {
       : and(eq(livePins.cpfId, auth.patroller.cpf_id), eq(livePins.sectorId, auth.patroller.sector_id));
 
   const rows = await db
-    .select({ pin: livePins, patrol: patrols })
+    .select({ pin: livePins, patrol: patrols, primary: patrollers })
     .from(livePins)
     .innerJoin(patrols, eq(patrols.id, livePins.patrolId))
+    .innerJoin(patrollers, eq(patrollers.id, patrols.primaryPatrollerId))
     .where(and(scope, eq(patrols.state, "active")));
 
   const now = Date.now();
   const pins: LiveMapPin[] = await Promise.all(
-    rows.map(async ({ pin: r, patrol }) => {
+    rows.map(async ({ pin: r, patrol, primary }) => {
       let vehicleRegistration: string | undefined;
       if (patrol.vehicleId) {
         const vehicle = await db.query.vehicles.findFirst({ where: eq(vehicles.id, patrol.vehicleId) });
         vehicleRegistration = vehicle?.registration;
       }
-      return toLiveMapPin({ pin: r, patrol, vehicleRegistration, now });
+      return toLiveMapPin({ pin: r, patrol, vehicleRegistration, callSign: primary.callSign, now });
     }),
   );
 

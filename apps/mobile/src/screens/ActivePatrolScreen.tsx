@@ -142,11 +142,16 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
   }, [refresh, patrolId]);
 
   useEffect(() => {
+    if (!patrol) return;
+    if (patrol.my_role === "joined") {
+      stopHeartbeat();
+      return;
+    }
     if (!deviceToken) return;
     const jti = decodeJti(deviceToken);
     if (!jti) return;
     void startHeartbeat(patrolId, jti);
-  }, [patrolId, deviceToken]);
+  }, [patrolId, deviceToken, patrol?.my_role]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);

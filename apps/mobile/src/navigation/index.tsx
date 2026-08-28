@@ -112,6 +112,7 @@ export function RootNavigator() {
         } catch {
           /* ignore */
         }
+        if (p.my_role === "joined") return;
         await startHeartbeatForPatrol(p.patrol_id);
       } catch {
         /* not on patrol */

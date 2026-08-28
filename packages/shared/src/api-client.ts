@@ -140,7 +140,16 @@ export function createApiClient(opts: ApiClientOptions) {
     hotspots: (period: HotspotPeriod) => request<HotspotsResponse>(`/hotspots?period=${period}`),
 
     // directories
-    residents: (q?: string) => request<{ results: ResidentRecord[] }>(`/directory/residents${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    residents: (q?: string, opts?: { offset?: number; limit?: number }) => {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (opts?.offset) params.set("offset", String(opts.offset));
+      if (opts?.limit) params.set("limit", String(opts.limit));
+      const qs = params.toString();
+      return request<{ results: ResidentRecord[]; has_more?: boolean; next_offset?: number }>(
+        `/directory/residents${qs ? `?${qs}` : ""}`,
+      );
+    },
     members: (q?: string) => request<{ results: MemberRecord[] }>(`/directory/members${q ? `?q=${encodeURIComponent(q)}` : ""}`),
     emergencyContacts: () => request<{ results: EmergencyServiceRecord[] }>("/directory/emergency-contacts"),
     emergencyTapToCall: (serviceId: string) => request<{ ok: true }>(`/directory/emergency-contacts/${serviceId}/call`, { method: "POST" }),
