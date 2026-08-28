@@ -137,7 +137,8 @@ export function LoginScreen() {
     setDiagRunning(false);
   }
 
-  const showLogLink = !!report?.needsAttention;
+  const issueChecks = checks.filter((c) => c.status === "fail" || c.status === "slow");
+  const showDiag = issueChecks.length > 0 || !!report?.needsAttention;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -164,17 +165,17 @@ export function LoginScreen() {
               <Text style={styles.version}>v{APP_VERSION}</Text>
             </View>
 
-            {/* Temporary auto network checklist — remove after field testing */}
+            {showDiag ? (
             <View style={styles.diagCard}>
               <View style={styles.diagHeader}>
-                <Text style={styles.diagTitle}>Connection check</Text>
+                <Text style={styles.diagTitle}>Connection problem</Text>
                 <Pressable onPress={() => void rerunDiag()} disabled={diagRunning} hitSlop={8}>
                   <Text style={[styles.diagRerun, diagRunning && { opacity: 0.5 }]}>
-                    {diagRunning ? "Running…" : "Re-run"}
+                    {diagRunning ? "Checking…" : "Try again"}
                   </Text>
                 </Pressable>
               </View>
-              {checks.map((c) => (
+              {(issueChecks.length > 0 ? issueChecks : checks).map((c) => (
                 <View key={c.id} style={styles.diagRow}>
                   <Text style={[styles.diagGlyph, { color: statusColor(c.status) }]}>
                     {statusGlyph(c.status)}
@@ -185,7 +186,7 @@ export function LoginScreen() {
                   </View>
                 </View>
               ))}
-              {showLogLink && report ? (
+              {report ? (
                 <View style={styles.logBox}>
                   <Text style={styles.logWarn}>
                     {report.overall === "fail"
@@ -216,6 +217,7 @@ export function LoginScreen() {
                 </View>
               ) : null}
             </View>
+            ) : null}
 
             <View style={styles.form}>
               <Text style={styles.label}>Call sign</Text>
