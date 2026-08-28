@@ -17,11 +17,12 @@ import {
   stopNativeBackgroundHeartbeat,
 } from "./heartbeatTask";
 
-const INTERVAL_MS = 20_000;
-const GEO_TIMEOUT_MS = 8_000;
-const COORDS_FRESH_MS = 180_000;
+const INTERVAL_MS = 15_000;
+const GEO_TIMEOUT_MS = 6_000;
+/** Re-read GPS this often; still send the last fix if the phone hasn't moved. */
+const GPS_REFRESH_MS = 45_000;
 
-let timer: ReturnType<typeof setTimeout> | null = null;
+let timer: ReturnType<typeof setInterval> | null = null;
 let currentPatrolId: string | null = null;
 let currentJti: string | null = null;
 let running = false;
@@ -102,6 +103,7 @@ export async function ensureHeartbeatForActivePatrol(): Promise<string | null> {
 export async function startHeartbeat(patrolId: string, deviceTokenJti: string) {
   if (running && currentPatrolId === patrolId && currentJti === deviceTokenJti) {
     if (!watchSub) await startWatch();
+    ensureTimer();
     void sendOnce();
     return;
   }
@@ -127,40 +129,37 @@ export async function startHeartbeat(patrolId: string, deviceTokenJti: string) {
   await refreshScreenLock();
   attachLifecycle();
   await sendOnce();
-  scheduleNext(INTERVAL_MS);
+  ensureTimer();
 }
 
 export function stopHeartbeat() {
   running = false;
-  if (timer) clearTimeout(timer);
+  if (timer) clearInterval(timer);
   timer = null;
   currentPatrolId = null;
   currentJti = null;
-  lastCoords = null;
   nativeBackground = false;
   void stopWatch();
   detachLifecycle();
   void stopNativeBackgroundHeartbeat();
 }
 
-function scheduleNext(ms: number) {
+function ensureTimer() {
   if (!running) return;
-  if (timer) clearTimeout(timer);
-  timer = setTimeout(() => {
-    void (async () => {
-      await sendOnce();
-      scheduleNext(INTERVAL_MS);
-    })();
-  }, ms);
+  if (timer) return;
+  timer = setInterval(() => {
+    void sendOnce();
+  }, INTERVAL_MS);
 }
 
 async function startWatch() {
+  if (watchSub) return;
   try {
     watchSub = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 10_000,
-        distanceInterval: 8,
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 15_000,
+        distanceInterval: 0,
         mayShowUserSettingsDialog: true,
       },
       (pos) => {
@@ -215,8 +214,8 @@ function onAppState(next: AppStateStatus) {
 async function onBecameActive() {
   if (!running) return;
   await refreshScreenLock();
+  ensureTimer();
   await sendOnce();
-  scheduleNext(INTERVAL_MS);
 }
 
 function fromLastCoords(): {
@@ -260,7 +259,7 @@ function getPositionWithTimeout(): Promise<Location.LocationObject> {
           clearTimeout(tid);
           reject(err);
         },
-        { enableHighAccuracy: true, timeout: GEO_TIMEOUT_MS, maximumAge: 30_000 },
+        { enableHighAccuracy: false, timeout: GEO_TIMEOUT_MS, maximumAge: 120_000 },
       );
     });
   }
@@ -282,24 +281,24 @@ async function resolveCoords(): Promise<{
   speed?: number;
   accuracy_m: number;
 } | null> {
-  if (lastCoords && Date.now() - lastCoords.at < COORDS_FRESH_MS) {
-    return fromLastCoords();
+  const needRefresh = !lastCoords || Date.now() - lastCoords.at > GPS_REFRESH_MS;
+  if (needRefresh) {
+    try {
+      const pos = await getPositionWithTimeout();
+      lastCoords = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        heading: pos.coords.heading,
+        speed: pos.coords.speed,
+        accuracy: pos.coords.accuracy,
+        at: Date.now(),
+      };
+    } catch (err) {
+      console.warn("[heartbeat] getCurrentPosition failed", err);
+    }
   }
-  try {
-    const pos = await getPositionWithTimeout();
-    lastCoords = {
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude,
-      heading: pos.coords.heading,
-      speed: pos.coords.speed,
-      accuracy: pos.coords.accuracy,
-      at: Date.now(),
-    };
-    return fromLastCoords();
-  } catch (err) {
-    console.warn("[heartbeat] getCurrentPosition failed", err);
-    return fromLastCoords();
-  }
+  // Standing still is expected (incident / static post). Always ping last known fix.
+  return fromLastCoords();
 }
 
 async function sendOnce() {
@@ -358,7 +357,6 @@ async function sendOnce() {
         signature,
         trail: trailForHeartbeat(),
       }),
-      keepalive: true,
     });
 
     if (res.status === 429) return;

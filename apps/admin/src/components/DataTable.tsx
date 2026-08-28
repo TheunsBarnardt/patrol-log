@@ -27,8 +27,8 @@ export function DataTable<T>({
     );
   }
   return (
-    <div className="overflow-auto bg-white border rounded-xl shadow-sm">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto bg-white border rounded-xl shadow-sm">
+      <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b bg-gray-50">
             {columns.map((c, i) => (
@@ -67,18 +67,18 @@ export function PageHeader({ title, action, search, onSearch }: {
   onSearch?: (v: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-3 mb-5">
-      <h1 className="text-lg font-bold text-gray-900 shrink-0">{title}</h1>
+    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <h1 className="shrink-0 text-lg font-bold text-gray-900">{title}</h1>
       {onSearch && (
         <input
           type="search"
           placeholder="Search…"
           value={search}
           onChange={(e) => onSearch(e.target.value)}
-          className="flex-1 max-w-xs border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          className="w-full max-w-xs rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
         />
       )}
-      <div className="ml-auto">{action}</div>
+      {action ? <div className="sm:ml-auto">{action}</div> : null}
     </div>
   );
 }

@@ -61,6 +61,26 @@ function colorFor(cs){
   for(var i=0;i<s.length;i++) h=((h<<5)-h)+s.charCodeAt(i)|0;
   return 'hsl('+(((h%360)+360)%360)+',70%,38%)';
 }
+function haversineM(a,b){
+  var R=6371000, toRad=function(d){return d*Math.PI/180;};
+  var dLat=toRad(b[0]-a[0]), dLng=toRad(b[1]-a[1]);
+  var s=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(s)));
+}
+function trailSegs(pts){
+  var segs=[], cur=[];
+  for(var i=0;i<(pts||[]).length;i++){
+    var p=pts[i];
+    if(cur.length && haversineM(cur[cur.length-1], p)>700){
+      if(cur.length>=2) segs.push(cur);
+      cur=[p];
+      continue;
+    }
+    cur.push(p);
+  }
+  if(cur.length>=2) segs.push(cur);
+  return segs;
+}
 function movementOf(p){
   if(p.patrol_type==='vehicle') return 'car';
   if(p.patrol_type==='static'||p.patrol_type==='sector_monitoring'||p.patrol_type==='ops'||p.patrol_type==='responding') return 'stationary';
@@ -123,9 +143,10 @@ function restylePeerPaths(){
 function setPeerPath(id, pts, cs){
   if(peerLines[id]){ try{ map.removeLayer(peerLines[id]); }catch(e){} delete peerLines[id]; }
   if(selfPatrolId && id===selfPatrolId) return;
-  if(!pts || pts.length<2) return;
+  var segs=trailSegs(pts);
+  if(!segs.length) return;
   var on=selectedId===id;
-  var line=L.polyline(pts,{
+  var line=L.polyline(segs,{
     color:colorFor(cs),
     weight:on?7:4,
     opacity:on?0.95:0.42,
@@ -196,23 +217,21 @@ window.updateSelf=function(lat,lng){
     try{ map.panTo(ll,{animate:true,duration:0.35}); }catch(e){}
   }
 };
+function drawSelfPath(){
+  if(pathLine){ try{ map.removeLayer(pathLine); }catch(e){} pathLine=null; }
+  var segs=trailSegs(pathLatLngs);
+  if(!segs.length) return;
+  pathLine=L.polyline(segs,{color:'#0B3D8C',weight:5,opacity:0.85,lineJoin:'round',lineCap:'round'}).addTo(map);
+  if(pathLine.bringToBack) pathLine.bringToBack();
+}
 window.appendPath=function(lat,lng){
   if(typeof lat!=='number'||typeof lng!=='number'||!isFinite(lat)||!isFinite(lng))return;
   pathLatLngs.push([lat,lng]);
-  if(!pathLine){
-    pathLine=L.polyline(pathLatLngs,{color:'#0B3D8C',weight:5,opacity:0.85,lineJoin:'round',lineCap:'round'}).addTo(map);
-    if(pathLine.bringToBack) pathLine.bringToBack();
-  } else {
-    pathLine.addLatLng([lat,lng]);
-  }
+  drawSelfPath();
 };
 window.setPath=function(json){
   try{ pathLatLngs=JSON.parse(json)||[]; }catch(e){ pathLatLngs=[]; }
-  if(pathLine){ try{ map.removeLayer(pathLine); }catch(e){} pathLine=null; }
-  if(pathLatLngs.length>0){
-    pathLine=L.polyline(pathLatLngs,{color:'#0B3D8C',weight:5,opacity:0.85,lineJoin:'round',lineCap:'round'}).addTo(map);
-    if(pathLine.bringToBack) pathLine.bringToBack();
-  }
+  drawSelfPath();
 };
 </script>
 </body>
@@ -422,7 +441,7 @@ export function LivePatrollerMapScreen() {
             accuracy: pos.coords.accuracy,
           }),
         (err) => console.warn("[live-map] geolocation", err.message),
-        { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 },
+        { enableHighAccuracy: true, maximumAge: 15_000, timeout: 20_000 },
       );
     }
 
@@ -432,9 +451,9 @@ export function LivePatrollerMapScreen() {
         if (perm.status !== "granted" || cancelled || webWatchId != null) return;
         sub = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.High,
-            timeInterval: 5_000,
-            distanceInterval: 5,
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 15_000,
+            distanceInterval: 0,
             mayShowUserSettingsDialog: false,
           },
           (pos) =>

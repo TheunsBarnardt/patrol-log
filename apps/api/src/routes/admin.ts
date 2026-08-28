@@ -1086,8 +1086,8 @@ admin.patch("/patrols/:id", requireAccessLevel("system_admin"), async (c) => {
   return c.json(row);
 });
 
-/** system_admin: permanently delete a patrol (incl. sealed / captured) */
-admin.delete("/patrols/:id", requireAccessLevel("system_admin"), async (c) => {
+/** admin + system_admin: permanently delete a patrol (incl. sealed / captured) */
+admin.delete("/patrols/:id", requireAccessLevel("system_admin", "admin"), async (c) => {
   const auth = getAuth(c);
   const id = c.req.param("id");
   const db = getDb(c.env);
@@ -1099,6 +1099,7 @@ admin.delete("/patrols/:id", requireAccessLevel("system_admin"), async (c) => {
   await db.delete(livePins).where(eq(livePins.patrolId, id));
   await db.delete(patrolBreadcrumbs).where(eq(patrolBreadcrumbs.patrolId, id));
   await db.delete(patrolEscalationEvents).where(eq(patrolEscalationEvents.patrolId, id));
+  await db.delete(patrolGuests).where(eq(patrolGuests.patrolId, id));
   await db.delete(patrolMembers).where(eq(patrolMembers.patrolId, id));
   await db.delete(patrols).where(eq(patrols.id, id));
   await logAudit(db, "admin.patrol.deleted", auth, {

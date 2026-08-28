@@ -68,7 +68,9 @@ function fromLocalInput(local: string): string | null {
 
 export function PatrolsPage() {
   const qc = useQueryClient();
-  const isSysAdmin = authStore.getProfile()?.access_level === "system_admin";
+  const accessLevel = authStore.getProfile()?.access_level;
+  const isSysAdmin = accessLevel === "system_admin";
+  const canDeletePatrol = isSysAdmin || accessLevel === "admin";
   const [search, setSearch] = useState("");
   const [editRow, setEditRow] = useState<Patrol | null>(null);
   const [form, setForm] = useState({
@@ -162,10 +164,11 @@ export function PatrolsPage() {
     <>
       <PageHeader title="Patrols" search={search} onSearch={setSearch} />
 
-      {isSysAdmin && (
+      {canDeletePatrol && (
         <p className="mb-4 max-w-2xl text-sm text-gray-600">
-          As system admin you can edit patrol records and permanently delete captured (stood-down) or stuck active patrols.
-          Editing clears the record seal.
+          {isSysAdmin
+            ? "You can edit patrol records and permanently delete captured or stuck active patrols. Editing clears the record seal."
+            : "You can permanently delete captured or stuck active patrols. This cannot be undone."}
         </p>
       )}
 
@@ -222,14 +225,14 @@ export function PatrolsPage() {
                   "—"
                 ),
             },
-            ...(isSysAdmin
+            ...(canDeletePatrol
               ? [
                   {
                     header: "",
                     className: "text-right",
                     render: (r: Patrol) => (
                       <RowActions
-                        onEdit={() => openEdit(r)}
+                        onEdit={isSysAdmin ? () => openEdit(r) : undefined}
                         onDelete={() => {
                           const label = r.primaryCallSign ?? r.id.slice(0, 8);
                           if (

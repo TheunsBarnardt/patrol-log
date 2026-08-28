@@ -1,9 +1,20 @@
 import { createApiClient } from "@patrol-log/shared";
 
-// API base URL — points to your Cloudflare Workers deployment.
-// Override with VITE_API_BASE_URL env var for local/dev.
-const API_BASE_URL: string =
-  import.meta.env.VITE_API_BASE_URL ?? "https://patrol-log-api.small-night-657e.workers.dev";
+/**
+ * Always same-origin `/api` (Pages Function proxy). Do not read VITE_API_BASE_URL —
+ * Vite inlines it at build time and `.env.production` was pointing at workers.dev,
+ * which SA mobile networks time out on.
+ */
+export function getApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://localhost:8787";
+    }
+    return `${window.location.origin}/api`;
+  }
+  return "/api";
+}
 
 const TOKEN_KEY = "patrol_log.admin.device_token";
 const PROFILE_KEY = "patrol_log.admin.profile";
@@ -21,7 +32,7 @@ export const authStore = {
 };
 
 export const api = createApiClient({
-  baseUrl: API_BASE_URL,
+  getBaseUrl: getApiBaseUrl,
   getDeviceToken: () => authStore.getToken(),
   onUnauthorized: () => {
     authStore.clearToken();
@@ -37,7 +48,7 @@ export async function adminFetch<T>(path: string, init: RequestInit = {}): Promi
   headers.set("Content-Type", "application/json");
   const token = authStore.getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  const res = await fetch(`${getApiBaseUrl()}${path}`, { ...init, headers });
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
   if (!res.ok) {

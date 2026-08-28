@@ -14,7 +14,7 @@ import { showLocalNotification } from "./notifications";
 
 export const HEARTBEAT_TASK_NAME = "PATROL_LOG_LIVE_HEARTBEAT";
 
-const MIN_SEND_GAP_MS = 25_000;
+const MIN_SEND_GAP_MS = 15_000;
 let lastSentAt = 0;
 
 type Session = { patrolId: string; jti: string };
@@ -160,12 +160,12 @@ export async function startNativeBackgroundHeartbeat(patrolId: string, jti: stri
 
   await Location.startLocationUpdatesAsync(HEARTBEAT_TASK_NAME, {
     accuracy: Location.Accuracy.Balanced,
-    timeInterval: 30_000,
-    distanceInterval: 40,
-    deferredUpdatesInterval: 30_000,
+    timeInterval: 20_000,
+    distanceInterval: 0,
+    deferredUpdatesInterval: 0,
     showsBackgroundLocationIndicator: true,
     pausesUpdatesAutomatically: false,
-    activityType: Location.ActivityType.AutomotiveNavigation,
+    activityType: Location.ActivityType.Other,
     foregroundService: {
       notificationTitle: "Patrol Log",
       notificationBody: "Sharing your location on the live map",

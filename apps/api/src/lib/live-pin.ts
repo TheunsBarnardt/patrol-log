@@ -1,7 +1,7 @@
 import { parseSqliteUtc, type LiveMapPin, type PatrolType } from "@patrol-log/shared";
-import { parsePathJson, pathKm } from "./trail.js";
+import { parsePathJson, pathKm, sanitizePatrolPath } from "./trail.js";
 
-const STALE_MS = 2 * 60_000;
+const STALE_MS = 5 * 60_000;
 
 export function toLiveMapPin(opts: {
   pin: {
@@ -25,7 +25,7 @@ export function toLiveMapPin(opts: {
   callSign?: string;
   now: number;
 }): LiveMapPin {
-  const path = parsePathJson(opts.pin.pathJson);
+  const path = sanitizePatrolPath(parsePathJson(opts.pin.pathJson));
   const startMs = parseSqliteUtc(opts.patrol.startTime)?.getTime() ?? new Date(opts.patrol.startTime).getTime();
   return {
     patrol_id: opts.pin.patrolId,

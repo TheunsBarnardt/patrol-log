@@ -31,6 +31,33 @@ function pathColor(callSign: string): string {
   return `hsl(${((h % 360) + 360) % 360} 70% 38%)`;
 }
 
+const TRAIL_GAP_M = 700;
+
+function trailSegments(path: [number, number][]): [number, number][][] {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dist = (a: [number, number], b: [number, number]) => {
+    const dLat = toRad(b[0] - a[0]);
+    const dLng = toRad(b[1] - a[1]);
+    const s =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+  };
+  const segs: [number, number][][] = [];
+  let cur: [number, number][] = [];
+  for (const p of path) {
+    if (cur.length > 0 && dist(cur[cur.length - 1]!, p) > TRAIL_GAP_M) {
+      if (cur.length >= 2) segs.push(cur);
+      cur = [p];
+      continue;
+    }
+    cur.push(p);
+  }
+  if (cur.length >= 2) segs.push(cur);
+  return segs;
+}
+
 const MOVING_MS = 0.8; // m/s — below this, don't rotate heading
 
 function escapeHtml(s: string): string {
@@ -51,8 +78,8 @@ function makePinIcon(pin: LiveMapPin): L.DivIcon {
       ? pin.heading
       : 0;
 
-  const fill = stale ? "#9CA3AF" : movement === "car" ? "#2563EB" : movement === "walk" ? "#059669" : "#D97706";
-  const ring = stale ? "#6B7280" : "#fff";
+  const fill = movement === "car" ? "#2563EB" : movement === "walk" ? "#059669" : "#D97706";
+  const ring = stale ? "#F59E0B" : "#fff";
 
   const glyph =
     movement === "car"
@@ -89,7 +116,7 @@ function makePinIcon(pin: LiveMapPin): L.DivIcon {
         margin-top:1px;padding:2px 7px;border-radius:9999px;background:rgba(17,24,39,.92);
         color:#fff;font:700 11px/1.2 system-ui,sans-serif;white-space:nowrap;
         box-shadow:0 1px 4px rgba(0,0,0,.35);max-width:120px;overflow:hidden;text-overflow:ellipsis;
-      ">${escapeHtml(pin.call_sign)}</div>
+      ">${escapeHtml(pin.call_sign)}${stale ? " · stale" : ""}</div>
       <div style="
         padding:1px 6px;border-radius:9999px;background:rgba(255,255,255,.92);
         color:#374151;font:600 10px/1.2 system-ui,sans-serif;white-space:nowrap;
@@ -104,6 +131,32 @@ function makePinIcon(pin: LiveMapPin): L.DivIcon {
     iconAnchor: [20, 20],
     popupAnchor: [0, -28],
   });
+}
+
+function spreadOverlapping(pins: LiveMapPin[]): Array<LiveMapPin & { displayLat: number; displayLng: number }> {
+  const groups = new Map<string, LiveMapPin[]>();
+  for (const p of pins) {
+    const k = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
+    const g = groups.get(k) ?? [];
+    g.push(p);
+    groups.set(k, g);
+  }
+  const out: Array<LiveMapPin & { displayLat: number; displayLng: number }> = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      const p = group[0]!;
+      out.push({ ...p, displayLat: p.lat, displayLng: p.lng });
+      continue;
+    }
+    group.forEach((p, i) => {
+      const angle = (2 * Math.PI * i) / group.length - Math.PI / 2;
+      const meters = 22 + group.length * 2;
+      const dLat = (Math.cos(angle) * meters) / 111_320;
+      const dLng = (Math.sin(angle) * meters) / (111_320 * Math.cos((p.lat * Math.PI) / 180));
+      out.push({ ...p, displayLat: p.lat + dLat, displayLng: p.lng + dLng });
+    });
+  }
+  return out;
 }
 
 function AutoFit({ pins }: { pins: LiveMapPin[] }) {
@@ -165,7 +218,7 @@ export function LiveMapPage() {
       }
     }
     void refresh();
-    timer.current = setInterval(refresh, 30_000);
+    timer.current = setInterval(refresh, 8_000);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
@@ -196,6 +249,8 @@ export function LiveMapPage() {
     for (const p of pins) map.set(p.patrol_id, makePinIcon(p));
     return map;
   }, [pins]);
+
+  const placed = useMemo(() => spreadOverlapping(pins), [pins]);
 
   const active = pins.filter((p) => !p.stale).length;
   const stale = pins.filter((p) => p.stale).length;
@@ -242,7 +297,7 @@ export function LiveMapPage() {
         <span className="text-sm text-gray-500">Click a pin to highlight that patrol’s route</span>
         {lastRefresh && (
           <span className="ml-auto text-xs text-gray-400">
-            Last updated {lastRefresh.toLocaleTimeString()} · every 30s
+            Last updated {lastRefresh.toLocaleTimeString()} · every 8s
           </span>
         )}
         {error && (
@@ -250,10 +305,7 @@ export function LiveMapPage() {
         )}
       </div>
 
-      <div
-        className="overflow-hidden rounded-lg border border-gray-200 shadow-sm"
-        style={{ height: "calc(100vh - 200px)", minHeight: 480 }}
-      >
+      <div className="relative z-0 isolate h-[min(55dvh,calc(100dvh-14rem))] min-h-[240px] overflow-hidden rounded-lg border border-gray-200 shadow-sm md:h-[calc(100vh-220px)] md:min-h-[480px]">
         <style>{`.live-pin{background:transparent!important;border:0!important}`}</style>
         <MapContainer
           center={[-25.842, 28.178]}
@@ -268,13 +320,12 @@ export function LiveMapPage() {
             maxZoom={19}
           />
           <AutoFit pins={pins} />
-          {pins.map((p) => {
-            const path = p.path;
-            if (!path || path.length < 2) return null;
+          {pins.flatMap((p) => {
+            const segs = trailSegments(p.path ?? []);
             const on = selectedId === p.patrol_id;
-            return (
+            return segs.map((path, i) => (
               <Polyline
-                key={`path-${p.patrol_id}`}
+                key={`path-${p.patrol_id}-${i}`}
                 positions={path}
                 pathOptions={{
                   color: pathColor(p.call_sign),
@@ -285,12 +336,12 @@ export function LiveMapPage() {
                   click: () => setSelectedId((cur) => (cur === p.patrol_id ? null : p.patrol_id)),
                 }}
               />
-            );
+            ));
           })}
-          {pins.map((p) => (
+          {placed.map((p) => (
             <Marker
-              key={p.patrol_id}
-              position={[p.lat, p.lng]}
+              key={`${p.patrol_id}-${p.last_update}-${p.displayLat.toFixed(6)}-${p.displayLng.toFixed(6)}`}
+              position={[p.displayLat, p.displayLng]}
               icon={icons.get(p.patrol_id)}
               eventHandlers={{
                 click: () => setSelectedId((cur) => (cur === p.patrol_id ? null : p.patrol_id)),
@@ -335,8 +386,8 @@ export function LiveMapPage() {
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-3 w-3 rounded-full bg-amber-600" /> Stationary
         </span>
-        <span className="inline-flex items-center gap-1.5 opacity-50">
-          <span className="inline-block h-3 w-3 rounded-full bg-gray-400" /> Stale (&gt;2 min)
+        <span className="inline-flex items-center gap-1.5 opacity-80">
+          <span className="inline-block h-3 w-3 rounded-full border-2 border-amber-500 bg-blue-600" /> Stale GPS (&gt;5 min)
         </span>
         <span className="ml-auto">Map data © OpenStreetMap contributors</span>
       </div>

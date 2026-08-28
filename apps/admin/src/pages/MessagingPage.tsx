@@ -127,7 +127,7 @@ function ChannelList({
   }, [channels, query]);
 
   return (
-    <aside className="flex w-[360px] shrink-0 flex-col border-r border-[#e9edef] bg-white">
+    <aside className={`flex w-full shrink-0 flex-col border-r border-[#e9edef] bg-white md:w-[360px] ${activeId ? "hidden md:flex" : "flex"}`}>
       <div className="relative flex h-[60px] shrink-0 items-center justify-between bg-[#008069] px-4 text-white">
         <h2 className="text-[17px] font-semibold leading-none">Chats</h2>
         <button
@@ -297,9 +297,11 @@ function IconUrgent({ className }: { className?: string }) {
 function ThreadPanel({
   channel,
   onDeleted,
+  onBack,
 }: {
   channel: MessageChannel;
   onDeleted: () => void;
+  onBack?: () => void;
 }) {
   const qc = useQueryClient();
   const [text, setText] = useState("");
@@ -393,6 +395,18 @@ function ThreadPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#efeae2]">
       <div className="flex h-[60px] shrink-0 items-center gap-3 bg-[#008069] px-4 text-white">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-white/10 md:hidden"
+            aria-label="Back to chats"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+        ) : null}
         <Avatar className="h-10 w-10 shrink-0 bg-white/20 text-white">
           <AvatarFallback className="bg-transparent text-white">
             {channel.kind === "group" ? "GR" : initials(channel.name)}
@@ -781,7 +795,9 @@ export function MessagingPage() {
   const totalUnread = channels.reduce((sum, ch) => sum + (ch.unreadCount ?? 0), 0);
 
   useEffect(() => {
-    if (!activeChannel && channels.length > 0) setActiveChannel(channels[0]);
+    if (!activeChannel && channels.length > 0 && window.matchMedia("(min-width: 768px)").matches) {
+      setActiveChannel(channels[0]);
+    }
   }, [channels, activeChannel]);
 
   useEffect(() => {
@@ -798,7 +814,7 @@ export function MessagingPage() {
   }
 
   return (
-    <div className="flex h-full -m-6 overflow-hidden bg-white">
+    <div className="-m-4 flex h-full overflow-hidden bg-white md:-m-6">
       <ChannelList
         channels={channels}
         activeId={activeChannel?.id ?? null}
@@ -814,9 +830,10 @@ export function MessagingPage() {
           key={activeChannel.id}
           channel={activeChannel}
           onDeleted={() => setActiveChannel(null)}
+          onBack={() => setActiveChannel(null)}
         />
       ) : (
-        <div className="flex flex-1 items-center justify-center bg-[#f0f2f5]">
+        <div className="hidden flex-1 items-center justify-center bg-[#f0f2f5] md:flex">
           <div className="max-w-md text-center text-[#667781]">
             <p className="text-2xl font-light text-[#41525d]">Patrol Log messaging</p>
             <p className="mt-2 text-sm">Select a chat, or use + for a new chat or group.</p>

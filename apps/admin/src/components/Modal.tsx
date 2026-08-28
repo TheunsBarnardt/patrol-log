@@ -14,13 +14,13 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
   const widthClass =
     size === "sm" ? "max-w-sm" : size === "xl" ? "max-w-4xl" : size === "lg" ? "max-w-2xl" : "max-w-lg";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       {/* Sheet */}
-      <div className={`relative bg-white rounded-xl shadow-xl w-full ${widthClass} flex flex-col max-h-[90vh]`}>
+      <div className={`relative flex max-h-[92dvh] w-full flex-col rounded-t-xl bg-white shadow-xl sm:rounded-xl ${widthClass}`}>
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
+        <div className="flex items-center justify-between border-b px-4 py-4 sm:px-6">
           <h2 className="text-base font-semibold">{title}</h2>
           <button
             onClick={onClose}
@@ -31,9 +31,9 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
           </button>
         </div>
         {/* Body */}
-        <div className="overflow-y-auto px-6 py-5 flex-1">{children}</div>
+        <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
         {/* Footer */}
-        {footer && <div className="px-6 py-4 border-t flex justify-end gap-2">{footer}</div>}
+        {footer && <div className="flex flex-wrap justify-end gap-2 border-t px-4 py-4 sm:px-6">{footer}</div>}
       </div>
     </div>
   );

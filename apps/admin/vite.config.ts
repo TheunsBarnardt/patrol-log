@@ -10,7 +10,15 @@ export default defineConfig({
       "@patrol-log/shared": path.resolve(__dirname, "../../packages/shared/src/index.ts"),
     },
   },
-  server: { port: 5173 },
-  // VITE_* variables are loaded automatically from .env by Vite.
-  // Set VITE_API_BASE_URL=.env.local for local development.
+  server: {
+    port: 5173,
+    proxy: {
+      "/api": {
+        target: "http://localhost:8787",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api/, "") || "/",
+      },
+    },
+  },
+  // VITE_* is not used for the API base. Production always calls same-origin /api.
 });

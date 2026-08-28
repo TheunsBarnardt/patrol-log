@@ -130,7 +130,8 @@ export function getPatrolTrack(): TrackSnapshot {
 }
 
 export function trailForHeartbeat(): { lat: number; lng: number }[] {
-  return points.slice(-800).map((p) => ({ lat: p.lat, lng: p.lng }));
+  // Keep the payload small — Chrome keepalive / some carriers drop large POSTs.
+  return points.slice(-80).map((p) => ({ lat: p.lat, lng: p.lng }));
 }
 
 export function subscribePatrolTrack(fn: (snap: TrackSnapshot) => void): () => void {

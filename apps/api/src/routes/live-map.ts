@@ -41,7 +41,7 @@ liveMap.post("/heartbeat", requireAuth(), async (c) => {
   const existing = await db.query.livePins.findFirst({ where: eq(livePins.patrolId, body.patrol_id) });
   const lastSeen = existing ? parseSqliteUtc(existing.lastSeenAt)?.getTime() ?? 0 : 0;
   if (existing && lastSeen > Date.now() - 15_000) {
-    throw new AppError("LIVE_MAP_HEARTBEAT_RATE_LIMITED");
+    return c.json({ ok: true, out_of_sector: false });
   }
 
   const pathJson = mergePatrolPath(parsePathJson(existing?.pathJson), body.trail, body.lat, body.lng);
