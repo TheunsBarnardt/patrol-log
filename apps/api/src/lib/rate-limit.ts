@@ -16,7 +16,12 @@ export async function checkLoginRateLimit(
   ip: string | null,
   cfg: RateLimitConfig = { windowSeconds: 900, maxRequests: 5 },
 ): Promise<{ limited: boolean; attempts: number }> {
-  const since = new Date(Date.now() - cfg.windowSeconds * 1000).toISOString();
+  // login_attempts.created_at is SQLite `datetime('now')` (`YYYY-MM-DD HH:MM:SS`).
+  // Comparing against ISO-8601 with `T`/`Z` never matches, so the limit never fired.
+  const since = new Date(Date.now() - cfg.windowSeconds * 1000)
+    .toISOString()
+    .slice(0, 19)
+    .replace("T", " ");
   const rows = await db
     .select({ count: sql<number>`count(*)` })
     .from(loginAttempts)

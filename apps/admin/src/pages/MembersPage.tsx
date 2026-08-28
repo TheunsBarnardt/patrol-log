@@ -13,6 +13,9 @@ interface Member {
   sectorName?: string | null;
   accessLevel: "call_centre_agent" | "patroller" | "sector_lead" | "admin" | "system_admin";
   status: "active" | "inactive" | "suspended";
+  locked?: boolean;
+  lockedUntil?: string | null;
+  failedLoginAttempts?: number;
 }
 
 interface SectorOption {
@@ -106,6 +109,13 @@ export function MembersPage() {
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin.members"] }); setEditRow(null); },
   });
+  const unlock = useMutation({
+    mutationFn: (id: string) => adminFetch(`/admin/members/${id}/unlock`, { method: "POST" }),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ["admin.members"] });
+      setEditRow((cur) => (cur?.id === id ? { ...cur, locked: false, lockedUntil: null, failedLoginAttempts: 0 } : cur));
+    },
+  });
   const importMut = useMutation({
     mutationFn: (rows: any[]) => adminFetch<{ imported: number; skipped: number; errors: string[] }>("/admin/members/import", { method: "POST", body: JSON.stringify({ rows }) }),
     onSuccess: (res) => {
@@ -122,11 +132,17 @@ export function MembersPage() {
   const dupPhone = duplicateIds(all, (r) => r.id, (r) => normalizePhone(r.phone));
   const dupRows = new Set([...dupCallSign, ...dupName, ...dupPhone]);
 
-  const rows = all.filter((r) =>
-    !search ||
-    r.name.toLowerCase().includes(search.toLowerCase()) ||
-    r.callSign.toLowerCase().includes(search.toLowerCase()),
-  );
+  function needsUnlock(r: Member) {
+    return !!r.locked || (r.failedLoginAttempts ?? 0) >= 5;
+  }
+
+  const rows = all
+    .filter((r) =>
+      !search ||
+      r.name.toLowerCase().includes(search.toLowerCase()) ||
+      r.callSign.toLowerCase().includes(search.toLowerCase()),
+    )
+    .sort((a, b) => Number(needsUnlock(b)) - Number(needsUnlock(a)));
 
   function openEdit(r: Member) {
     setEditRow(r);
@@ -185,9 +201,11 @@ export function MembersPage() {
         <DataTable
           rows={rows}
           keyExtractor={(r) => r.id}
-          rowClassName={(r) =>
-            dupRows.has(r.id) ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-gray-50"
-          }
+          rowClassName={(r) => {
+            if (r.locked) return "bg-amber-50 hover:bg-amber-100";
+            if (dupRows.has(r.id)) return "bg-amber-50 hover:bg-amber-100";
+            return "hover:bg-gray-50";
+          }}
           columns={[
             {
               header: "Call sign",
@@ -211,8 +229,25 @@ export function MembersPage() {
               render: (r) => <DupHint show={dupPhone.has(r.id)}>{r.phone ?? "—"}</DupHint>,
             },
             { header: "Access", render: (r) => <span className="capitalize text-xs">{r.accessLevel.replace(/_/g, " ")}</span> },
-            { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
-            { header: "", className: "text-right", render: (r) => <RowActions onEdit={() => openEdit(r)} /> },
+            {
+              header: "Status",
+              render: (r) => (
+                <span className="inline-flex flex-wrap items-center gap-1">
+                  <StatusBadge status={r.status} />
+                  {r.locked ? <StatusBadge status="locked" /> : null}
+                </span>
+              ),
+            },
+            {
+              header: "",
+              className: "text-right",
+              render: (r) => (
+                <RowActions
+                  onUnlock={needsUnlock(r) ? () => unlock.mutate(r.id) : undefined}
+                  onEdit={() => openEdit(r)}
+                />
+              ),
+            },
           ]}
         />
       )}
@@ -284,6 +319,15 @@ export function MembersPage() {
         size="lg"
         footer={
           <>
+            {editRow && needsUnlock(editRow) ? (
+              <Btn
+                variant="ghost"
+                disabled={unlock.isPending}
+                onClick={() => unlock.mutate(editRow.id)}
+              >
+                {unlock.isPending ? "Unlocking…" : "Unlock login"}
+              </Btn>
+            ) : null}
             <Btn variant="ghost" onClick={() => setEditRow(null)}>Cancel</Btn>
             <Btn disabled={update.isPending} onClick={() => update.mutate({ id: editRow!.id, ...editForm })}>
               {update.isPending ? "Saving…" : "Save changes"}
@@ -291,6 +335,14 @@ export function MembersPage() {
           </>
         }
       >
+        {editRow && needsUnlock(editRow) && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            This account is blocked from too many failed logins. Unlock to let them sign in immediately.
+          </p>
+        )}
+        {unlock.error instanceof Error && (
+          <p className="mb-3 text-sm text-red-600">{unlock.error.message}</p>
+        )}
         {update.error instanceof Error && (
           <p className="mb-3 text-sm text-red-600">{update.error.message}</p>
         )}

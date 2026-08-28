@@ -2,7 +2,7 @@
 
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { AppError, type LoginRequest, type ResumeRequest } from "@patrol-log/shared";
+import { AppError, parseSqliteUtc, type LoginRequest, type ResumeRequest } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
 import { devices, patrollers, sectors, cpfs } from "../db/schema.js";
@@ -33,7 +33,8 @@ auth.post("/login", async (c) => {
     where: (p, { eq }) => eq(p.callSign, callSign),
   });
 
-  if (patroller?.lockedUntil && new Date(patroller.lockedUntil) > new Date()) {
+  const lockedUntilMs = parseSqliteUtc(patroller?.lockedUntil)?.getTime() ?? 0;
+  if (patroller && lockedUntilMs > Date.now()) {
     await recordLoginAttempt(db, callSign, ip, body.device_id, "locked");
     throw new AppError("LOGIN_ACCOUNT_LOCKED");
   }

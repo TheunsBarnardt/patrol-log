@@ -98,6 +98,7 @@ export function StatusBadge({ status }: { status: string }) {
     active: "bg-emerald-100 text-emerald-700",
     inactive: "bg-gray-100 text-gray-500",
     suspended: "bg-red-100 text-red-700",
+    locked: "bg-amber-100 text-amber-800",
     available: "bg-emerald-100 text-emerald-700",
     maintenance: "bg-yellow-100 text-yellow-700",
     retired: "bg-gray-100 text-gray-500",
@@ -109,9 +110,26 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function RowActions({ onEdit, onDelete }: { onEdit?: () => void; onDelete?: () => void }) {
+export function RowActions({
+  onEdit,
+  onDelete,
+  onUnlock,
+}: {
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onUnlock?: () => void;
+}) {
   return (
     <div className="flex items-center justify-end gap-2">
+      {onUnlock && (
+        <button
+          type="button"
+          onClick={onUnlock}
+          className="rounded px-2 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-50"
+        >
+          Unlock
+        </button>
+      )}
       {onEdit && (
         <button
           onClick={onEdit}

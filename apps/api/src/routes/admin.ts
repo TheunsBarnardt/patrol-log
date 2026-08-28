@@ -23,6 +23,7 @@ import {
   emergencyServices,
   incidents,
   hotspots,
+  loginAttempts,
   livePins,
   nextOfKin,
   patrolBreadcrumbs,
@@ -141,6 +142,21 @@ function durationLabel(hours: number): string {
 function formatSectorLabel(code: string | null | undefined, name: string | null | undefined): string {
   if (code && name) return `${code} · ${name}`;
   return code || name || "—";
+}
+
+async function clearLoginLock(
+  db: ReturnType<typeof getDb>,
+  patroller: { id: string; callSign: string },
+  extraCallSign?: string,
+) {
+  await db
+    .update(patrollers)
+    .set({ failedLoginAttempts: 0, lockedUntil: null })
+    .where(eq(patrollers.id, patroller.id));
+  const signs = new Set([patroller.callSign, extraCallSign].filter(Boolean) as string[]);
+  for (const callSign of signs) {
+    await db.delete(loginAttempts).where(eq(loginAttempts.callSign, callSign));
+  }
 }
 
 export const admin = new Hono<AppContext>();
@@ -725,12 +741,20 @@ admin.get("/members", async (c) => {
       sectorName: sectors.name,
       cpfId: patrollers.cpfId,
       createdAt: patrollers.createdAt,
+      lockedUntil: patrollers.lockedUntil,
+      failedLoginAttempts: patrollers.failedLoginAttempts,
     })
     .from(patrollers)
     .leftJoin(sectors, eq(sectors.id, patrollers.sectorId))
     .where(tenantScope(auth, patrollers))
     .orderBy(patrollers.name);
-  return c.json({ results: rows });
+  const now = Date.now();
+  return c.json({
+    results: rows.map((r) => ({
+      ...r,
+      locked: (parseSqliteUtc(r.lockedUntil)?.getTime() ?? 0) > now,
+    })),
+  });
 });
 
 admin.post("/members", async (c) => {
@@ -812,14 +836,43 @@ admin.patch("/members/:id", async (c) => {
     }
   }
 
-  if (body.password) update.passwordHash = await hashPassword(body.password);
+  if (body.password) {
+    update.passwordHash = await hashPassword(body.password);
+    update.failedLoginAttempts = 0;
+    update.lockedUntil = null;
+  }
   const [updated] = await db.update(patrollers).set(update).where(eq(patrollers.id, id)).returning();
+  if (body.password) {
+    await db.delete(loginAttempts).where(eq(loginAttempts.callSign, target.callSign));
+    if (updated.callSign !== target.callSign) {
+      await db.delete(loginAttempts).where(eq(loginAttempts.callSign, updated.callSign));
+    }
+  }
   await logAudit(db, "admin.member.updated", auth, {
     member_id: id,
     call_sign: updated.callSign,
     call_sign_changed: !!update.callSign,
+    unlocked: !!body.password,
   });
   return c.json(updated);
+});
+
+admin.post("/members/:id/unlock", async (c) => {
+  const auth = getAuth(c);
+  const id = c.req.param("id");
+  const db = getDb(c.env);
+  const target = await db.query.patrollers.findFirst({ where: eq(patrollers.id, id) });
+  if (!target) throw new AppError("MEMBERS_NO_RESULTS");
+  if (target.cpfId !== auth.patroller.cpf_id) throw new AppError("STAND_DOWN_UNAUTHORIZED");
+  const isSysAdmin = auth.patroller.access_level === "system_admin";
+  const canCrossSector = isSysAdmin || auth.patroller.access_level === "admin";
+  if (!canCrossSector && target.sectorId !== auth.patroller.sector_id) {
+    throw new AppError("STAND_DOWN_UNAUTHORIZED");
+  }
+
+  await clearLoginLock(db, target);
+  await logAudit(db, "admin.member.unlocked", auth, { member_id: id, call_sign: target.callSign });
+  return c.json({ ok: true, locked: false });
 });
 
 admin.post("/members/:id/next-of-kin", async (c) => {
