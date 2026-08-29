@@ -4,7 +4,7 @@ import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch } from "../lib/api";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
-import { parseCsv, CsvImportButton } from "../components/CsvImport";
+import { parseCsv, CsvImportButton, csvStamp } from "../components/CsvImport";
 
 const SERVICE_TYPES = [
   "police", "ambulance", "fire", "armed_response", "hospital", "ops_room", "vet", "tow", "poison_control", "other",
@@ -83,10 +83,23 @@ export function EmergencyServicesPage() {
         search={search}
         onSearch={setSearch}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <CsvImportButton
               onFile={handleImport}
               loading={importMut.isPending}
+              exportCsv={{
+                filename: `emergency-services-${csvStamp()}.csv`,
+                headers: ["name", "service_type", "primary_number", "secondary_number", "address", "priority", "sensitive"],
+                rows: rows.map((r) => [
+                  r.name,
+                  r.serviceType,
+                  r.primaryNumber,
+                  r.secondaryNumber ?? "",
+                  r.address ?? "",
+                  String(r.priority),
+                  r.sensitive ? "true" : "false",
+                ]),
+              }}
               template={{
                 filename: "emergency-services-template.csv",
                 headers: ["name", "service_type", "primary_number", "secondary_number", "address", "priority", "sensitive"],

@@ -4,6 +4,7 @@ import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch, authStore } from "../lib/api";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
+import { CsvExportButton, csvStamp, downloadCsv } from "../components/CsvImport";
 
 function formatUtc(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -66,12 +67,56 @@ function fromLocalInput(local: string): string | null {
   return d.toISOString();
 }
 
+const PATROL_EXPORT_HEADERS = [
+  "primary_call_sign",
+  "primary_name",
+  "patrol_type",
+  "state",
+  "start_time",
+  "end_time",
+  "odometer_start",
+  "odometer_end",
+  "distance_km",
+  "reason",
+  "sars_purpose",
+  "sars_compliant",
+];
+
+function matchesPatrolSearch(r: Patrol, q: string): boolean {
+  if (!q) return true;
+  return (
+    r.id.toLowerCase().includes(q) ||
+    r.patrolType.toLowerCase().includes(q) ||
+    r.state.toLowerCase().includes(q) ||
+    (r.primaryCallSign ?? "").toLowerCase().includes(q) ||
+    (r.primaryName ?? "").toLowerCase().includes(q)
+  );
+}
+
+function patrolExportRows(list: Patrol[]): string[][] {
+  return list.map((r) => [
+    r.primaryCallSign ?? "",
+    r.primaryName ?? "",
+    r.patrolType,
+    r.state === "stood_down" ? "captured" : r.state,
+    r.startTime,
+    r.endTime ?? "",
+    r.odometerStart != null ? String(r.odometerStart) : "",
+    r.odometerEnd != null ? String(r.odometerEnd) : "",
+    r.distanceKm != null ? String(r.distanceKm) : "",
+    r.reason ?? "",
+    r.sarsPurpose ?? "",
+    r.sarsCompliant ? "true" : "false",
+  ]);
+}
+
 export function PatrolsPage() {
   const qc = useQueryClient();
   const accessLevel = authStore.getProfile()?.access_level;
   const isSysAdmin = accessLevel === "system_admin";
   const canDeletePatrol = isSysAdmin || accessLevel === "admin";
   const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [editRow, setEditRow] = useState<Patrol | null>(null);
   const [form, setForm] = useState({
     patrol_type: "foot" as PatrolType,
@@ -110,17 +155,26 @@ export function PatrolsPage() {
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (data?.results ?? []).filter((r) => {
-      if (!q) return true;
-      return (
-        r.id.toLowerCase().includes(q) ||
-        r.patrolType.toLowerCase().includes(q) ||
-        r.state.toLowerCase().includes(q) ||
-        (r.primaryCallSign ?? "").toLowerCase().includes(q) ||
-        (r.primaryName ?? "").toLowerCase().includes(q)
-      );
-    });
+    return (data?.results ?? []).filter((r) => matchesPatrolSearch(r, q));
   }, [data?.results, search]);
+
+  async function exportAllPatrols() {
+    setExporting(true);
+    try {
+      const all = await adminFetch<{ results: Patrol[] }>("/admin/patrols?limit=10000");
+      const q = search.trim().toLowerCase();
+      const filtered = (all.results ?? []).filter((r) => matchesPatrolSearch(r, q));
+      if (!filtered.length) {
+        alert("Nothing to export.");
+        return;
+      }
+      downloadCsv(`patrols-${csvStamp()}.csv`, PATROL_EXPORT_HEADERS, patrolExportRows(filtered));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function openEdit(r: Patrol) {
     setEditRow(r);
@@ -162,7 +216,21 @@ export function PatrolsPage() {
 
   return (
     <>
-      <PageHeader title="Patrols" search={search} onSearch={setSearch} />
+      <PageHeader
+        title="Patrols"
+        search={search}
+        onSearch={setSearch}
+        action={
+          <CsvExportButton
+            filename={`patrols-${csvStamp()}.csv`}
+            headers={PATROL_EXPORT_HEADERS}
+            rows={patrolExportRows(rows)}
+            loading={exporting}
+            title="Export all matching patrols"
+            onClick={exportAllPatrols}
+          />
+        }
+      />
 
       {canDeletePatrol && (
         <p className="mb-4 max-w-2xl text-sm text-gray-600">

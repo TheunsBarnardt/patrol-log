@@ -1013,6 +1013,8 @@ admin.delete("/vehicles/:id", async (c) => {
 admin.get("/patrols", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
+  const rawLimit = Number(c.req.query("limit") ?? 200);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 10_000) : 200;
   const rows = await db
     .select({
       patrol: patrols,
@@ -1023,7 +1025,7 @@ admin.get("/patrols", async (c) => {
     .leftJoin(patrollers, eq(patrollers.id, patrols.primaryPatrollerId))
     .where(tenantScope(auth, patrols))
     .orderBy(desc(patrols.startTime))
-    .limit(200);
+    .limit(limit);
   return c.json({
     results: rows.map((r) => ({
       ...r.patrol,

@@ -67,7 +67,7 @@ export function PageHeader({ title, action, search, onSearch }: {
   onSearch?: (v: string) => void;
 }) {
   return (
-    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <h1 className="shrink-0 text-lg font-bold text-gray-900">{title}</h1>
       {onSearch && (
         <input
@@ -78,7 +78,7 @@ export function PageHeader({ title, action, search, onSearch }: {
           className="w-full max-w-xs rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
         />
       )}
-      {action ? <div className="sm:ml-auto">{action}</div> : null}
+      {action ? <div className="shrink-0 sm:ml-auto">{action}</div> : null}
     </div>
   );
 }

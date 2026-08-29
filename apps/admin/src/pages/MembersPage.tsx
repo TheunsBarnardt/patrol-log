@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetch, authStore } from "../lib/api";
 import { DataTable, DupHint, PageHeader, RowActions, StatusBadge } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
-import { parseCsv, CsvImportButton } from "../components/CsvImport";
+import { parseCsv, CsvImportButton, csvStamp } from "../components/CsvImport";
 import { duplicateIds, normalizeName, normalizePhone } from "../lib/duplicates";
 
 interface Member {
@@ -176,10 +176,23 @@ export function MembersPage() {
         search={search}
         onSearch={setSearch}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <CsvImportButton
               onFile={handleImport}
               loading={importMut.isPending}
+              exportCsv={{
+                filename: `members-${csvStamp()}.csv`,
+                headers: ["call_sign", "name", "phone", "address", "access_level", "status", "sector"],
+                rows: rows.map((r) => [
+                  r.callSign,
+                  r.name,
+                  r.phone ?? "",
+                  r.address ?? "",
+                  r.accessLevel,
+                  r.status,
+                  sectorLabel(r),
+                ]),
+              }}
               template={{
                 filename: "members-template.csv",
                 headers: ["call_sign", "name", "phone", "address", "access_level", "password"],

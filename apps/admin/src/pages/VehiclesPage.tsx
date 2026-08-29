@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetch } from "../lib/api";
 import { DataTable, PageHeader, RowActions, StatusBadge } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
-import { parseCsv, CsvImportButton } from "../components/CsvImport";
+import { parseCsv, CsvImportButton, csvStamp } from "../components/CsvImport";
 
 interface Vehicle {
   id: string;
@@ -109,10 +109,21 @@ export function VehiclesPage() {
         search={search}
         onSearch={setSearch}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <CsvImportButton
               onFile={handleImport}
               loading={importMut.isPending}
+              exportCsv={{
+                filename: `vehicles-${csvStamp()}.csv`,
+                headers: ["registration", "description", "last_odometer", "status", "member_call_sign"],
+                rows: rows.map((r) => [
+                  r.registration,
+                  r.description ?? "",
+                  String(r.lastOdometer),
+                  r.status,
+                  r.memberCallSign ?? "",
+                ]),
+              }}
               template={{
                 filename: "vehicles-template.csv",
                 headers: ["registration", "description", "last_odometer", "status", "member_call_sign"],

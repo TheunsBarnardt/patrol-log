@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminFetch } from "../lib/api";
 import { DataTable, DupHint, PageHeader, RowActions } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls } from "../components/Modal";
-import { parseCsv, CsvImportButton } from "../components/CsvImport";
+import { parseCsv, CsvImportButton, csvStamp } from "../components/CsvImport";
 import { duplicateIds, normalizeName, normalizePhone } from "../lib/duplicates";
 
 interface Resident { id: string; name: string; phone: string; address: string; sectorId: string; cpfId: string }
@@ -76,10 +76,15 @@ export function ResidentsPage() {
         search={search}
         onSearch={setSearch}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <CsvImportButton
               onFile={handleImport}
               loading={importMut.isPending}
+              exportCsv={{
+                filename: `residents-${csvStamp()}.csv`,
+                headers: ["name", "phone", "address"],
+                rows: rows.map((r) => [r.name, r.phone, r.address]),
+              }}
               template={{
                 filename: "residents-template.csv",
                 headers: ["name", "phone", "address"],
