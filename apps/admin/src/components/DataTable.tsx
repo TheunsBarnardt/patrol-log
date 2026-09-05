@@ -112,10 +112,12 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function RowActions({
   onEdit,
+  onEnd,
   onDelete,
   onUnlock,
 }: {
   onEdit?: () => void;
+  onEnd?: () => void;
   onDelete?: () => void;
   onUnlock?: () => void;
 }) {
@@ -128,6 +130,15 @@ export function RowActions({
           className="rounded px-2 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-50"
         >
           Unlock
+        </button>
+      )}
+      {onEnd && (
+        <button
+          type="button"
+          onClick={onEnd}
+          className="rounded px-2 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-50"
+        >
+          End patrol
         </button>
       )}
       {onEdit && (

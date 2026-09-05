@@ -1,7 +1,7 @@
 // Admin portal CRUD routes.
 
 import { Hono } from "hono";
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import {
   AppError,
   parseSqliteUtc,
@@ -1035,8 +1035,8 @@ admin.get("/patrols", async (c) => {
   });
 });
 
-/** system_admin: correct captured / active patrol records */
-admin.patch("/patrols/:id", requireAccessLevel("system_admin"), async (c) => {
+/** admin + system_admin: end a forgotten patrol and correct km / times */
+admin.patch("/patrols/:id", requireAccessLevel("system_admin", "admin"), async (c) => {
   const auth = getAuth(c);
   const id = c.req.param("id");
   const body = await c.req.json<Partial<{
@@ -1129,6 +1129,7 @@ admin.patch("/patrols/:id", requireAccessLevel("system_admin"), async (c) => {
   if (Object.keys(update).length > 0) update.recordSealHash = null;
 
   const nextState = update.state ?? existing.state;
+  const nextStartTime = update.startTime ?? existing.startTime;
   if (nextState === "stood_down") {
     await db.delete(livePins).where(eq(livePins.patrolId, id));
     if (update.endTime === undefined && existing.endTime == null && body.end_time === undefined) {
@@ -1136,8 +1137,31 @@ admin.patch("/patrols/:id", requireAccessLevel("system_admin"), async (c) => {
     }
   }
 
+  const nextEndTime = update.endTime !== undefined ? update.endTime : existing.endTime;
+  if (nextEndTime && parseDbTime(nextEndTime) < parseDbTime(nextStartTime)) {
+    throw new AppError("PATROL_INVALID_INPUT", { reason: "end time must be after start time" });
+  }
+
   const [row] = await db.update(patrols).set(update).where(eq(patrols.id, id)).returning();
-  await logAudit(db, "admin.patrol.updated", auth, { patrol_id: id, fields: Object.keys(body) });
+
+  if (nextState === "stood_down") {
+    const memberEnd = nextEndTime ?? new Date().toISOString();
+    await db
+      .update(patrolMembers)
+      .set({ endTime: memberEnd })
+      .where(and(eq(patrolMembers.patrolId, id), isNull(patrolMembers.endTime)));
+
+    const nextOdoEnd = update.odometerEnd !== undefined ? update.odometerEnd : existing.odometerEnd;
+    if (existing.vehicleId && nextOdoEnd != null) {
+      await db.update(vehicles).set({ lastOdometer: nextOdoEnd }).where(eq(vehicles.id, existing.vehicleId));
+    }
+  }
+
+  await logAudit(db, "admin.patrol.updated", auth, {
+    patrol_id: id,
+    fields: Object.keys(body),
+    ended: existing.state === "active" && nextState === "stood_down",
+  });
   return c.json(row);
 });
 

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseSqliteUtc } from "@patrol-log/shared";
 import { adminFetch, authStore } from "../lib/api";
@@ -110,14 +111,24 @@ function patrolExportRows(list: Patrol[]): string[][] {
   ]);
 }
 
+function nowLocalInput(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function PatrolsPage() {
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const accessLevel = authStore.getProfile()?.access_level;
   const isSysAdmin = accessLevel === "system_admin";
-  const canDeletePatrol = isSysAdmin || accessLevel === "admin";
-  const [search, setSearch] = useState("");
+  const canEditPatrol = isSysAdmin || accessLevel === "admin";
+  const canDeletePatrol = canEditPatrol;
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const [activeOnly, setActiveOnly] = useState(() => Boolean(searchParams.get("q")));
   const [exporting, setExporting] = useState(false);
   const [editRow, setEditRow] = useState<Patrol | null>(null);
+  const [ending, setEnding] = useState(false);
   const [form, setForm] = useState({
     patrol_type: "foot" as PatrolType,
     state: "stood_down" as PatrolState,
@@ -144,7 +155,9 @@ export function PatrolsPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin.patrols"] });
+      qc.invalidateQueries({ queryKey: ["admin.stats.overview"] });
       setEditRow(null);
+      setEnding(false);
     },
   });
 
@@ -155,15 +168,21 @@ export function PatrolsPage() {
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (data?.results ?? []).filter((r) => matchesPatrolSearch(r, q));
-  }, [data?.results, search]);
+    return (data?.results ?? []).filter((r) => {
+      if (activeOnly && r.state !== "active") return false;
+      return matchesPatrolSearch(r, q);
+    });
+  }, [data?.results, search, activeOnly]);
 
   async function exportAllPatrols() {
     setExporting(true);
     try {
       const all = await adminFetch<{ results: Patrol[] }>("/admin/patrols?limit=10000");
       const q = search.trim().toLowerCase();
-      const filtered = (all.results ?? []).filter((r) => matchesPatrolSearch(r, q));
+      const filtered = (all.results ?? []).filter((r) => {
+        if (activeOnly && r.state !== "active") return false;
+        return matchesPatrolSearch(r, q);
+      });
       if (!filtered.length) {
         alert("Nothing to export.");
         return;
@@ -176,20 +195,31 @@ export function PatrolsPage() {
     }
   }
 
-  function openEdit(r: Patrol) {
-    setEditRow(r);
+  function fillForm(r: Patrol, opts?: { endNow?: boolean }) {
     setForm({
       patrol_type: r.patrolType,
-      state: r.state,
+      state: opts?.endNow ? "stood_down" : r.state,
       start_time: toLocalInput(r.startTime),
-      end_time: toLocalInput(r.endTime),
+      end_time: opts?.endNow ? nowLocalInput() : toLocalInput(r.endTime),
       odometer_start: r.odometerStart ?? "",
       odometer_end: r.odometerEnd ?? "",
       distance_km: r.distanceKm ?? "",
-      reason: r.reason ?? "",
+      reason: opts?.endNow ? (r.reason ?? "shift_end") : (r.reason ?? ""),
       sars_purpose: r.sarsPurpose ?? "",
       sars_compliant: r.sarsCompliant,
     });
+  }
+
+  function openEdit(r: Patrol) {
+    setEnding(false);
+    setEditRow(r);
+    fillForm(r);
+  }
+
+  function openEnd(r: Patrol) {
+    setEnding(true);
+    setEditRow(r);
+    fillForm(r, { endNow: true });
   }
 
   function saveEdit() {
@@ -199,15 +229,34 @@ export function PatrolsPage() {
       alert("Start time is required");
       return;
     }
+    const end = fromLocalInput(form.end_time);
+    if (form.state === "stood_down" && !end) {
+      alert("End time is required when closing a patrol");
+      return;
+    }
+    if (end && new Date(end).getTime() < new Date(start).getTime()) {
+      alert("End time must be after start time");
+      return;
+    }
+    const odoStart = form.odometer_start === "" ? null : Number(form.odometer_start);
+    const odoEnd = form.odometer_end === "" ? null : Number(form.odometer_end);
+    let distanceKm = form.distance_km === "" ? null : Number(form.distance_km);
+    if (distanceKm == null && odoStart != null && odoEnd != null) {
+      if (odoEnd < odoStart) {
+        alert("End odometer must be greater than the starting odometer");
+        return;
+      }
+      distanceKm = odoEnd - odoStart;
+    }
     update.mutate({
       id: editRow.id,
       patrol_type: form.patrol_type,
       state: form.state,
       start_time: start,
-      end_time: fromLocalInput(form.end_time),
-      odometer_start: form.odometer_start === "" ? null : Number(form.odometer_start),
-      odometer_end: form.odometer_end === "" ? null : Number(form.odometer_end),
-      distance_km: form.distance_km === "" ? null : Number(form.distance_km),
+      end_time: end,
+      odometer_start: odoStart,
+      odometer_end: odoEnd,
+      distance_km: distanceKm,
       reason: form.reason || null,
       sars_purpose: form.sars_purpose,
       sars_compliant: form.sars_compliant,
@@ -232,12 +281,22 @@ export function PatrolsPage() {
         }
       />
 
-      {canDeletePatrol && (
-        <p className="mb-4 max-w-2xl text-sm text-gray-600">
-          {isSysAdmin
-            ? "You can edit patrol records and permanently delete captured or stuck active patrols. Editing clears the record seal."
-            : "You can permanently delete captured or stuck active patrols. This cannot be undone."}
-        </p>
+      {canEditPatrol && (
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-2xl text-sm text-gray-600">
+            If a patroller forgot to stand down, use <span className="font-semibold">End patrol</span> to
+            close it and enter the real end time and kilometres. Editing a sealed record clears the seal.
+          </p>
+          <label className="inline-flex shrink-0 items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-emerald-700"
+              checked={activeOnly}
+              onChange={(e) => setActiveOnly(e.target.checked)}
+            />
+            Active only
+          </label>
+        </div>
       )}
 
       {isLoading ? (
@@ -246,6 +305,7 @@ export function PatrolsPage() {
         <DataTable
           rows={rows}
           keyExtractor={(r) => r.id}
+          rowClassName={(r) => (r.state === "active" ? "bg-emerald-50/60 hover:bg-emerald-50" : undefined)}
           columns={[
             {
               header: "Primary",
@@ -293,24 +353,29 @@ export function PatrolsPage() {
                   "—"
                 ),
             },
-            ...(canDeletePatrol
+            ...(canEditPatrol
               ? [
                   {
                     header: "",
                     className: "text-right",
                     render: (r: Patrol) => (
                       <RowActions
-                        onEdit={isSysAdmin ? () => openEdit(r) : undefined}
-                        onDelete={() => {
-                          const label = r.primaryCallSign ?? r.id.slice(0, 8);
-                          if (
-                            confirm(
-                              `Permanently delete patrol ${label} (${r.state === "stood_down" ? "captured" : "active"})?\n\nThis cannot be undone.`,
-                            )
-                          ) {
-                            remove.mutate(r.id);
-                          }
-                        }}
+                        onEnd={r.state === "active" ? () => openEnd(r) : undefined}
+                        onEdit={() => openEdit(r)}
+                        onDelete={
+                          canDeletePatrol
+                            ? () => {
+                                const label = r.primaryCallSign ?? r.id.slice(0, 8);
+                                if (
+                                  confirm(
+                                    `Permanently delete patrol ${label} (${r.state === "stood_down" ? "captured" : "active"})?\n\nThis cannot be undone.`,
+                                  )
+                                ) {
+                                  remove.mutate(r.id);
+                                }
+                              }
+                            : undefined
+                        }
                       />
                     ),
                   },
@@ -322,22 +387,41 @@ export function PatrolsPage() {
 
       <Modal
         open={!!editRow}
-        onClose={() => setEditRow(null)}
-        title={`Edit patrol ${editRow?.primaryCallSign ?? editRow?.id.slice(0, 8) ?? ""}`}
+        onClose={() => {
+          setEditRow(null);
+          setEnding(false);
+        }}
+        title={
+          ending
+            ? `End patrol ${editRow?.primaryCallSign ?? editRow?.id.slice(0, 8) ?? ""}`
+            : `Edit patrol ${editRow?.primaryCallSign ?? editRow?.id.slice(0, 8) ?? ""}`
+        }
         size="lg"
         footer={
           <>
-            <Btn variant="ghost" onClick={() => setEditRow(null)}>
+            <Btn
+              variant="ghost"
+              onClick={() => {
+                setEditRow(null);
+                setEnding(false);
+              }}
+            >
               Cancel
             </Btn>
             <Btn disabled={update.isPending} onClick={saveEdit}>
-              {update.isPending ? "Saving…" : "Save"}
+              {update.isPending ? "Saving…" : ending ? "End patrol" : "Save"}
             </Btn>
           </>
         }
       >
         {update.error instanceof Error && (
           <p className="mb-3 text-sm text-red-600">{update.error.message}</p>
+        )}
+        {ending && (
+          <p className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            Patroller did not stand down. Set the actual end time and kilometres, then close the
+            patrol. This removes them from the live map so they can commence again.
+          </p>
         )}
         {editRow?.recordSealHash && (
           <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -362,6 +446,7 @@ export function PatrolsPage() {
             <select
               className={selectCls}
               value={form.state}
+              disabled={ending}
               onChange={(e) => setForm({ ...form, state: e.target.value as PatrolState })}
             >
               <option value="active">Active</option>
@@ -376,7 +461,7 @@ export function PatrolsPage() {
               onChange={(e) => setForm({ ...form, start_time: e.target.value })}
             />
           </Field>
-          <Field label="End">
+          <Field label="End" required={form.state === "stood_down"}>
             <input
               className={inputCls}
               type="datetime-local"

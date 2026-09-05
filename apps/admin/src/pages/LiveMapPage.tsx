@@ -369,6 +369,12 @@ export function LiveMapPage() {
                     {formatAge(p.last_update)}
                   </p>
                   <p className="mt-1 text-xs text-gray-400">Click pin to highlight route</p>
+                  <a
+                    href={`/patrols?q=${encodeURIComponent(p.call_sign)}`}
+                    className="mt-2 inline-block text-xs font-semibold text-emerald-800 underline"
+                  >
+                    End or correct this patrol
+                  </a>
                 </div>
               </Popup>
             </Marker>
