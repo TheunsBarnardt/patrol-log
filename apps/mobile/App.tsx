@@ -1,6 +1,6 @@
-import "react-native-gesture-handler";
 import { useEffect } from "react";
 import { ActivityIndicator, Platform, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { NavigationContainer, type LinkingOptions } from "@react-navigation/native";
 import * as ExpoLinking from "expo-linking";
 import { StatusBar } from "expo-status-bar";
@@ -50,18 +50,20 @@ export default function App() {
   }, [bootstrap]);
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="dark" />
-      {status === "bootstrapping" ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <NavigationContainer linking={Platform.OS === "web" ? webLinking : undefined}>
-          <RootNavigator />
-        </NavigationContainer>
-      )}
-      <AppDialog />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        {status === "bootstrapping" ? (
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <NavigationContainer linking={Platform.OS === "web" ? webLinking : undefined}>
+            <RootNavigator />
+          </NavigationContainer>
+        )}
+        <AppDialog />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

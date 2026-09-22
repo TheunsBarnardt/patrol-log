@@ -1,0 +1,47 @@
+# Same as .gitignore, except google-services.json is uploaded for Android FCM.
+.fdl/cache/
+*.proposed.blueprint.yaml
+
+node_modules/
+.pnpm-store/
+
+dist/
+build/
+.wrangler/
+.vercel/
+.next/
+.expo/
+.turbo/
+
+.env
+.env.*
+!.env.example
+.dev.vars
+
+.idea/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+*.swp
+.DS_Store
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+apps/mobile/ios/build/
+# Let EAS generate a fresh native project so app.json plugins/permissions apply.
+apps/mobile/android/
+apps/mobile/android/build/
+apps/mobile/android/.gradle/
+
+apps/mobile/GoogleService-Info.plist
+**/firebase-service-account*.json
+
+apps/api/drizzle/meta/
+apps/api/src/db/_local-seed.sql
+apps/api/src/db/_remote-seed.sql
+
+# Do not ship web export artifacts to EAS
+apps/admin/dist/
+apps/mobile/dist/

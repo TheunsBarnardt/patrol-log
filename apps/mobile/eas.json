@@ -12,12 +12,28 @@
       },
       "ios": {
         "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://patrol-log-mobile.pages.dev/api"
       }
     },
     "production": {
       "channel": "production",
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://patrol-log-mobile.pages.dev/api"
+      }
+    },
+    "production-apk": {
+      "channel": "production",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://patrol-log-mobile.pages.dev/api"
       }
     }
   },

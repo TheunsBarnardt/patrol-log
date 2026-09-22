@@ -1,7 +1,7 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-const PRODUCTION_API = "https://patrol-log-api.small-night-657e.workers.dev";
+const PRODUCTION_API = "https://patrol-log-mobile.pages.dev/api";
 
 const fromEnv =
   typeof process !== "undefined" ? process.env.EXPO_PUBLIC_API_BASE_URL : undefined;

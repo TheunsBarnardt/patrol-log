@@ -1,6 +1,6 @@
 {
   "name": "@patrol-log/mobile",
-  "version": "0.2.35",
+  "version": "0.2.36",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -13,7 +13,8 @@
     "deploy:web": "expo export --platform web --clear && wrangler pages deploy --project-name patrol-log-mobile --branch master --commit-dirty=true",
     "icons": "node scripts/generate-icons.mjs",
     "build:android:preview": "eas build -p android --profile preview",
-    "build:android:prod": "eas build -p android --profile production"
+    "build:android:prod": "eas build -p android --profile production",
+    "build:android:production-apk": "eas build -p android --profile production-apk"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

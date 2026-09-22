@@ -3,7 +3,7 @@
     "name": "Patrol Log",
     "slug": "cpf-patrol-log",
     "owner": "cpf-patrol-log",
-    "version": "0.2.35",
+    "version": "0.2.36",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "patrollog",
@@ -28,6 +28,7 @@
     },
     "android": {
       "package": "com.example.patrollog",
+      "versionCode": 40,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -69,7 +70,7 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "https://patrol-log-api.small-night-657e.workers.dev",
+      "apiBaseUrl": "https://patrol-log-mobile.pages.dev/api",
       "eas": {
         "projectId": "d9e869bb-8f02-488d-a81c-26a30b19b4ef"
       }

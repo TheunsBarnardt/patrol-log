@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.expo/
+# Let EAS prebuild Android from app.json
+android/
+ios/build/
+GoogleService-Info.plist

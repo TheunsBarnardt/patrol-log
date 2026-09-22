@@ -109,6 +109,7 @@ export async function postHeartbeatFromLocation(
 }
 
 if (Platform.OS !== "web") {
+  try {
   TaskManager.defineTask(HEARTBEAT_TASK_NAME, async ({ data, error }) => {
     if (error) {
       console.warn("[heartbeat-task] error", error.message);
@@ -133,6 +134,9 @@ if (Platform.OS !== "web") {
       console.warn("[heartbeat-task] send failed", err);
     }
   });
+  } catch (err) {
+    console.warn("[heartbeat-task] defineTask failed", err);
+  }
 }
 
 export async function startNativeBackgroundHeartbeat(patrolId: string, jti: string): Promise<boolean> {
