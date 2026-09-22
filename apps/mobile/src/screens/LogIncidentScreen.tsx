@@ -25,6 +25,7 @@ import {
   OB_CATEGORIES,
   dangerForTypes,
   dangerMeta,
+  obType,
   obTypesFor,
   requiresAttendance,
   type CreateIncidentRequest,
@@ -63,6 +64,8 @@ export function LogIncidentScreen({ navigation }: Props) {
   const [locLabel, setLocLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [typeOpen, setTypeOpen] = useState(true);
+  const [suburbOpen, setSuburbOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,6 +201,8 @@ export function LogIncidentScreen({ navigation }: Props) {
                   setCategory(c.key);
                   setTypeKey("");
                   setPhase("");
+                  setTypeQuery("");
+                  setTypeOpen(true);
                 }}
               >
                 <Text style={[styles.chipText, on && styles.chipTextOn]}>{c.label}</Text>
@@ -207,26 +212,62 @@ export function LogIncidentScreen({ navigation }: Props) {
         </View>
 
         <Text style={styles.label}>Type</Text>
-        <TextInput
-          style={styles.input}
-          value={typeQuery}
-          onChangeText={setTypeQuery}
-          placeholder="Search name or code"
-          autoCapitalize="none"
-        />
-        <View style={styles.typeList}>
-          {types.slice(0, 40).map((t) => {
-            const on = typeKey === t.key;
-            return (
-              <Pressable key={t.key} style={[styles.typeRow, on && styles.typeRowOn]} onPress={() => setTypeKey(t.key)}>
-                <Text style={[styles.typeName, on && styles.typeNameOn]}>
+        {Platform.OS === "web" ? (
+          <>
+            <input
+              placeholder="Search name or code"
+              value={typeQuery}
+              onChange={(e: any) => setTypeQuery(e.target.value)}
+              style={webFieldStyle}
+            />
+            <select value={typeKey} onChange={(e: any) => setTypeKey(e.target.value)} style={webFieldStyle}>
+              <option value="">Choose a type</option>
+              {(typeKey && !types.some((t) => t.key === typeKey) && obType(typeKey) ? [obType(typeKey)!, ...types] : types).map((t) => (
+                <option key={t.key} value={t.key}>
                   {t.name}
                   {t.code ? ` (${t.code})` : ""}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+                </option>
+              ))}
+            </select>
+          </>
+        ) : typeKey && !typeOpen ? (
+          <Pressable style={styles.chosen} onPress={() => setTypeOpen(true)}>
+            <Text style={styles.chosenText}>
+              {(() => {
+                const picked = obType(typeKey);
+                return picked ? `${picked.name}${picked.code ? ` (${picked.code})` : ""}` : "Type";
+              })()}
+            </Text>
+            <Text style={styles.change}>Change</Text>
+          </Pressable>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              value={typeQuery}
+              onChangeText={setTypeQuery}
+              placeholder="Search name or code"
+              autoCapitalize="none"
+            />
+            <ScrollView style={styles.menu} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+              {types.map((t) => (
+                <Pressable
+                  key={t.key}
+                  style={styles.typeRow}
+                  onPress={() => {
+                    setTypeKey(t.key);
+                    setTypeOpen(false);
+                  }}
+                >
+                  <Text style={styles.typeName}>
+                    {t.name}
+                    {t.code ? ` (${t.code})` : ""}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         {category === "criminal" && (
           <>
@@ -274,17 +315,35 @@ export function LogIncidentScreen({ navigation }: Props) {
         <Text style={styles.label}>Suburb</Text>
         {suburbs.length === 0 ? (
           <Text style={styles.muted}>Suburb list isn’t on this phone yet. Open this screen once while online.</Text>
+        ) : Platform.OS === "web" ? (
+          <select value={suburbId} onChange={(e: any) => setSuburbId(e.target.value)} style={webFieldStyle}>
+            <option value="">Choose a suburb</option>
+            {suburbs.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        ) : suburbId && !suburbOpen ? (
+          <Pressable style={styles.chosen} onPress={() => setSuburbOpen(true)}>
+            <Text style={styles.chosenText}>{suburbs.find((s) => s.id === suburbId)?.name}</Text>
+            <Text style={styles.change}>Change</Text>
+          </Pressable>
         ) : (
-          <View style={styles.typeList}>
-            {suburbs.map((s) => {
-              const on = suburbId === s.id;
-              return (
-                <Pressable key={s.id} style={[styles.typeRow, on && styles.typeRowOn]} onPress={() => setSuburbId(s.id)}>
-                  <Text style={[styles.typeName, on && styles.typeNameOn]}>{s.name}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <ScrollView style={styles.menu} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {suburbs.map((s) => (
+              <Pressable
+                key={s.id}
+                style={styles.typeRow}
+                onPress={() => {
+                  setSuburbId(s.id);
+                  setSuburbOpen(false);
+                }}
+              >
+                <Text style={styles.typeName}>{s.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         )}
 
         <Text style={styles.label}>Street number and name / complex</Text>
@@ -331,8 +390,8 @@ export function LogIncidentScreen({ navigation }: Props) {
   );
 }
 
-const webInputStyle: Record<string, string | number> = {
-  flex: 1,
+const webFieldStyle: Record<string, string | number> = {
+  width: "100%",
   boxSizing: "border-box",
   backgroundColor: colors.surfaceMuted,
   borderWidth: 1.5,
@@ -344,6 +403,12 @@ const webInputStyle: Record<string, string | number> = {
   fontWeight: "600",
   color: colors.text,
   marginBottom: 12,
+};
+
+const webInputStyle: Record<string, string | number> = {
+  ...webFieldStyle,
+  flex: 1,
+  width: "auto",
 };
 
 const styles = StyleSheet.create({
@@ -375,16 +440,36 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   notes: { minHeight: 96, textAlignVertical: "top" },
-  typeList: { maxHeight: 220, marginBottom: spacing.sm },
+  menu: {
+    maxHeight: 220,
+    marginBottom: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    backgroundColor: colors.bg,
+    overflow: "hidden",
+  },
   typeRow: {
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSoft,
+    backgroundColor: colors.bg,
   },
-  typeRowOn: { backgroundColor: colors.primarySoft },
   typeName: { fontSize: 15, color: colors.text },
-  typeNameOn: { fontWeight: "800", color: colors.primary },
+  chosen: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  chosenText: { flex: 1, fontSize: 16, fontWeight: "700", color: colors.text, marginRight: spacing.sm },
+  change: { color: colors.primary, fontWeight: "800" },
   when: { flexDirection: "row", gap: 8 },
   whenField: { flex: 1 },
   danger: { borderRadius: radii.lg, padding: spacing.md, marginBottom: spacing.sm },
