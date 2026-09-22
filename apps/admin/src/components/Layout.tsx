@@ -28,6 +28,7 @@ const NAV_ALL: NavItem[] = [
   { to: "/emergency-services", label: "Emergency services", roles: OPS },
   { to: "/vehicles", label: "Vehicles", roles: OPS },
   { to: "/patrols", label: "Patrols", roles: OPS },
+  { to: "/ob-book", label: "OB Book", roles: OPS },
   { to: "/reports", label: "Reports", roles: OPS },
   { to: "/hotspots", label: "Hotspots", roles: OPS },
   { to: "/sectors", label: "Sectors", roles: SYS },

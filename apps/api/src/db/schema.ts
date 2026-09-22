@@ -406,6 +406,193 @@ export const incidents = sqliteTable("incidents", {
   cpfIdx: index("incidents_cpf_idx").on(t.cpfId),
 }));
 
+// ── Occurrence book (OB-BOOK-SPEC-001 v1.3) ──────────────
+export const obSuburbs = sqliteTable("ob_suburbs", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  aliases: text("aliases", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  cpfIdx: index("ob_suburbs_cpf_idx").on(t.cpfId),
+  nameIdx: uniqueIndex("ob_suburbs_name_idx").on(t.cpfId, t.name),
+}));
+
+export const obSecurityCompanies = sqliteTable("ob_security_companies", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  cpfIdx: index("ob_security_cpf_idx").on(t.cpfId),
+  nameIdx: uniqueIndex("ob_security_name_idx").on(t.cpfId, t.name),
+}));
+
+/** Per-sector sequence, restarted each calendar year. */
+export const obSequences = sqliteTable("ob_sequences", {
+  sectorId: text("sector_id")
+    .notNull()
+    .references(() => sectors.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  lastSeq: integer("last_seq").notNull().default(0),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.sectorId, t.year] }),
+}));
+
+export const obEntries = sqliteTable("ob_entries", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  sectorId: text("sector_id")
+    .notNull()
+    .references(() => sectors.id),
+  obNumber: text("ob_number").notNull(),
+  sequence: integer("sequence").notNull(),
+  year: integer("year").notNull(),
+  status: text("status")
+    .notNull()
+    .default("active")
+    .$type<"active" | "closed">(),
+  category: text("category")
+    .notNull()
+    .$type<"criminal" | "emergency" | "of_interest" | "other">(),
+  phase: text("phase").$type<"alpha" | "bravo" | null>(),
+  dangerLevel: text("danger_level").$type<"leave_to_police" | "caution" | "respond" | "no_response" | null>(),
+  /** Wall-clock SAST the operator typed: YYYY-MM-DD HH:MM:SS */
+  occurredAt: text("occurred_at").notNull(),
+  timeOfDay: text("time_of_day").notNull(),
+  dayOfWeek: text("day_of_week").notNull(),
+  suburbId: text("suburb_id").references(() => obSuburbs.id),
+  street: text("street").notNull().default(""),
+  lat: real("lat"),
+  lng: real("lng"),
+  description: text("description").notNull().default(""),
+  actionDetails: text("action_details").notNull().default(""),
+  receivedFrom: text("received_from", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+  attendance: text("attendance").$type<"present" | "assisting" | "not_present" | null>(),
+  conclusion: text("conclusion"),
+  closedAt: text("closed_at"),
+  closedById: text("closed_by_id").references(() => patrollers.id, { onDelete: "set null" }),
+  capturedById: text("captured_by_id").references(() => patrollers.id, { onDelete: "set null" }),
+  callSign: text("call_sign").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  numberIdx: uniqueIndex("ob_entries_number_idx").on(t.cpfId, t.obNumber),
+  sectorStatusIdx: index("ob_entries_sector_status_idx").on(t.sectorId, t.status),
+  occurredIdx: index("ob_entries_occurred_idx").on(t.cpfId, t.occurredAt),
+}));
+
+export const obEntryTypes = sqliteTable("ob_entry_types", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  typeKey: text("type_key").notNull(),
+  isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (t) => ({
+  entryIdx: index("ob_entry_types_entry_idx").on(t.entryId),
+}));
+
+export const obEntryServices = sqliteTable("ob_entry_services", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  serviceKey: text("service_key").notNull(),
+  securityCompanyId: text("security_company_id").references(() => obSecurityCompanies.id, { onDelete: "set null" }),
+  reference: text("reference"),
+  otherName: text("other_name"),
+}, (t) => ({
+  entryIdx: index("ob_entry_services_entry_idx").on(t.entryId),
+}));
+
+export const obEntryResponders = sqliteTable("ob_entry_responders", {
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  patrollerId: text("patroller_id")
+    .notNull()
+    .references(() => patrollers.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.entryId, t.patrollerId] }),
+}));
+
+export const obEntryTags = sqliteTable("ob_entry_tags", {
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  tagKey: text("tag_key").notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.entryId, t.tagKey] }),
+}));
+
+export const obVehicles = sqliteTable("ob_vehicles", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  colour: text("colour"),
+  shape: text("shape"),
+  make: text("make"),
+  model: text("model"),
+  registration: text("registration"),
+  features: text("features"),
+}, (t) => ({
+  entryIdx: index("ob_vehicles_entry_idx").on(t.entryId),
+  regIdx: index("ob_vehicles_reg_idx").on(t.registration),
+}));
+
+export const obPersons = sqliteTable("ob_persons", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().$type<"poi" | "patient">(),
+  gender: text("gender"),
+  clothing: text("clothing"),
+  direction: text("direction"),
+  injuryTag: text("injury_tag"),
+  note: text("note"),
+}, (t) => ({
+  entryIdx: index("ob_persons_entry_idx").on(t.entryId),
+}));
+
+/** Later “seen here” updates. The latest row is last-seen for BOLOs. */
+export const obSightings = sqliteTable("ob_sightings", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  suburbId: text("suburb_id").references(() => obSuburbs.id),
+  street: text("street").notNull().default(""),
+  seenAt: text("seen_at").notNull(),
+  note: text("note"),
+  reportedById: text("reported_by_id").references(() => patrollers.id, { onDelete: "set null" }),
+  callSign: text("call_sign").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  entryIdx: index("ob_sightings_entry_idx").on(t.entryId, t.seenAt),
+}));
+
 // ── Audit log (POPIA) ────────────────────────────────────
 export const auditLog = sqliteTable("audit_log", {
   id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),

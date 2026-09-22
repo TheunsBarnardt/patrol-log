@@ -15,6 +15,7 @@ import { vehiclesRoute } from "./routes/vehicles.js";
 import { sectorsRoute } from "./routes/sectors.js";
 import { systemRoute } from "./routes/system.js";
 import { pushTokensRoute, messagesRoute, adminMessagesRoute } from "./routes/messages.js";
+import { obBookRoutes } from "./routes/ob-book.js";
 
 const app = new Hono<AppContext>();
 
@@ -44,5 +45,6 @@ app.route("/admin/system", systemRoute);  // system_admin backup/restore/csv
 app.route("/push-tokens", pushTokensRoute);
 app.route("/messages", messagesRoute);
 app.route("/admin/messages", adminMessagesRoute);
+app.route("/admin/ob", obBookRoutes);
 
 export default app;

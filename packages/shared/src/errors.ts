@@ -96,6 +96,16 @@ export const ERROR_CODES = {
   LIVE_MAP_HEARTBEAT_INVALID_SIGNATURE: { status: 403, message: "Heartbeat signature is invalid" },
   LIVE_MAP_HEARTBEAT_PATROL_NOT_ACTIVE: { status: 409, message: "Patrol is not in active state" },
   LIVE_MAP_REALTIME_CHANNEL_DOWN: { status: 503, message: "Realtime channel unavailable. Falling back to polling." },
+
+  // occurrence book (OB-BOOK-SPEC-001 v1.3)
+  OB_INVALID_INPUT: { status: 422, message: "Check the incident type, date, time, and location." },
+  OB_PHASE_REQUIRED: { status: 422, message: "Choose Alpha (still happening) or Bravo (already over) for a criminal incident." },
+  OB_ATTENDANCE_REQUIRED: { status: 422, message: "Emergencies, disasters and by-law are only logged if CPF was present or assisting." },
+  OB_NOT_FOUND: { status: 404, message: "That occurrence book entry was not found." },
+  OB_CONCLUSION_REQUIRED: { status: 422, message: "Choose a conclusion to close the incident." },
+  OB_SUBURB_REQUIRED: { status: 422, message: "Choose a suburb." },
+  OB_SUBURB_DUPLICATE: { status: 409, message: "That suburb is already on the list (check the known spelling)." },
+  OB_COMPANY_DUPLICATE: { status: 409, message: "That security company is already on the list." },
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;

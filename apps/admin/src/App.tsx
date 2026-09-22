@@ -16,6 +16,7 @@ import { MyDetailsPage } from "./pages/MyDetailsPage";
 import { SystemBackupPage } from "./pages/SystemBackupPage";
 import { HotspotsPage } from "./pages/HotspotsPage";
 import { SectorsPage } from "./pages/SectorsPage";
+import { OccurrenceBookPage } from "./pages/OccurrenceBookPage";
 import { authStore } from "./lib/api";
 
 type Role = "system_admin" | "admin" | "sector_lead" | "call_centre_agent" | "patroller";
@@ -104,6 +105,14 @@ export function App() {
                   element={
                     <RequireRoles roles={OPS}>
                       <PatrolsPage />
+                    </RequireRoles>
+                  }
+                />
+                <Route
+                  path="ob-book"
+                  element={
+                    <RequireRoles roles={OPS}>
+                      <OccurrenceBookPage />
                     </RequireRoles>
                   }
                 />
