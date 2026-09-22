@@ -7,6 +7,7 @@ export type CacheKey =
   | "members"
   | "emergency"
   | "vehicles"
+  | "obSuburbs"
   | "liveMap"
   | "messageChannels"
   | `messageThread:${string}`

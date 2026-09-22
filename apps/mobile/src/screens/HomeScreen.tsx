@@ -198,6 +198,15 @@ export function HomeScreen({ navigation }: Props) {
           )}
         </View>
 
+        <View style={[styles.suggestCard, { marginTop: spacing.md }]}>
+          <SuggestRow
+            icon="exclamation-triangle"
+            title="Log incident"
+            subtitle="Crime, open gate, or something you came across"
+            onPress={() => navigation.navigate("LogIncident")}
+          />
+        </View>
+
         <Text style={styles.section}>Suggestions</Text>
         <View style={styles.suggestCard}>
           <SuggestRow

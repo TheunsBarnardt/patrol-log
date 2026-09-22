@@ -1,6 +1,6 @@
 /** Queued mutations for offline capture + stand-down. */
 
-import type { CapturePatrolRequest, StandDownRequest } from "@patrol-log/shared";
+import type { CapturePatrolRequest, CreateIncidentRequest, StandDownRequest } from "@patrol-log/shared";
 import { api } from "./api";
 import { bulkStorage } from "./bulkStorage";
 import { useConnectivityStore } from "./connectivity";
@@ -22,6 +22,13 @@ export type OutboxItem =
       id: string;
       type: "standDown";
       payload: { patrolId: string; body: StandDownRequest };
+      createdAt: string;
+      retries: number;
+    }
+  | {
+      id: string;
+      type: "incident";
+      payload: CreateIncidentRequest;
       createdAt: string;
       retries: number;
     };
@@ -57,6 +64,20 @@ export async function enqueueCapture(payload: CapturePatrolRequest): Promise<Out
   const item: OutboxItem = {
     id: newId(),
     type: "capture",
+    payload,
+    createdAt: new Date().toISOString(),
+    retries: 0,
+  };
+  items.push(item);
+  await writeQueue(items);
+  return item;
+}
+
+export async function enqueueIncident(payload: CreateIncidentRequest): Promise<OutboxItem> {
+  const items = await readQueue();
+  const item: OutboxItem = {
+    id: newId(),
+    type: "incident",
     payload,
     createdAt: new Date().toISOString(),
     retries: 0,
@@ -103,6 +124,8 @@ export async function flushOutbox(): Promise<{ ok: number; fail: number }> {
       try {
         if (item.type === "capture") {
           await api.capturePatrol(item.payload);
+        } else if (item.type === "incident") {
+          await api.createIncident(item.payload);
         } else {
           await api.standDown(item.payload.patrolId, item.payload.body);
           await storage.clearActivePatrolCache();

@@ -46,5 +46,6 @@ app.route("/push-tokens", pushTokensRoute);
 app.route("/messages", messagesRoute);
 app.route("/admin/messages", adminMessagesRoute);
 app.route("/admin/ob", obBookRoutes);
+app.route("/ob", obBookRoutes);
 
 export default app;

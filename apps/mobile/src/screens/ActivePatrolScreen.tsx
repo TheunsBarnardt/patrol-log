@@ -417,6 +417,14 @@ export function ActivePatrolScreen({ navigation, route }: Props) {
           </Text>
         </View>
 
+        <Pressable
+          style={styles.logIncident}
+          onPress={() => navigation.navigate("LogIncident")}
+        >
+          <Text style={styles.logIncidentText}>Log incident</Text>
+          <Text style={styles.odoHintText}>Add it to the book without standing down.</Text>
+        </Pressable>
+
         <Text style={styles.section}>Patrollers</Text>
         <View style={styles.divider} />
 
@@ -674,6 +682,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   liveHintText: { fontSize: 13, color: colors.text, lineHeight: 18, fontWeight: "500" },
+  logIncident: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  logIncidentText: { fontSize: 16, fontWeight: "800", color: colors.primary, marginBottom: 4 },
   section: { fontSize: 18, fontWeight: "700", marginTop: spacing.md },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
   card: { paddingVertical: spacing.sm, marginBottom: spacing.sm },

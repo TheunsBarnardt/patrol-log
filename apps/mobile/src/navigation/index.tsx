@@ -28,12 +28,14 @@ import { LivePatrollerMapScreen } from "../screens/LivePatrollerMapScreen";
 import { MessagingScreen } from "../screens/MessagingScreen";
 import { ChannelScreen } from "../screens/ChannelScreen";
 import { NewGroupScreen } from "../screens/NewGroupScreen";
+import { LogIncidentScreen } from "../screens/LogIncidentScreen";
 
 export type RootStackParamList = {
   Login: undefined;
   Home: undefined;
   CommencePatrol: undefined;
   CapturePatrol: undefined;
+  LogIncident: undefined;
   JoinPatrol: undefined;
   ActivePatrol: { patrolId: string };
   HotspotsMap: undefined;
@@ -173,6 +175,7 @@ export function RootNavigator() {
             />
             <Stack.Screen name="CommencePatrol" component={CommencePatrolScreen} options={{ title: "Commence patrol" }} />
             <Stack.Screen name="CapturePatrol" component={CapturePatrolScreen} options={{ title: "Capture patrol" }} />
+            <Stack.Screen name="LogIncident" component={LogIncidentScreen} options={{ title: "Log incident" }} />
             <Stack.Screen name="JoinPatrol" component={JoinPatrolScreen} options={{ title: "Join patrol" }} />
             <Stack.Screen name="ActivePatrol" component={ActivePatrolScreen} options={{ title: "Active patrol" }} />
             <Stack.Screen name="HotspotsMap" component={HotspotsMapScreen} options={{ title: "Hotspots" }} />

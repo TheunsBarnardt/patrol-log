@@ -205,7 +205,30 @@ export function createApiClient(opts: ApiClientOptions) {
         name: string;
         members: MessageChannelMember[];
       }>(`/messages/${channelId}/members`),
+
+    obMeta: () =>
+      request<{ suburbs: { id: string; name: string; aliases: string[] }[] }>("/ob/meta"),
+    createIncident: (body: CreateIncidentRequest) =>
+      request<{ obNumber: string; dangerLevel: string | null }>("/ob/entries", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
   };
+}
+
+export interface CreateIncidentRequest {
+  category: string;
+  type_keys: string[];
+  phase?: "alpha" | "bravo" | null;
+  date: string;
+  time: string;
+  suburb_id: string;
+  street?: string;
+  lat?: number | null;
+  lng?: number | null;
+  description: string;
+  attendance?: "present" | "assisting" | "not_present" | null;
+  received_from?: string[];
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;

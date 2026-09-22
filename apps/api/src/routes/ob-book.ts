@@ -25,7 +25,7 @@ import {
   type ObPhase,
 } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
-import { getAuth, requireAccessLevel, requireAuth } from "../lib/middleware.js";
+import { getAuth, requireAuth } from "../lib/middleware.js";
 import { getDb, type Db } from "../db/index.js";
 import {
   obEntries,
@@ -48,7 +48,16 @@ import { assertSectorAccess, tenantScope } from "../lib/scope.js";
 import type { AuthenticatedContext } from "../env.js";
 
 const ob = new Hono<AppContext>();
-ob.use("*", requireAuth(), requireAccessLevel("system_admin", "admin", "sector_lead", "call_centre_agent"));
+const DESK = new Set(["system_admin", "admin", "sector_lead", "call_centre_agent"]);
+ob.use("*", requireAuth());
+ob.use("*", async (c, next) => {
+  const path = c.req.path;
+  const patrollerWrite = c.req.method === "POST" && /\/entries$/.test(path);
+  const patrollerRead = c.req.method === "GET" && path.endsWith("/meta");
+  if (patrollerWrite || patrollerRead) return next();
+  if (!DESK.has(getAuth(c).patroller.access_level)) throw new AppError("ACCESS_FORBIDDEN");
+  return next();
+});
 
 const CATEGORIES = new Set<ObCategory>(["criminal", "emergency", "of_interest", "other"]);
 const SERVICE_KEYS = new Set(OB_SERVICES.map((s) => s.key));
@@ -654,6 +663,10 @@ async function insertEntry(
 ob.post("/entries", async (c) => {
   const auth = getAuth(c);
   const body = await c.req.json<WriteBody>();
+  if (auth.patroller.access_level === "patroller") {
+    body.sector_id = auth.patroller.sector_id;
+    if (!body.received_from?.length) body.received_from = ["CPF Member / Patroller"];
+  }
   const db = getDb(c.env);
   const norm = normalize(body, {});
   const sector = await resolveSector(db, auth, body.sector_id);
