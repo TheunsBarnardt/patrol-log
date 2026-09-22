@@ -68,6 +68,16 @@ export function LogIncidentScreen({ navigation }: Props) {
   const [suburbOpen, setSuburbOpen] = useState(false);
 
   useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    const id = "ob-log-placeholder";
+    if (document.getElementById(id)) return;
+    const el = document.createElement("style");
+    el.id = id;
+    el.textContent = `input::placeholder,textarea::placeholder{font-weight:400;color:${colors.textMuted}}`;
+    document.head.appendChild(el);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     void (async () => {
       const cached = await cacheGet<Suburb[]>("obSuburbs");
@@ -247,6 +257,7 @@ export function LogIncidentScreen({ navigation }: Props) {
               value={typeQuery}
               onChangeText={setTypeQuery}
               placeholder="Search name or code"
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
             />
             <ScrollView style={styles.menu} nestedScrollEnabled keyboardShouldPersistTaps="handled">
@@ -306,8 +317,8 @@ export function LogIncidentScreen({ navigation }: Props) {
             </>
           ) : (
             <>
-              <TextInput style={[styles.input, styles.whenField]} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
-              <TextInput style={[styles.input, styles.whenField]} value={time} onChangeText={setTime} placeholder="HH:MM" />
+              <TextInput style={[styles.input, styles.whenField]} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted} />
+              <TextInput style={[styles.input, styles.whenField]} value={time} onChangeText={setTime} placeholder="HH:MM" placeholderTextColor={colors.textMuted} />
             </>
           )}
         </View>
@@ -347,7 +358,7 @@ export function LogIncidentScreen({ navigation }: Props) {
         )}
 
         <Text style={styles.label}>Street number and name / complex</Text>
-        <TextInput style={styles.input} value={street} onChangeText={setStreet} placeholder="12 Myrdal Rd" />
+        <TextInput style={styles.input} value={street} onChangeText={setStreet} placeholder="12 Myrdal Rd" placeholderTextColor={colors.textMuted} />
 
         <Pressable style={styles.gps} onPress={() => void useGps()}>
           <Text style={styles.gpsText}>{locLabel ? `Pin set · ${locLabel}` : "Use my location"}</Text>
@@ -373,6 +384,7 @@ export function LogIncidentScreen({ navigation }: Props) {
           value={description}
           onChangeText={setDescription}
           placeholder="Short description"
+          placeholderTextColor={colors.textMuted}
           multiline
         />
 
@@ -400,7 +412,7 @@ const webFieldStyle: Record<string, string | number> = {
   borderRadius: radii.lg,
   padding: 14,
   fontSize: 16,
-  fontWeight: "600",
+  fontWeight: "400",
   color: colors.text,
   marginBottom: 12,
 };
@@ -435,7 +447,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     padding: spacing.md,
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "400",
     color: colors.text,
     marginBottom: spacing.sm,
   },
