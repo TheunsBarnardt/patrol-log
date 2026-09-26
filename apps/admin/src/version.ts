@@ -1,3 +1,3 @@
 /** Bump when shipping admin - shown in the sidebar About line. */
-export const APP_VERSION = "0.2.17";
+export const APP_VERSION = "0.2.18";
 export const APP_NAME = "Patrol Log Admin";
