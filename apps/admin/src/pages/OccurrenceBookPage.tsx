@@ -23,6 +23,7 @@ import {
 } from "@patrol-log/shared";
 import { adminFetch, authStore } from "../lib/api";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
+import { LocationMap } from "../components/LocationMap";
 import { Btn, Field, inputCls, selectCls } from "../components/Modal";
 
 interface Suburb { id: string; name: string; aliases: string[] }
@@ -577,10 +578,16 @@ export function OccurrenceBookPage() {
               <Field label="Street number and name / complex">
                 <input className={inputCls} value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} />
               </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Latitude"><input className={inputCls} inputMode="decimal" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} /></Field>
-                <Field label="Longitude"><input className={inputCls} inputMode="decimal" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} /></Field>
-              </div>
+              {(mode === "new" || hydrated) && (
+                <LocationMap
+                  key={hydrated ?? "new"}
+                  lat={form.lat}
+                  lng={form.lng}
+                  street={form.street}
+                  suburbName={meta.data?.suburbs.find((s) => s.id === form.suburbId)?.name ?? ""}
+                  onChange={(lat, lng) => setForm((current) => ({ ...current, lat, lng }))}
+                />
+              )}
             </section>
 
             <section className="rounded-xl border bg-white p-4 sm:p-6">

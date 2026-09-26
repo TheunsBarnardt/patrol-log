@@ -16,6 +16,8 @@ import {
   OB_VOI_SHAPES,
   dangerForTypes,
   formatObNumber,
+  obGeocodeHits,
+  obGeocodeSearchUrl,
   obPrefixFromSectorCode,
   obType,
   parseLocalWhen,
@@ -498,6 +500,27 @@ async function loadOwned(db: Db, auth: AuthenticatedContext, id: string) {
   }
   return entry;
 }
+
+ob.get("/geocode", async (c) => {
+  const q = (c.req.query("q") ?? "").trim();
+  const suburb = (c.req.query("suburb") ?? "").trim();
+  if (q.length < 3 || q.length > 200) throw new AppError("OB_GEOCODE_QUERY");
+  let res: Response;
+  try {
+    res = await fetch(obGeocodeSearchUrl(q, suburb), {
+      headers: {
+        "User-Agent": "PatrolLog/1.0 (occurrence book location search)",
+        Accept: "application/json",
+        "Accept-Language": "en",
+      },
+    });
+  } catch {
+    throw new AppError("OB_GEOCODE_UNAVAILABLE");
+  }
+  if (!res.ok) throw new AppError("OB_GEOCODE_UNAVAILABLE");
+  const results = obGeocodeHits(await res.json().catch(() => null));
+  return c.json({ results });
+});
 
 ob.get("/meta", async (c) => {
   const auth = getAuth(c);
