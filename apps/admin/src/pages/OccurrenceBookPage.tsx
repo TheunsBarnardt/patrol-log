@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DANGER_LEVELS,
@@ -230,6 +230,35 @@ function dangerClass(level: ObDangerLevel | null): string {
   return "bg-gray-100 text-gray-600";
 }
 
+function AccordionSection({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border bg-white">
+      <h2>
+        <button
+          type="button"
+          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left sm:px-6"
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          <span className="text-sm font-semibold text-gray-900">{title}</span>
+          <span className="text-lg leading-none text-gray-400" aria-hidden>{open ? "▴" : "▾"}</span>
+        </button>
+      </h2>
+      {open && <div className="border-t px-4 py-4 sm:px-6">{children}</div>}
+    </section>
+  );
+}
+
 export function OccurrenceBookPage() {
   const qc = useQueryClient();
   const profile = authStore.getProfile();
@@ -248,6 +277,10 @@ export function OccurrenceBookPage() {
   const [seenTime, setSeenTime] = useState("");
   const [seenStreet, setSeenStreet] = useState("");
   const [seenNote, setSeenNote] = useState("");
+  const [openSection, setOpenSection] = useState("incident");
+  function toggleSection(id: string) {
+    setOpenSection((current) => (current === id ? "" : id));
+  }
 
   const meta = useQuery({
     queryKey: ["admin.ob.meta"],
@@ -314,6 +347,7 @@ export function OccurrenceBookPage() {
     setHydrated(null);
     setError("");
     setTypeQuery("");
+    setOpenSection("incident");
     setMode("new");
   }
 
@@ -504,9 +538,8 @@ export function OccurrenceBookPage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Incident</h2>
+          <div className="space-y-2">
+            <AccordionSection title="Incident" open={openSection === "incident"} onToggle={() => toggleSection("incident")}>
               {(meta.data?.sectors.length ?? 0) > 1 && (
                 <Field label="Sector" required>
                   <select className={selectCls} value={form.sectorId} disabled={mode === "edit"} onChange={(e) => setForm({ ...form, sectorId: e.target.value })}>
@@ -577,10 +610,9 @@ export function OccurrenceBookPage() {
                 </select>
                 {mustAttend && <p className="mt-1 text-xs text-gray-500">Emergencies, disasters and by-law are only logged if we were present or assisting.</p>}
               </Field>
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Location</h2>
+            <AccordionSection title="Location" open={openSection === "location"} onToggle={() => toggleSection("location")}>
               <Field label="Suburb" required>
                 <select className={selectCls} value={form.suburbId} onChange={(e) => setForm({ ...form, suburbId: e.target.value })}>
                   <option value="">Choose a suburb</option>
@@ -606,15 +638,13 @@ export function OccurrenceBookPage() {
                   onChange={(lat, lng) => setForm((current) => ({ ...current, lat, lng }))}
                 />
               )}
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Description</h2>
+            <AccordionSection title="Description" open={openSection === "description"} onToggle={() => toggleSection("description")}>
               <textarea className={inputCls} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Vehicle of interest</h2>
+            <AccordionSection title="Vehicle of interest" open={openSection === "vehicle"} onToggle={() => toggleSection("vehicle")}>
               {form.vehicles.map((v, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-2">
                   <select className={selectCls} value={v.colour} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, colour: e.target.value } : row) })}>
@@ -632,10 +662,9 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, vehicles: [...form.vehicles, emptyVehicle()] })}>+ Another vehicle</Btn>
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Person of interest</h2>
+            <AccordionSection title="Person of interest" open={openSection === "person"} onToggle={() => toggleSection("person")}>
               {form.pois.map((p, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-3">
                   <select className={selectCls} value={p.gender} onChange={(e) => setForm({ ...form, pois: form.pois.map((row, j) => j === i ? { ...row, gender: e.target.value } : row) })}>
@@ -647,10 +676,9 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, pois: [...form.pois, { gender: "", clothing: "", direction: "" }] })}>+ Person</Btn>
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-1 text-sm font-semibold text-gray-900">Injured people</h2>
+            <AccordionSection title="Injured people" open={openSection === "injured"} onToggle={() => toggleSection("injured")}>
               <p className="mb-3 text-xs text-gray-500">P1–P4 describes that person, not how dangerous the scene is.</p>
               {form.patients.map((p, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-2">
@@ -672,10 +700,9 @@ export function OccurrenceBookPage() {
                   />
                 </Field>
               </div>
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Who reacted</h2>
+            <AccordionSection title="Who reacted" open={openSection === "reacted"} onToggle={() => toggleSection("reacted")}>
               <Field label="Patrols that responded">
                 <MultiSelect
                   placeholder="Choose patrols"
@@ -738,11 +765,10 @@ export function OccurrenceBookPage() {
               <Field label="Action taken">
                 <textarea className={inputCls} rows={3} value={form.actionDetails} onChange={(e) => setForm({ ...form, actionDetails: e.target.value })} />
               </Field>
-            </section>
+            </AccordionSection>
 
             {mode === "edit" && detail.data && (
-              <section className="rounded-xl border bg-white p-4 sm:p-6">
-                <h2 className="mb-3 text-sm font-semibold text-gray-900">Last seen</h2>
+              <AccordionSection title="Last seen" open={openSection === "seen"} onToggle={() => toggleSection("seen")}>
                 <ul className="mb-3 space-y-1 text-sm text-gray-700">
                   {detail.data.sightings.length === 0 && <li>No later sightings. The incident location is the last known place.</li>}
                   {detail.data.sightings.map((s) => (
@@ -756,11 +782,10 @@ export function OccurrenceBookPage() {
                   <input className={inputCls} placeholder="What was seen" value={seenNote} onChange={(e) => setSeenNote(e.target.value)} />
                 </div>
                 <div className="mt-2"><Btn variant="ghost" onClick={() => void addSighting()}>Add sighting</Btn></div>
-              </section>
+              </AccordionSection>
             )}
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Close</h2>
+            <AccordionSection title="Close" open={openSection === "close"} onToggle={() => toggleSection("close")}>
               <Field label="Conclusion">
                 <select className={selectCls} value={form.conclusion} onChange={(e) => setForm({ ...form, conclusion: e.target.value })}>
                   <option value="">Leave active</option>
@@ -768,7 +793,7 @@ export function OccurrenceBookPage() {
                 </select>
               </Field>
               <p className="text-xs text-gray-500">Photos are not on this form yet. They will be stored on the incident once file upload is in place.</p>
-            </section>
+            </AccordionSection>
 
             <div className="flex flex-wrap justify-end gap-2">
               <Btn variant="ghost" onClick={backToList}>Cancel</Btn>
@@ -844,7 +869,7 @@ export function OccurrenceBookPage() {
             {
               header: "",
               className: "text-right",
-              render: (r) => <RowActions onEdit={() => { setEditingId(r.id); setHydrated(null); setMode("edit"); }} />,
+              render: (r) => <RowActions onEdit={() => { setEditingId(r.id); setHydrated(null); setOpenSection("incident"); setMode("edit"); }} />,
             },
           ]}
         />
