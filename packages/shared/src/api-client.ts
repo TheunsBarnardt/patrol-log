@@ -208,12 +208,49 @@ export function createApiClient(opts: ApiClientOptions) {
 
     obMeta: () =>
       request<{ suburbs: { id: string; name: string; aliases: string[] }[] }>("/ob/meta"),
+    lookupAddress: (q: string) =>
+      request<AddressLookupResult>(`/ob/lookup?q=${encodeURIComponent(q)}`),
     createIncident: (body: CreateIncidentRequest) =>
       request<{ obNumber: string; dangerLevel: string | null }>("/ob/entries", {
         method: "POST",
         body: JSON.stringify(body),
       }),
   };
+}
+
+export interface AddressLookupHit {
+  address: string;
+  ob_number: string;
+  status: "active" | "closed";
+  occurred_at: string;
+  /** True when the match is a later sighting, not the original incident address. */
+  last_seen: boolean;
+}
+
+export interface AddressLookupVehicle extends AddressLookupHit {
+  colour: string | null;
+  shape: string | null;
+  make: string | null;
+  model: string | null;
+  registration: string | null;
+  features: string | null;
+  name: string | null;
+  identifier: string | null;
+}
+
+export interface AddressLookupPerson extends AddressLookupHit {
+  gender: string | null;
+  clothing: string | null;
+  direction: string | null;
+  note: string | null;
+  name: string | null;
+  ethnicity: string | null;
+  identifier: string | null;
+}
+
+export interface AddressLookupResult {
+  vehicles: AddressLookupVehicle[];
+  persons: AddressLookupPerson[];
 }
 
 export interface CreateIncidentRequest {

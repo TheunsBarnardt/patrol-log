@@ -205,6 +205,13 @@ export function HomeScreen({ navigation }: Props) {
             subtitle="Crime, open gate, or something you came across"
             onPress={() => navigation.navigate("LogIncident")}
           />
+          <View style={styles.divider} />
+          <SuggestRow
+            icon="search-location"
+            title="Search address"
+            subtitle="Look up a place, name, or code"
+            onPress={() => navigation.navigate("AddressLookup")}
+          />
         </View>
 
         <Text style={styles.section}>Suggestions</Text>

@@ -2,12 +2,14 @@
 // Call centre / sector lead capture. Phone, photos, and reports follow.
 
 import { Hono } from "hono";
-import { and, asc, desc, eq, inArray, isNull, like, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import {
   AppError,
   DEFAULT_SUBURBS,
   OB_CONCLUSIONS,
+  OB_ETHNICITIES,
   OB_INJURY_TAGS,
+  OB_PHONETIC_CODES,
   OB_POI_GENDERS,
   OB_RECEIVED_FROM,
   OB_SERVICES,
@@ -58,7 +60,7 @@ ob.use("*", requireAuth());
 ob.use("*", async (c, next) => {
   const path = c.req.path;
   const patrollerWrite = c.req.method === "POST" && /\/entries$/.test(path);
-  const patrollerRead = c.req.method === "GET" && path.endsWith("/meta");
+  const patrollerRead = c.req.method === "GET" && (path.endsWith("/meta") || path.endsWith("/lookup"));
   if (patrollerWrite || patrollerRead) return next();
   if (!DESK.has(getAuth(c).patroller.access_level)) throw new AppError("ACCESS_FORBIDDEN");
   return next();
@@ -71,6 +73,8 @@ const INJURY_KEYS = new Set<string>(OB_INJURY_TAGS.map((t) => t.key));
 const COLOURS = new Set<string>(OB_VOI_COLOURS);
 const SHAPES = new Set<string>(OB_VOI_SHAPES);
 const GENDERS = new Set<string>(OB_POI_GENDERS);
+const PHONETIC = new Set<string>(OB_PHONETIC_CODES);
+const ETHNICITIES = new Set<string>(OB_ETHNICITIES);
 const RECEIVED = new Set<string>(OB_RECEIVED_FROM);
 
 interface ServiceInput {
@@ -86,6 +90,8 @@ interface VehicleInput {
   model?: string | null;
   registration?: string | null;
   features?: string | null;
+  name?: string | null;
+  identifier?: string | null;
 }
 interface PersonInput {
   kind?: string;
@@ -94,6 +100,9 @@ interface PersonInput {
   direction?: string | null;
   injury_tag?: string | null;
   note?: string | null;
+  name?: string | null;
+  ethnicity?: string | null;
+  identifier?: string | null;
 }
 interface WriteBody {
   sector_id?: string;
@@ -136,8 +145,8 @@ interface Normalized {
   responderIds: string[];
   patrolIds: string[];
   services: { key: string; reference: string | null; otherName: string | null; securityCompanyId: string | null }[];
-  vehicles: { colour: string | null; shape: string | null; make: string | null; model: string | null; registration: string | null; features: string | null }[];
-  persons: { kind: "poi" | "patient"; gender: string | null; clothing: string | null; direction: string | null; injuryTag: string | null; note: string | null }[];
+  vehicles: { colour: string | null; shape: string | null; make: string | null; model: string | null; registration: string | null; features: string | null; name: string | null; identifier: string | null }[];
+  persons: { kind: "poi" | "patient"; gender: string | null; clothing: string | null; direction: string | null; injuryTag: string | null; note: string | null; name: string | null; ethnicity: string | null; identifier: string | null }[];
 }
 
 function canMaintainCompanies(auth: AuthenticatedContext): boolean {
@@ -146,6 +155,22 @@ function canMaintainCompanies(auth: AuthenticatedContext): boolean {
 
 function blank(value: string | null | undefined): string {
   return (value ?? "").trim();
+}
+
+function knownValue(value: string | null | undefined, allowed: Set<string>, max = 40): string | null {
+  const text = blank(value);
+  if (!text) return null;
+  if (text.length > max) throw new AppError("OB_INVALID_INPUT");
+  const match = [...allowed].find((item) => item.toLowerCase() === text.toLowerCase());
+  if (!match) throw new AppError("OB_INVALID_INPUT");
+  return match;
+}
+
+function knownName(value: string | null | undefined): string | null {
+  const text = blank(value).replace(/\s+/g, " ");
+  if (!text) return null;
+  if (text.length > 80) throw new AppError("OB_INVALID_INPUT");
+  return text;
 }
 
 function nowSast(): { date: string; time: string } {
@@ -303,8 +328,10 @@ function normalize(body: WriteBody, opts: { commenceShift?: boolean; extraTagKey
       model: blank(v.model) || null,
       registration: blank(v.registration).toUpperCase() || null,
       features: blank(v.features) || null,
+      name: knownName(v.name),
+      identifier: knownValue(v.identifier, PHONETIC),
     }))
-    .filter((v) => v.colour || v.shape || v.make || v.model || v.registration || v.features);
+    .filter((v) => v.colour || v.shape || v.make || v.model || v.registration || v.features || v.name || v.identifier);
   for (const v of vehicles) {
     if (v.colour && !COLOURS.has(v.colour)) throw new AppError("OB_INVALID_INPUT");
     if (v.shape && !SHAPES.has(v.shape)) throw new AppError("OB_INVALID_INPUT");
@@ -320,8 +347,11 @@ function normalize(body: WriteBody, opts: { commenceShift?: boolean; extraTagKey
       direction: blank(p.direction) || null,
       injuryTag: blank(p.injury_tag) || null,
       note: blank(p.note) || null,
+      name: kind === "poi" ? knownName(p.name) : null,
+      ethnicity: kind === "poi" ? knownValue(p.ethnicity, ETHNICITIES) : null,
+      identifier: kind === "poi" ? knownValue(p.identifier, PHONETIC) : null,
     };
-    if (!row.gender && !row.clothing && !row.direction && !row.injuryTag && !row.note) return [];
+    if (!row.gender && !row.clothing && !row.direction && !row.injuryTag && !row.note && !row.name && !row.ethnicity && !row.identifier) return [];
     return [row];
   });
   for (const p of persons) {
@@ -550,6 +580,8 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
       model: v.model,
       registration: v.registration,
       features: v.features,
+      name: v.name,
+      identifier: v.identifier,
     })),
     persons: persons.map((p) => ({
       kind: p.kind,
@@ -558,6 +590,9 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
       direction: p.direction,
       injuryTag: p.injuryTag,
       note: p.note,
+      name: p.name,
+      ethnicity: p.ethnicity,
+      identifier: p.identifier,
     })),
     sightings: sightings.map((s) => ({
       id: s.id,
@@ -655,6 +690,233 @@ ob.get("/meta", async (c) => {
     tags: [...OB_TAGS, ...tagRows],
     canMaintainCompanies: canMaintainCompanies(auth),
   });
+});
+
+function addressTokens(raw: string): string[] {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length >= 2 || /^\d/.test(token))
+    .slice(0, 8);
+}
+
+function formatLookupAddress(street: string, suburbName: string | null): string {
+  return [street.trim(), (suburbName ?? "").trim()].filter(Boolean).join(", ");
+}
+
+function covers(haystack: string, tokens: string[]): boolean {
+  const hay = haystack.toLowerCase();
+  return tokens.every((token) => hay.includes(token));
+}
+
+function fold(...parts: Array<string | null | undefined>): string {
+  return parts.filter(Boolean).join(" ");
+}
+
+function tokenIn(blob: SQL, token: string) {
+  return sql`${blob} LIKE ${`%${token.replace(/[%_]/g, "")}%`}`;
+}
+
+/** Patrollers search a name, code, registration, or address for a vehicle or person of interest. */
+ob.get("/lookup", async (c) => {
+  const auth = getAuth(c);
+  const db = getDb(c.env);
+  const tokens = addressTokens(c.req.query("q") ?? "");
+  if (tokens.join("").length < 3) return c.json({ vehicles: [], persons: [] });
+
+  await ensureSuburbs(db, auth.patroller.cpf_id);
+  const suburbRows = await db.select().from(obSuburbs).where(eq(obSuburbs.cpfId, auth.patroller.cpf_id));
+  const suburbIdsFor = (token: string) =>
+    suburbRows
+      .filter((suburb) => {
+        if (suburb.name.toLowerCase().includes(token)) return true;
+        return (suburb.aliases ?? []).some((alias) => alias.toLowerCase().includes(token));
+      })
+      .map((suburb) => suburb.id);
+
+  const tokenOn = (
+    streetCol: typeof obEntries.street | typeof obSightings.street,
+    suburbCol: typeof obEntries.suburbId | typeof obSightings.suburbId,
+    token: string,
+  ) => {
+    const streetLike = like(streetCol, `%${token.replace(/[%_]/g, "")}%`);
+    const ids = suburbIdsFor(token);
+    return ids.length ? or(streetLike, inArray(suburbCol, ids)) : streetLike;
+  };
+
+  const scope = eq(obEntries.cpfId, auth.patroller.cpf_id);
+  const [entryHits, sightingHits] = await Promise.all([
+    db
+      .select({ entry: obEntries, suburbName: obSuburbs.name })
+      .from(obEntries)
+      .leftJoin(obSuburbs, eq(obEntries.suburbId, obSuburbs.id))
+      .where(and(scope, ...tokens.map((token) => tokenOn(obEntries.street, obEntries.suburbId, token))))
+      .orderBy(desc(obEntries.occurredAt))
+      .limit(80),
+    db
+      .select({
+        entryId: obSightings.entryId,
+        street: obSightings.street,
+        suburbId: obSightings.suburbId,
+        suburbName: obSuburbs.name,
+        seenAt: obSightings.seenAt,
+      })
+      .from(obSightings)
+      .innerJoin(obEntries, eq(obSightings.entryId, obEntries.id))
+      .leftJoin(obSuburbs, eq(obSightings.suburbId, obSuburbs.id))
+      .where(and(scope, ...tokens.map((token) => tokenOn(obSightings.street, obSightings.suburbId, token))))
+      .orderBy(desc(obSightings.seenAt))
+      .limit(80),
+  ]);
+
+  const vehicleBlob = sql`lower(
+    coalesce(${obVehicles.name}, '') || ' ' || coalesce(${obVehicles.identifier}, '') || ' ' ||
+    coalesce(${obVehicles.colour}, '') || ' ' || coalesce(${obVehicles.shape}, '') || ' ' ||
+    coalesce(${obVehicles.make}, '') || ' ' || coalesce(${obVehicles.model}, '') || ' ' ||
+    coalesce(${obVehicles.registration}, '') || ' ' || coalesce(${obVehicles.features}, '') || ' ' ||
+    ${obEntries.street} || ' ' || coalesce(${obSuburbs.name}, '') || ' ' || coalesce(${obSuburbs.aliases}, '')
+  )`;
+  const personBlob = sql`lower(
+    coalesce(${obPersons.name}, '') || ' ' || coalesce(${obPersons.identifier}, '') || ' ' ||
+    coalesce(${obPersons.ethnicity}, '') || ' ' || coalesce(${obPersons.gender}, '') || ' ' ||
+    coalesce(${obPersons.clothing}, '') || ' ' || coalesce(${obPersons.direction}, '') || ' ' ||
+    coalesce(${obPersons.note}, '') || ' ' || ${obEntries.street} || ' ' || coalesce(${obSuburbs.name}, '') || ' ' ||
+    coalesce(${obSuburbs.aliases}, '')
+  )`;
+  const [vehicleFieldHits, personFieldHits] = await Promise.all([
+    db
+      .select({ id: obEntries.id })
+      .from(obVehicles)
+      .innerJoin(obEntries, eq(obVehicles.entryId, obEntries.id))
+      .leftJoin(obSuburbs, eq(obEntries.suburbId, obSuburbs.id))
+      .where(and(scope, ...tokens.map((token) => tokenIn(vehicleBlob, token))))
+      .limit(80),
+    db
+      .select({ id: obEntries.id })
+      .from(obPersons)
+      .innerJoin(obEntries, eq(obPersons.entryId, obEntries.id))
+      .leftJoin(obSuburbs, eq(obEntries.suburbId, obSuburbs.id))
+      .where(and(scope, eq(obPersons.kind, "poi"), ...tokens.map((token) => tokenIn(personBlob, token))))
+      .limit(80),
+  ]);
+
+  const known = new Set(entryHits.map((row) => row.entry.id));
+  const extraIds = [...new Set([
+    ...sightingHits.map((row) => row.entryId),
+    ...vehicleFieldHits.map((row) => row.id),
+    ...personFieldHits.map((row) => row.id),
+  ].filter((id) => !known.has(id)))];
+  const extraEntries = extraIds.length
+    ? await db
+        .select({ entry: obEntries, suburbName: obSuburbs.name })
+        .from(obEntries)
+        .leftJoin(obSuburbs, eq(obEntries.suburbId, obSuburbs.id))
+        .where(and(scope, inArray(obEntries.id, extraIds)))
+    : [];
+
+  const entries = [...entryHits, ...extraEntries]
+    .sort((a, b) => b.entry.occurredAt.localeCompare(a.entry.occurredAt))
+    .slice(0, 40);
+  const ids = entries.map((row) => row.entry.id);
+  if (!ids.length) return c.json({ vehicles: [], persons: [] });
+
+  const [vehicleRows, personRows] = await Promise.all([
+    db.select().from(obVehicles).where(inArray(obVehicles.entryId, ids)),
+    db.select().from(obPersons).where(and(inArray(obPersons.entryId, ids), eq(obPersons.kind, "poi"))),
+  ]);
+
+  const suburbById = new Map(suburbRows.map((suburb) => [suburb.id, suburb]));
+  const aliasText = (suburbId: string | null) => (suburbId ? (suburbById.get(suburbId)?.aliases ?? []).join(" ") : "");
+  const latestSighting = new Map<string, { street: string; suburbId: string | null; suburbName: string | null }>();
+  for (const sighting of sightingHits) {
+    if (!latestSighting.has(sighting.entryId)) {
+      latestSighting.set(sighting.entryId, { street: sighting.street, suburbId: sighting.suburbId, suburbName: sighting.suburbName });
+    }
+  }
+
+  const vehicles: {
+    colour: string | null;
+    shape: string | null;
+    make: string | null;
+    model: string | null;
+    registration: string | null;
+    features: string | null;
+    name: string | null;
+    identifier: string | null;
+    address: string;
+    ob_number: string;
+    status: "active" | "closed";
+    occurred_at: string;
+    last_seen: boolean;
+  }[] = [];
+  const persons: {
+    gender: string | null;
+    clothing: string | null;
+    direction: string | null;
+    note: string | null;
+    name: string | null;
+    ethnicity: string | null;
+    identifier: string | null;
+    address: string;
+    ob_number: string;
+    status: "active" | "closed";
+    occurred_at: string;
+    last_seen: boolean;
+  }[] = [];
+
+  for (const row of entries) {
+    const sighting = latestSighting.get(row.entry.id);
+    const incidentPlace = fold(row.entry.street, row.suburbName, aliasText(row.entry.suburbId));
+    const sightingPlace = sighting ? fold(sighting.street, sighting.suburbName, aliasText(sighting.suburbId)) : "";
+    const lastSeen = !covers(incidentPlace, tokens) && covers(sightingPlace, tokens);
+    const address = lastSeen && sighting
+      ? formatLookupAddress(sighting.street, sighting.suburbName)
+      : formatLookupAddress(row.entry.street, row.suburbName);
+    const place = fold(incidentPlace, sightingPlace);
+    const base = {
+      address,
+      ob_number: row.entry.obNumber,
+      status: row.entry.status,
+      occurred_at: row.entry.occurredAt,
+      last_seen: lastSeen,
+    };
+    for (const vehicle of vehicleRows) {
+      if (vehicle.entryId !== row.entry.id) continue;
+      if (!vehicle.colour && !vehicle.shape && !vehicle.make && !vehicle.model && !vehicle.registration && !vehicle.features && !vehicle.name && !vehicle.identifier) continue;
+      const hay = fold(place, vehicle.name, vehicle.identifier, vehicle.colour, vehicle.shape, vehicle.make, vehicle.model, vehicle.registration, vehicle.features);
+      if (!covers(hay, tokens)) continue;
+      vehicles.push({
+        ...base,
+        colour: vehicle.colour,
+        shape: vehicle.shape,
+        make: vehicle.make,
+        model: vehicle.model,
+        registration: vehicle.registration,
+        features: vehicle.features,
+        name: vehicle.name,
+        identifier: vehicle.identifier,
+      });
+    }
+    for (const person of personRows) {
+      if (person.entryId !== row.entry.id) continue;
+      const hay = fold(place, person.name, person.identifier, person.ethnicity, person.gender, person.clothing, person.direction, person.note);
+      if (!covers(hay, tokens)) continue;
+      persons.push({
+        ...base,
+        gender: person.gender,
+        clothing: person.clothing,
+        direction: person.direction,
+        note: person.note,
+        name: person.name,
+        ethnicity: person.ethnicity,
+        identifier: person.identifier,
+      });
+    }
+  }
+
+  return c.json({ vehicles, persons });
 });
 
 ob.get("/entries", async (c) => {
