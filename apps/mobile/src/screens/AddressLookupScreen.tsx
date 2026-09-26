@@ -29,14 +29,13 @@ function whenLabel(value: string): string {
 }
 
 function vehicleTitle(vehicle: AddressLookupVehicle): string {
-  const name = [vehicle.colour, vehicle.make, vehicle.model, vehicle.shape].filter(Boolean).join(" ");
-  const title = name || "Vehicle";
-  return vehicle.registration ? `${title} · ${vehicle.registration}` : title;
+  const description = [vehicle.colour, vehicle.make, vehicle.model, vehicle.shape].filter(Boolean).join(" ");
+  return [vehicle.identifier, vehicle.name, description || "Vehicle", vehicle.registration].filter(Boolean).join(" · ");
 }
 
 function personTitle(person: AddressLookupPerson): string {
-  const title = [person.gender, person.clothing].filter(Boolean).join(" · ");
-  return title || "Person of interest";
+  const description = [person.gender, person.clothing].filter(Boolean).join(" · ");
+  return [person.identifier, person.name, description].filter(Boolean).join(" · ") || "Person of interest";
 }
 
 export function AddressLookupScreen() {
@@ -50,7 +49,7 @@ export function AddressLookupScreen() {
   async function search() {
     const q = query.trim();
     if (q.length < 3) {
-      setError("Enter at least a street name.");
+      setError("Enter a name, code, or street.");
       setResult(null);
       return;
     }
@@ -80,14 +79,14 @@ export function AddressLookupScreen() {
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.hint}>
-          Search a street or address to see if a vehicle or person of interest was logged there.
+          Search a name, code such as Whisky, registration, or address.
         </Text>
         <View style={styles.searchRow}>
           <TextInput
             style={styles.input}
             value={query}
             onChangeText={setQuery}
-            placeholder="12 Jean Avenue, Wierdapark"
+            placeholder="Whisky, ABC123GP, or 12 Jean Avenue"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="words"
             autoCorrect={false}
@@ -132,7 +131,7 @@ export function AddressLookupScreen() {
               <Card
                 key={`${person.ob_number}-poi-${index}`}
                 title={personTitle(person)}
-                detail={[person.direction ? `Heading ${person.direction}` : null, person.note, person.last_seen ? "Last seen here" : null].filter(Boolean).join(" · ")}
+                detail={[person.ethnicity, person.direction ? `Heading ${person.direction}` : null, person.note, person.last_seen ? "Last seen here" : null].filter(Boolean).join(" · ")}
                 address={person.address}
                 meta={`${person.ob_number} · ${whenLabel(person.occurred_at)} · ${person.status === "active" ? "Open" : "Closed"}`}
               />

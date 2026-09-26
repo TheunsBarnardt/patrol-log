@@ -267,6 +267,17 @@ export const OB_VOI_SHAPES = [
 
 export const OB_POI_GENDERS = ["Male", "Female", "Unknown"] as const;
 
+/** Radio code names for a known vehicle or person. Whisky is the spelling used on the air. */
+export const OB_PHONETIC_CODES = [
+  "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel",
+  "India", "Juliet", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa",
+  "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whisky", "X-ray",
+  "Yankee", "Zulu",
+] as const;
+
+/** Optional physical description. Leave blank when it is not known. */
+export const OB_ETHNICITIES = ["Black", "White", "Coloured", "Indian", "Asian", "Other"] as const;
+
 export const OB_TIME_BANDS: { label: string; fromMin: number; toMin: number; range: string }[] = [
   { label: "During the Night", fromMin: 0, toMin: 4 * 60, range: "00:00 - 04:00" },
   { label: "Early Morning", fromMin: 4 * 60, toMin: 8 * 60, range: "04:00 - 08:00" },

@@ -234,6 +234,8 @@ export interface AddressLookupVehicle extends AddressLookupHit {
   model: string | null;
   registration: string | null;
   features: string | null;
+  name: string | null;
+  identifier: string | null;
 }
 
 export interface AddressLookupPerson extends AddressLookupHit {
@@ -241,6 +243,9 @@ export interface AddressLookupPerson extends AddressLookupHit {
   clothing: string | null;
   direction: string | null;
   note: string | null;
+  name: string | null;
+  ethnicity: string | null;
+  identifier: string | null;
 }
 
 export interface AddressLookupResult {

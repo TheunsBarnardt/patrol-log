@@ -209,7 +209,7 @@ export function HomeScreen({ navigation }: Props) {
           <SuggestRow
             icon="search-location"
             title="Search address"
-            subtitle="See if a place has a vehicle or person of interest"
+            subtitle="Look up a place, name, or code"
             onPress={() => navigation.navigate("AddressLookup")}
           />
         </View>
