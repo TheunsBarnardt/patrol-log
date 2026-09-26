@@ -31,6 +31,7 @@ import { getAuth, requireAuth } from "../lib/middleware.js";
 import { getDb, type Db } from "../db/index.js";
 import {
   obEntries,
+  obEntryPatrols,
   obEntryResponders,
   obEntryServices,
   obEntryTags,
@@ -44,6 +45,7 @@ import {
   patrollers,
   patrols,
   sectors,
+  vehicles,
 } from "../db/schema.js";
 import { logAudit } from "../lib/audit.js";
 import { assertSectorAccess, tenantScope } from "../lib/scope.js";
@@ -109,6 +111,7 @@ interface WriteBody {
   action_details?: string;
   tag_keys?: string[];
   responder_ids?: string[];
+  patrol_ids?: string[];
   services?: ServiceInput[];
   vehicles?: VehicleInput[];
   persons?: PersonInput[];
@@ -130,6 +133,7 @@ interface Normalized {
   actionDetails: string;
   tagKeys: string[];
   responderIds: string[];
+  patrolIds: string[];
   services: { key: string; reference: string | null; otherName: string | null; securityCompanyId: string | null }[];
   vehicles: { colour: string | null; shape: string | null; make: string | null; model: string | null; registration: string | null; features: string | null }[];
   persons: { kind: "poi" | "patient"; gender: string | null; clothing: string | null; direction: string | null; injuryTag: string | null; note: string | null }[];
@@ -340,6 +344,7 @@ function normalize(body: WriteBody, opts: { commenceShift?: boolean }): Normaliz
     actionDetails: (source.action_details ?? "").trim(),
     tagKeys,
     responderIds: [...new Set((source.responder_ids ?? []).map((id) => id.trim()).filter(Boolean))],
+    patrolIds: [...new Set((source.patrol_ids ?? []).map((id) => id.trim()).filter(Boolean))],
     services,
     vehicles,
     persons,
@@ -363,6 +368,50 @@ async function assertResponders(db: Db, auth: AuthenticatedContext, sectorId: st
   if (rows.length !== ids.length) throw new AppError("OB_INVALID_INPUT");
 }
 
+async function assertPatrols(db: Db, auth: AuthenticatedContext, sectorId: string, ids: string[]) {
+  if (!ids.length) return;
+  const rows = await db
+    .select({ id: patrols.id })
+    .from(patrols)
+    .where(and(eq(patrols.cpfId, auth.patroller.cpf_id), eq(patrols.sectorId, sectorId), inArray(patrols.id, ids)));
+  if (rows.length !== ids.length) throw new AppError("OB_INVALID_INPUT");
+}
+
+const PATROL_TYPE_LABEL: Record<string, string> = {
+  foot: "Foot",
+  vehicle: "Vehicle",
+  static: "Static",
+  sector_monitoring: "Sector monitoring",
+  ops: "OPS",
+  responding: "Responding",
+};
+
+function patrolOptionLabel(callSign: string, patrolType: string, registration: string | null): string {
+  const type = PATROL_TYPE_LABEL[patrolType] ?? patrolType;
+  return registration ? `${callSign} · ${type} · ${registration}` : `${callSign} · ${type}`;
+}
+
+async function loadPatrolOptions(db: Db, where: ReturnType<typeof and>) {
+  const rows = await db
+    .select({
+      id: patrols.id,
+      sectorId: patrols.sectorId,
+      patrolType: patrols.patrolType,
+      callSign: patrollers.callSign,
+      registration: vehicles.registration,
+    })
+    .from(patrols)
+    .innerJoin(patrollers, eq(patrols.primaryPatrollerId, patrollers.id))
+    .leftJoin(vehicles, eq(patrols.vehicleId, vehicles.id))
+    .where(where)
+    .orderBy(asc(patrollers.callSign));
+  return rows.map((row) => ({
+    id: row.id,
+    sectorId: row.sectorId,
+    label: patrolOptionLabel(row.callSign, row.patrolType, row.registration),
+  }));
+}
+
 async function assertCompanies(db: Db, cpfId: string, services: Normalized["services"]) {
   const ids = [...new Set(services.map((s) => s.securityCompanyId).filter((id): id is string => !!id))];
   if (!ids.length) return;
@@ -377,6 +426,7 @@ async function replaceChildren(db: Db, entryId: string, norm: Normalized) {
   await db.delete(obEntryTypes).where(eq(obEntryTypes.entryId, entryId));
   await db.delete(obEntryServices).where(eq(obEntryServices.entryId, entryId));
   await db.delete(obEntryResponders).where(eq(obEntryResponders.entryId, entryId));
+  await db.delete(obEntryPatrols).where(eq(obEntryPatrols.entryId, entryId));
   await db.delete(obEntryTags).where(eq(obEntryTags.entryId, entryId));
   await db.delete(obVehicles).where(eq(obVehicles.entryId, entryId));
   await db.delete(obPersons).where(eq(obPersons.entryId, entryId));
@@ -403,6 +453,9 @@ async function replaceChildren(db: Db, entryId: string, norm: Normalized) {
   if (norm.responderIds.length) {
     await db.insert(obEntryResponders).values(norm.responderIds.map((patrollerId) => ({ entryId, patrollerId })));
   }
+  if (norm.patrolIds.length) {
+    await db.insert(obEntryPatrols).values(norm.patrolIds.map((patrolId) => ({ entryId, patrolId })));
+  }
   if (norm.tagKeys.length) {
     await db.insert(obEntryTags).values(norm.tagKeys.map((tagKey) => ({ entryId, tagKey })));
   }
@@ -416,10 +469,15 @@ function splitWhen(occurredAt: string): { date: string; time: string } {
 }
 
 async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
-  const [types, services, responders, tags, vehicles, persons, sightings, suburb] = await Promise.all([
+  const [types, services, responders, patrolLinks, tags, vehicles, persons, sightings, suburb] = await Promise.all([
     db.select().from(obEntryTypes).where(eq(obEntryTypes.entryId, entry.id)).orderBy(asc(obEntryTypes.sortOrder)),
     db.select().from(obEntryServices).where(eq(obEntryServices.entryId, entry.id)),
-    db.select().from(obEntryResponders).where(eq(obEntryResponders.entryId, entry.id)),
+    db
+      .select({ id: patrollers.id, callSign: patrollers.callSign, name: patrollers.name })
+      .from(obEntryResponders)
+      .innerJoin(patrollers, eq(obEntryResponders.patrollerId, patrollers.id))
+      .where(eq(obEntryResponders.entryId, entry.id)),
+    db.select().from(obEntryPatrols).where(eq(obEntryPatrols.entryId, entry.id)),
     db.select().from(obEntryTags).where(eq(obEntryTags.entryId, entry.id)),
     db.select().from(obVehicles).where(eq(obVehicles.entryId, entry.id)),
     db.select().from(obPersons).where(eq(obPersons.entryId, entry.id)),
@@ -428,6 +486,10 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
       ? db.query.obSuburbs.findFirst({ where: eq(obSuburbs.id, entry.suburbId) })
       : Promise.resolve(null),
   ]);
+  const patrolIds = patrolLinks.map((row) => row.patrolId);
+  const savedPatrols = patrolIds.length
+    ? await loadPatrolOptions(db, and(eq(patrols.cpfId, entry.cpfId), inArray(patrols.id, patrolIds)))
+    : [];
   const when = splitWhen(entry.occurredAt);
   return {
     id: entry.id,
@@ -464,7 +526,10 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
       otherName: s.otherName,
       securityCompanyId: s.securityCompanyId,
     })),
-    responderIds: responders.map((r) => r.patrollerId),
+    responderIds: responders.map((r) => r.id),
+    responders: responders.map((r) => ({ id: r.id, callSign: r.callSign, name: r.name })),
+    patrolIds,
+    patrols: savedPatrols.map((row) => ({ id: row.id, label: row.label })),
     tagKeys: tags.map((t) => t.tagKey),
     vehicles: vehicles.map((v) => ({
       colour: v.colour,
@@ -528,7 +593,7 @@ ob.get("/meta", async (c) => {
   await ensureSuburbs(db, auth.patroller.cpf_id);
   const sectorId = auth.patroller.access_level === "system_admin" ? null : auth.patroller.sector_id;
 
-  const [suburbRows, companyRows, sectorRows, onPatrol] = await Promise.all([
+  const [suburbRows, companyRows, sectorRows, onPatrol, activePatrols] = await Promise.all([
     db.select().from(obSuburbs).where(eq(obSuburbs.cpfId, auth.patroller.cpf_id)).orderBy(asc(obSuburbs.sortOrder), asc(obSuburbs.name)),
     db
       .select()
@@ -558,6 +623,14 @@ ob.get("/meta", async (c) => {
           sectorId ? eq(patrols.sectorId, sectorId) : undefined,
         ),
       ),
+    loadPatrolOptions(
+      db,
+      and(
+        eq(patrols.cpfId, auth.patroller.cpf_id),
+        eq(patrols.state, "active"),
+        sectorId ? eq(patrols.sectorId, sectorId) : undefined,
+      ),
+    ),
   ]);
 
   return c.json({
@@ -565,6 +638,7 @@ ob.get("/meta", async (c) => {
     securityCompanies: companyRows.map((s) => ({ id: s.id, name: s.name })),
     sectors: sectorRows,
     onPatrol,
+    patrols: activePatrols,
     canMaintainCompanies: canMaintainCompanies(auth),
   });
 });
@@ -695,6 +769,7 @@ ob.post("/entries", async (c) => {
   const sector = await resolveSector(db, auth, body.sector_id);
   await assertSuburb(db, auth.patroller.cpf_id, norm.suburbId);
   await assertResponders(db, auth, sector.id, norm.responderIds);
+  await assertPatrols(db, auth, sector.id, norm.patrolIds);
   await assertCompanies(db, auth.patroller.cpf_id, norm.services);
   const created = await insertEntry(c, db, auth, sector, norm);
   await logAudit(db, "ob.entry.created", auth, { ob_number: created.obNumber, entry_id: created.id });
@@ -711,6 +786,7 @@ ob.patch("/entries/:id", async (c) => {
   const norm = normalize(body, { commenceShift: isCommence });
   await assertSuburb(db, auth.patroller.cpf_id, norm.suburbId);
   await assertResponders(db, auth, existing.sectorId, norm.responderIds);
+  await assertPatrols(db, auth, existing.sectorId, norm.patrolIds);
   await assertCompanies(db, auth.patroller.cpf_id, norm.services);
 
   const [updated] = await db

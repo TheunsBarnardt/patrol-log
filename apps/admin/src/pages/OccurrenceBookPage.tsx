@@ -24,17 +24,20 @@ import {
 import { adminFetch, authStore } from "../lib/api";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
 import { LocationMap } from "../components/LocationMap";
+import { MultiSelect } from "../components/MultiSelect";
 import { Btn, Field, inputCls, selectCls } from "../components/Modal";
 
 interface Suburb { id: string; name: string; aliases: string[] }
 interface Company { id: string; name: string }
 interface Sector { id: string; name: string; code: string | null }
 interface OnPatrol { id: string; callSign: string; name: string; sectorId: string }
+interface PatrolOption { id: string; label: string; sectorId: string }
 interface Meta {
   suburbs: Suburb[];
   securityCompanies: Company[];
   sectors: Sector[];
   onPatrol: OnPatrol[];
+  patrols: PatrolOption[];
   canMaintainCompanies: boolean;
 }
 interface ListRow {
@@ -81,6 +84,9 @@ interface EntryDetail {
   types: { key: string; isPrimary: boolean }[];
   services: { key: string; reference: string | null; otherName: string | null; securityCompanyId: string | null }[];
   responderIds: string[];
+  responders: { id: string; callSign: string; name: string }[];
+  patrolIds: string[];
+  patrols: { id: string; label: string }[];
   tagKeys: string[];
   vehicles: VehicleForm[];
   persons: { kind: "poi" | "patient"; gender: string | null; clothing: string | null; direction: string | null; injuryTag: string | null; note: string | null }[];
@@ -105,6 +111,7 @@ interface FormState {
   actionDetails: string;
   tagKeys: string[];
   responderIds: string[];
+  patrolIds: string[];
   serviceOn: Record<string, boolean>;
   serviceRef: Record<string, string>;
   otherName: string;
@@ -152,6 +159,7 @@ function emptyForm(sectorId: string): FormState {
     actionDetails: "",
     tagKeys: [],
     responderIds: [],
+    patrolIds: [],
     serviceOn: {},
     serviceRef: {},
     otherName: "",
@@ -195,6 +203,7 @@ function fromEntry(entry: EntryDetail): FormState {
     actionDetails: entry.actionDetails ?? "",
     tagKeys: entry.tagKeys ?? [],
     responderIds: entry.responderIds ?? [],
+    patrolIds: entry.patrolIds ?? [],
     serviceOn,
     serviceRef,
     otherName,
@@ -219,10 +228,6 @@ function dangerClass(level: ObDangerLevel | null): string {
   if (level === "respond") return "bg-emerald-100 text-emerald-800";
   if (level === "no_response") return "bg-blue-100 text-blue-900";
   return "bg-gray-100 text-gray-600";
-}
-
-function toggle(list: string[], value: string): string[] {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
 export function OccurrenceBookPage() {
@@ -287,6 +292,20 @@ export function OccurrenceBookPage() {
   const mustAttend = requiresAttendance(form.category, typeKeys);
   const isCommence = detail.data?.types.some((t) => t.key === "commence_shift") ?? false;
   const onPatrol = (meta.data?.onPatrol ?? []).filter((p) => !form.sectorId || p.sectorId === form.sectorId);
+  const memberOptions = [
+    ...onPatrol.map((p) => ({ value: p.id, label: `${p.callSign} · ${p.name}` })),
+    ...(mode === "edit" ? detail.data?.responders ?? [] : [])
+      .filter((p) => !onPatrol.some((row) => row.id === p.id))
+      .map((p) => ({ value: p.id, label: `${p.callSign} · ${p.name}` })),
+  ];
+  const patrolOptions = [
+    ...(meta.data?.patrols ?? [])
+      .filter((p) => !form.sectorId || p.sectorId === form.sectorId)
+      .map((p) => ({ value: p.id, label: p.label })),
+    ...(mode === "edit" ? detail.data?.patrols ?? [] : [])
+      .filter((p) => !(meta.data?.patrols ?? []).some((row) => row.id === p.id))
+      .map((p) => ({ value: p.id, label: p.label })),
+  ];
 
   function startNew() {
     const sectorId = profile?.sector_id || meta.data?.sectors[0]?.id || "";
@@ -333,6 +352,7 @@ export function OccurrenceBookPage() {
       action_details: form.actionDetails,
       tag_keys: form.tagKeys,
       responder_ids: form.responderIds,
+      patrol_ids: form.patrolIds,
       services,
       vehicles: form.vehicles,
       persons: [
@@ -513,14 +533,14 @@ export function OccurrenceBookPage() {
                 </select>
               </Field>
               <Field label="Also happened (extra types)">
-                <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border p-2">
-                  {filteredTypes.filter((t) => t.key !== form.primaryKey).map((t) => (
-                    <label key={t.key} className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" checked={form.extraKeys.includes(t.key)} onChange={() => setForm({ ...form, extraKeys: toggle(form.extraKeys, t.key) })} />
-                      {t.name}{t.code ? ` (${t.code})` : ""}
-                    </label>
-                  ))}
-                </div>
+                <MultiSelect
+                  searchable
+                  placeholder="Choose extra types"
+                  emptyText="No other types match"
+                  options={types.filter((t) => t.key !== form.primaryKey).map((t) => ({ value: t.key, label: t.code ? `${t.name} (${t.code})` : t.name }))}
+                  value={form.extraKeys}
+                  onChange={(extraKeys) => setForm({ ...form, extraKeys })}
+                />
               </Field>
               {form.category === "criminal" && (
                 <Field label="Alpha or Bravo" required>
@@ -541,14 +561,12 @@ export function OccurrenceBookPage() {
               </div>
               {band && <p className="mb-4 text-xs text-gray-500">{band.label} ({band.range})</p>}
               <Field label="Received from" required>
-                <div className="flex flex-wrap gap-3 text-sm">
-                  {OB_RECEIVED_FROM.map((label) => (
-                    <label key={label} className="flex items-center gap-2">
-                      <input type="checkbox" checked={form.receivedFrom.includes(label)} onChange={() => setForm({ ...form, receivedFrom: toggle(form.receivedFrom, label) })} />
-                      {label}
-                    </label>
-                  ))}
-                </div>
+                <MultiSelect
+                  placeholder="Choose who it came from"
+                  options={OB_RECEIVED_FROM.map((label) => ({ value: label, label }))}
+                  value={form.receivedFrom}
+                  onChange={(receivedFrom) => setForm({ ...form, receivedFrom })}
+                />
               </Field>
               <Field label={mustAttend ? "CPF on scene (required)" : "CPF attendance"}>
                 <select className={selectCls} value={form.attendance} onChange={(e) => setForm({ ...form, attendance: e.target.value as FormState["attendance"] })}>
@@ -644,53 +662,72 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, patients: [...form.patients, { injuryTag: "", note: "" }] })}>+ Injured person</Btn>
-              <div className="mt-4 flex flex-wrap gap-3 text-sm">
-                {OB_TAGS.map((t) => (
-                  <label key={t.key} className="flex items-center gap-2">
-                    <input type="checkbox" checked={form.tagKeys.includes(t.key)} onChange={() => setForm({ ...form, tagKeys: toggle(form.tagKeys, t.key) })} />
-                    {t.label}
-                  </label>
-                ))}
+              <div className="mt-4">
+                <Field label="Tags">
+                  <MultiSelect
+                    placeholder="Choose tags"
+                    options={OB_TAGS.map((t) => ({ value: t.key, label: t.label }))}
+                    value={form.tagKeys}
+                    onChange={(tagKeys) => setForm({ ...form, tagKeys })}
+                  />
+                </Field>
               </div>
             </section>
 
             <section className="rounded-xl border bg-white p-4 sm:p-6">
               <h2 className="mb-3 text-sm font-semibold text-gray-900">Who reacted</h2>
-              <Field label="CPF members on patrol">
-                {onPatrol.length === 0 && <p className="text-sm text-gray-500">Nobody is on patrol in this sector right now.</p>}
-                <div className="flex flex-wrap gap-3 text-sm">
-                  {onPatrol.map((p) => (
-                    <label key={p.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={form.responderIds.includes(p.id)} onChange={() => setForm({ ...form, responderIds: toggle(form.responderIds, p.id) })} />
-                      {p.callSign} · {p.name}
-                    </label>
-                  ))}
-                </div>
+              <Field label="Patrols that responded">
+                <MultiSelect
+                  placeholder="Choose patrols"
+                  emptyText="No active patrols in this sector right now."
+                  options={patrolOptions}
+                  value={form.patrolIds}
+                  onChange={(patrolIds) => setForm({ ...form, patrolIds })}
+                />
               </Field>
-              {OB_SERVICES.map((s) => (
-                <div key={s.key} className="mb-2 grid items-center gap-2 sm:grid-cols-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={!!form.serviceOn[s.key]} onChange={() => setForm({ ...form, serviceOn: { ...form.serviceOn, [s.key]: !form.serviceOn[s.key] } })} />
-                    {s.label}
-                  </label>
-                  {s.referenceLabel && form.serviceOn[s.key] && (
-                    <input className={inputCls} placeholder={s.referenceLabel} value={form.serviceRef[s.key] ?? ""} onChange={(e) => setForm({ ...form, serviceRef: { ...form.serviceRef, [s.key]: e.target.value } })} />
+              <Field label="CPF members on patrol">
+                <MultiSelect
+                  placeholder="Choose members"
+                  emptyText="Nobody is on patrol in this sector right now."
+                  options={memberOptions}
+                  value={form.responderIds}
+                  onChange={(responderIds) => setForm({ ...form, responderIds })}
+                />
+              </Field>
+              <Field label="Services">
+                <MultiSelect
+                  placeholder="Choose services"
+                  options={OB_SERVICES.map((s) => ({ value: s.key, label: s.label }))}
+                  value={OB_SERVICES.filter((s) => form.serviceOn[s.key]).map((s) => s.key)}
+                  onChange={(keys) => {
+                    const serviceOn: Record<string, boolean> = {};
+                    for (const key of keys) serviceOn[key] = true;
+                    setForm({ ...form, serviceOn });
+                  }}
+                />
+              </Field>
+              {OB_SERVICES.filter((s) => form.serviceOn[s.key] && (s.referenceLabel || s.key === "other")).map((s) => (
+                <div key={s.key} className="mb-3 grid gap-2 sm:grid-cols-2">
+                  {s.referenceLabel && (
+                    <Field label={s.referenceLabel}>
+                      <input className={inputCls} value={form.serviceRef[s.key] ?? ""} onChange={(e) => setForm({ ...form, serviceRef: { ...form.serviceRef, [s.key]: e.target.value } })} />
+                    </Field>
                   )}
-                  {s.key === "other" && form.serviceOn[s.key] && (
-                    <input className={inputCls} placeholder="Name" value={form.otherName} onChange={(e) => setForm({ ...form, otherName: e.target.value })} />
+                  {s.key === "other" && (
+                    <Field label="Other service name">
+                      <input className={inputCls} value={form.otherName} onChange={(e) => setForm({ ...form, otherName: e.target.value })} />
+                    </Field>
                   )}
                 </div>
               ))}
               <Field label="Security companies">
-                <div className="flex flex-wrap gap-3 text-sm">
-                  {(meta.data?.securityCompanies ?? []).map((c) => (
-                    <label key={c.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={form.companyIds.includes(c.id)} onChange={() => setForm({ ...form, companyIds: toggle(form.companyIds, c.id) })} />
-                      {c.name}
-                    </label>
-                  ))}
-                  {(meta.data?.securityCompanies.length ?? 0) === 0 && <span className="text-gray-500">No companies loaded yet.</span>}
-                </div>
+                <MultiSelect
+                  placeholder="Choose security companies"
+                  emptyText="No companies loaded yet."
+                  options={(meta.data?.securityCompanies ?? []).map((c) => ({ value: c.id, label: c.name }))}
+                  value={form.companyIds}
+                  onChange={(companyIds) => setForm({ ...form, companyIds })}
+                />
               </Field>
               {meta.data?.canMaintainCompanies && (
                 <div className="mb-4 flex gap-2">

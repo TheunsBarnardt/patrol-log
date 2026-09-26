@@ -534,6 +534,18 @@ export const obEntryResponders = sqliteTable("ob_entry_responders", {
   pk: primaryKey({ columns: [t.entryId, t.patrollerId] }),
 }));
 
+/** Patrols that attended an incident. Several can be on one scene. */
+export const obEntryPatrols = sqliteTable("ob_entry_patrols", {
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  patrolId: text("patrol_id")
+    .notNull()
+    .references(() => patrols.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.entryId, t.patrolId] }),
+}));
+
 export const obEntryTags = sqliteTable("ob_entry_tags", {
   entryId: text("entry_id")
     .notNull()
