@@ -279,6 +279,56 @@ export const OB_TIME_BANDS: { label: string; fromMin: number; toMin: number; ran
 
 export const OB_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
+/** Centurion CPF area — default map centre when an incident has no pin yet. */
+export const OB_MAP_CENTER = { lat: -25.8603, lng: 28.1894 } as const;
+
+/** Nominatim viewbox: left, top, right, bottom. Biases address search toward Centurion. */
+export const OB_MAP_VIEWBOX = "27.95,-25.72,28.32,-25.98";
+
+export interface ObGeocodeHit {
+  label: string;
+  lat: number;
+  lng: number;
+}
+
+/** Address text sent to the geocoder, with suburb and Centurion filled in when missing. */
+export function obGeocodeQuery(address: string, suburb?: string | null): string {
+  const q = address.trim().replace(/\s+/g, " ");
+  const parts = [q];
+  const place = (suburb ?? "").trim();
+  if (place && !q.toLowerCase().includes(place.toLowerCase())) parts.push(place);
+  const blob = parts.join(", ");
+  if (!/\b(centurion|pretoria|tshwane|gauteng)\b/i.test(blob)) parts.push("Centurion");
+  parts.push("South Africa");
+  return parts.join(", ");
+}
+
+export function obGeocodeSearchUrl(address: string, suburb?: string | null): string {
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("q", obGeocodeQuery(address, suburb));
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("countrycodes", "za");
+  url.searchParams.set("viewbox", OB_MAP_VIEWBOX);
+  url.searchParams.set("bounded", "0");
+  return url.toString();
+}
+
+export function obGeocodeHits(payload: unknown): ObGeocodeHit[] {
+  if (!Array.isArray(payload)) return [];
+  const hits: ObGeocodeHit[] = [];
+  for (const row of payload) {
+    if (!row || typeof row !== "object") continue;
+    const rec = row as { display_name?: unknown; lat?: unknown; lon?: unknown };
+    const label = typeof rec.display_name === "string" ? rec.display_name : "";
+    const lat = Number(rec.lat);
+    const lng = Number(rec.lon);
+    if (!label || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    hits.push({ label, lat, lng });
+  }
+  return hits;
+}
+
 export const DEFAULT_SUBURBS: { name: string; aliases: string[] }[] = [
   { name: "Clubview", aliases: [] },
   { name: "Hennopspark", aliases: [] },

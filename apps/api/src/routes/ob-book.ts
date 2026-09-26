@@ -16,6 +16,8 @@ import {
   OB_VOI_SHAPES,
   dangerForTypes,
   formatObNumber,
+  obGeocodeHits,
+  obGeocodeSearchUrl,
   obPrefixFromSectorCode,
   obType,
   parseLocalWhen,
@@ -29,6 +31,7 @@ import { getAuth, requireAuth } from "../lib/middleware.js";
 import { getDb, type Db } from "../db/index.js";
 import {
   obEntries,
+  obEntryPatrols,
   obEntryResponders,
   obEntryServices,
   obEntryTags,
@@ -37,11 +40,13 @@ import {
   obSecurityCompanies,
   obSightings,
   obSuburbs,
+  obTags,
   obVehicles,
   patrolMembers,
   patrollers,
   patrols,
   sectors,
+  vehicles,
 } from "../db/schema.js";
 import { logAudit } from "../lib/audit.js";
 import { assertSectorAccess, tenantScope } from "../lib/scope.js";
@@ -107,6 +112,7 @@ interface WriteBody {
   action_details?: string;
   tag_keys?: string[];
   responder_ids?: string[];
+  patrol_ids?: string[];
   services?: ServiceInput[];
   vehicles?: VehicleInput[];
   persons?: PersonInput[];
@@ -128,6 +134,7 @@ interface Normalized {
   actionDetails: string;
   tagKeys: string[];
   responderIds: string[];
+  patrolIds: string[];
   services: { key: string; reference: string | null; otherName: string | null; securityCompanyId: string | null }[];
   vehicles: { colour: string | null; shape: string | null; make: string | null; model: string | null; registration: string | null; features: string | null }[];
   persons: { kind: "poi" | "patient"; gender: string | null; clothing: string | null; direction: string | null; injuryTag: string | null; note: string | null }[];
@@ -194,7 +201,7 @@ async function nextSequence(dbBinding: AppContext["Bindings"]["DB"], sectorId: s
   return seq;
 }
 
-function normalize(body: WriteBody, opts: { commenceShift?: boolean }): Normalized {
+function normalize(body: WriteBody, opts: { commenceShift?: boolean; extraTagKeys?: Set<string> }): Normalized {
   const source: WriteBody = opts.commenceShift
     ? {
         ...body,
@@ -268,7 +275,8 @@ function normalize(body: WriteBody, opts: { commenceShift?: boolean }): Normaliz
   }
 
   const tagKeys = [...new Set((source.tag_keys ?? []).map((k) => k.trim()).filter(Boolean))];
-  if (tagKeys.some((k) => !TAG_KEYS.has(k))) throw new AppError("OB_INVALID_INPUT");
+  const extraTags = opts.extraTagKeys ?? new Set<string>();
+  if (tagKeys.some((k) => !TAG_KEYS.has(k) && !extraTags.has(k))) throw new AppError("OB_INVALID_INPUT");
   if (attendance === "not_present" && !tagKeys.includes("information_only")) tagKeys.push("information_only");
 
   const services = (source.services ?? [])
@@ -338,10 +346,21 @@ function normalize(body: WriteBody, opts: { commenceShift?: boolean }): Normaliz
     actionDetails: (source.action_details ?? "").trim(),
     tagKeys,
     responderIds: [...new Set((source.responder_ids ?? []).map((id) => id.trim()).filter(Boolean))],
+    patrolIds: [...new Set((source.patrol_ids ?? []).map((id) => id.trim()).filter(Boolean))],
     services,
     vehicles,
     persons,
   };
+}
+
+async function extraTagKeys(db: Db, cpfId: string): Promise<Set<string>> {
+  const rows = await db.select({ key: obTags.key }).from(obTags).where(eq(obTags.cpfId, cpfId));
+  return new Set(rows.map((row) => row.key));
+}
+
+function customTagKey(label: string): string {
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48);
+  return slug ? `custom_${slug}` : "";
 }
 
 async function assertSuburb(db: Db, cpfId: string, suburbId: string | null) {
@@ -361,6 +380,50 @@ async function assertResponders(db: Db, auth: AuthenticatedContext, sectorId: st
   if (rows.length !== ids.length) throw new AppError("OB_INVALID_INPUT");
 }
 
+async function assertPatrols(db: Db, auth: AuthenticatedContext, sectorId: string, ids: string[]) {
+  if (!ids.length) return;
+  const rows = await db
+    .select({ id: patrols.id })
+    .from(patrols)
+    .where(and(eq(patrols.cpfId, auth.patroller.cpf_id), eq(patrols.sectorId, sectorId), inArray(patrols.id, ids)));
+  if (rows.length !== ids.length) throw new AppError("OB_INVALID_INPUT");
+}
+
+const PATROL_TYPE_LABEL: Record<string, string> = {
+  foot: "Foot",
+  vehicle: "Vehicle",
+  static: "Static",
+  sector_monitoring: "Sector monitoring",
+  ops: "OPS",
+  responding: "Responding",
+};
+
+function patrolOptionLabel(callSign: string, patrolType: string, registration: string | null): string {
+  const type = PATROL_TYPE_LABEL[patrolType] ?? patrolType;
+  return registration ? `${callSign} · ${type} · ${registration}` : `${callSign} · ${type}`;
+}
+
+async function loadPatrolOptions(db: Db, where: ReturnType<typeof and>) {
+  const rows = await db
+    .select({
+      id: patrols.id,
+      sectorId: patrols.sectorId,
+      patrolType: patrols.patrolType,
+      callSign: patrollers.callSign,
+      registration: vehicles.registration,
+    })
+    .from(patrols)
+    .innerJoin(patrollers, eq(patrols.primaryPatrollerId, patrollers.id))
+    .leftJoin(vehicles, eq(patrols.vehicleId, vehicles.id))
+    .where(where)
+    .orderBy(asc(patrollers.callSign));
+  return rows.map((row) => ({
+    id: row.id,
+    sectorId: row.sectorId,
+    label: patrolOptionLabel(row.callSign, row.patrolType, row.registration),
+  }));
+}
+
 async function assertCompanies(db: Db, cpfId: string, services: Normalized["services"]) {
   const ids = [...new Set(services.map((s) => s.securityCompanyId).filter((id): id is string => !!id))];
   if (!ids.length) return;
@@ -375,6 +438,7 @@ async function replaceChildren(db: Db, entryId: string, norm: Normalized) {
   await db.delete(obEntryTypes).where(eq(obEntryTypes.entryId, entryId));
   await db.delete(obEntryServices).where(eq(obEntryServices.entryId, entryId));
   await db.delete(obEntryResponders).where(eq(obEntryResponders.entryId, entryId));
+  await db.delete(obEntryPatrols).where(eq(obEntryPatrols.entryId, entryId));
   await db.delete(obEntryTags).where(eq(obEntryTags.entryId, entryId));
   await db.delete(obVehicles).where(eq(obVehicles.entryId, entryId));
   await db.delete(obPersons).where(eq(obPersons.entryId, entryId));
@@ -401,6 +465,9 @@ async function replaceChildren(db: Db, entryId: string, norm: Normalized) {
   if (norm.responderIds.length) {
     await db.insert(obEntryResponders).values(norm.responderIds.map((patrollerId) => ({ entryId, patrollerId })));
   }
+  if (norm.patrolIds.length) {
+    await db.insert(obEntryPatrols).values(norm.patrolIds.map((patrolId) => ({ entryId, patrolId })));
+  }
   if (norm.tagKeys.length) {
     await db.insert(obEntryTags).values(norm.tagKeys.map((tagKey) => ({ entryId, tagKey })));
   }
@@ -414,10 +481,15 @@ function splitWhen(occurredAt: string): { date: string; time: string } {
 }
 
 async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
-  const [types, services, responders, tags, vehicles, persons, sightings, suburb] = await Promise.all([
+  const [types, services, responders, patrolLinks, tags, vehicles, persons, sightings, suburb] = await Promise.all([
     db.select().from(obEntryTypes).where(eq(obEntryTypes.entryId, entry.id)).orderBy(asc(obEntryTypes.sortOrder)),
     db.select().from(obEntryServices).where(eq(obEntryServices.entryId, entry.id)),
-    db.select().from(obEntryResponders).where(eq(obEntryResponders.entryId, entry.id)),
+    db
+      .select({ id: patrollers.id, callSign: patrollers.callSign, name: patrollers.name })
+      .from(obEntryResponders)
+      .innerJoin(patrollers, eq(obEntryResponders.patrollerId, patrollers.id))
+      .where(eq(obEntryResponders.entryId, entry.id)),
+    db.select().from(obEntryPatrols).where(eq(obEntryPatrols.entryId, entry.id)),
     db.select().from(obEntryTags).where(eq(obEntryTags.entryId, entry.id)),
     db.select().from(obVehicles).where(eq(obVehicles.entryId, entry.id)),
     db.select().from(obPersons).where(eq(obPersons.entryId, entry.id)),
@@ -426,6 +498,10 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
       ? db.query.obSuburbs.findFirst({ where: eq(obSuburbs.id, entry.suburbId) })
       : Promise.resolve(null),
   ]);
+  const patrolIds = patrolLinks.map((row) => row.patrolId);
+  const savedPatrols = patrolIds.length
+    ? await loadPatrolOptions(db, and(eq(patrols.cpfId, entry.cpfId), inArray(patrols.id, patrolIds)))
+    : [];
   const when = splitWhen(entry.occurredAt);
   return {
     id: entry.id,
@@ -462,7 +538,10 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
       otherName: s.otherName,
       securityCompanyId: s.securityCompanyId,
     })),
-    responderIds: responders.map((r) => r.patrollerId),
+    responderIds: responders.map((r) => r.id),
+    responders: responders.map((r) => ({ id: r.id, callSign: r.callSign, name: r.name })),
+    patrolIds,
+    patrols: savedPatrols.map((row) => ({ id: row.id, label: row.label })),
     tagKeys: tags.map((t) => t.tagKey),
     vehicles: vehicles.map((v) => ({
       colour: v.colour,
@@ -499,13 +578,34 @@ async function loadOwned(db: Db, auth: AuthenticatedContext, id: string) {
   return entry;
 }
 
+ob.get("/geocode", async (c) => {
+  const q = (c.req.query("q") ?? "").trim();
+  const suburb = (c.req.query("suburb") ?? "").trim();
+  if (q.length < 3 || q.length > 200) throw new AppError("OB_GEOCODE_QUERY");
+  let res: Response;
+  try {
+    res = await fetch(obGeocodeSearchUrl(q, suburb), {
+      headers: {
+        "User-Agent": "PatrolLog/1.0 (occurrence book location search)",
+        Accept: "application/json",
+        "Accept-Language": "en",
+      },
+    });
+  } catch {
+    throw new AppError("OB_GEOCODE_UNAVAILABLE");
+  }
+  if (!res.ok) throw new AppError("OB_GEOCODE_UNAVAILABLE");
+  const results = obGeocodeHits(await res.json().catch(() => null));
+  return c.json({ results });
+});
+
 ob.get("/meta", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
   await ensureSuburbs(db, auth.patroller.cpf_id);
   const sectorId = auth.patroller.access_level === "system_admin" ? null : auth.patroller.sector_id;
 
-  const [suburbRows, companyRows, sectorRows, onPatrol] = await Promise.all([
+  const [suburbRows, companyRows, sectorRows, onPatrol, activePatrols, tagRows] = await Promise.all([
     db.select().from(obSuburbs).where(eq(obSuburbs.cpfId, auth.patroller.cpf_id)).orderBy(asc(obSuburbs.sortOrder), asc(obSuburbs.name)),
     db
       .select()
@@ -535,6 +635,15 @@ ob.get("/meta", async (c) => {
           sectorId ? eq(patrols.sectorId, sectorId) : undefined,
         ),
       ),
+    loadPatrolOptions(
+      db,
+      and(
+        eq(patrols.cpfId, auth.patroller.cpf_id),
+        eq(patrols.state, "active"),
+        sectorId ? eq(patrols.sectorId, sectorId) : undefined,
+      ),
+    ),
+    db.select({ key: obTags.key, label: obTags.label }).from(obTags).where(eq(obTags.cpfId, auth.patroller.cpf_id)).orderBy(asc(obTags.label)),
   ]);
 
   return c.json({
@@ -542,6 +651,8 @@ ob.get("/meta", async (c) => {
     securityCompanies: companyRows.map((s) => ({ id: s.id, name: s.name })),
     sectors: sectorRows,
     onPatrol,
+    patrols: activePatrols,
+    tags: [...OB_TAGS, ...tagRows],
     canMaintainCompanies: canMaintainCompanies(auth),
   });
 });
@@ -668,10 +779,11 @@ ob.post("/entries", async (c) => {
     if (!body.received_from?.length) body.received_from = ["CPF Member / Patroller"];
   }
   const db = getDb(c.env);
-  const norm = normalize(body, {});
+  const norm = normalize(body, { extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
   const sector = await resolveSector(db, auth, body.sector_id);
   await assertSuburb(db, auth.patroller.cpf_id, norm.suburbId);
   await assertResponders(db, auth, sector.id, norm.responderIds);
+  await assertPatrols(db, auth, sector.id, norm.patrolIds);
   await assertCompanies(db, auth.patroller.cpf_id, norm.services);
   const created = await insertEntry(c, db, auth, sector, norm);
   await logAudit(db, "ob.entry.created", auth, { ob_number: created.obNumber, entry_id: created.id });
@@ -685,9 +797,10 @@ ob.patch("/entries/:id", async (c) => {
   const existing = await loadOwned(db, auth, c.req.param("id"));
   const currentTypes = await db.select().from(obEntryTypes).where(eq(obEntryTypes.entryId, existing.id));
   const isCommence = currentTypes.some((t) => t.typeKey === "commence_shift");
-  const norm = normalize(body, { commenceShift: isCommence });
+  const norm = normalize(body, { commenceShift: isCommence, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
   await assertSuburb(db, auth.patroller.cpf_id, norm.suburbId);
   await assertResponders(db, auth, existing.sectorId, norm.responderIds);
+  await assertPatrols(db, auth, existing.sectorId, norm.patrolIds);
   await assertCompanies(db, auth.patroller.cpf_id, norm.services);
 
   const [updated] = await db
@@ -779,11 +892,30 @@ ob.post("/commence-shift", async (c) => {
   const body = await c.req.json<WriteBody>().catch(() => ({}) as WriteBody);
   const clock = nowSast();
   const db = getDb(c.env);
-  const norm = normalize({ ...body, date: body.date || clock.date, time: body.time || clock.time }, { commenceShift: true });
+  const norm = normalize({ ...body, date: body.date || clock.date, time: body.time || clock.time }, { commenceShift: true, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
   const sector = await resolveSector(db, auth, body.sector_id);
   const created = await insertEntry(c, db, auth, sector, norm);
   await logAudit(db, "ob.commence_shift", auth, { ob_number: created.obNumber });
   return c.json(await presentEntry(db, created), 201);
+});
+
+ob.post("/tags", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{ label?: string }>();
+  const label = blank(body.label).replace(/\s+/g, " ");
+  if (label.length < 2 || label.length > 60) throw new AppError("OB_INVALID_INPUT");
+  const key = customTagKey(label);
+  if (!key) throw new AppError("OB_INVALID_INPUT");
+  const known = OB_TAGS.some((tag) => tag.key === key || tag.label.toLowerCase() === label.toLowerCase());
+  if (known) throw new AppError("OB_TAG_DUPLICATE");
+  const db = getDb(c.env);
+  const existing = await db.select().from(obTags).where(eq(obTags.cpfId, auth.patroller.cpf_id));
+  if (existing.some((tag) => tag.key === key || tag.label.toLowerCase() === label.toLowerCase())) {
+    throw new AppError("OB_TAG_DUPLICATE");
+  }
+  const [row] = await db.insert(obTags).values({ cpfId: auth.patroller.cpf_id, key, label }).returning();
+  await logAudit(db, "ob.tag.created", auth, { key, label });
+  return c.json({ key: row!.key, label: row!.label }, 201);
 });
 
 ob.post("/suburbs", async (c) => {

@@ -534,6 +534,35 @@ export const obEntryResponders = sqliteTable("ob_entry_responders", {
   pk: primaryKey({ columns: [t.entryId, t.patrollerId] }),
 }));
 
+/** Patrols that attended an incident. Several can be on one scene. */
+export const obEntryPatrols = sqliteTable("ob_entry_patrols", {
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  patrolId: text("patrol_id")
+    .notNull()
+    .references(() => patrols.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.entryId, t.patrolId] }),
+}));
+
+/** Extra incident tags added from the book, on top of the built-in list. */
+export const obTags = sqliteTable("ob_tags", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  key: text("key").notNull(),
+  label: text("label").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  cpfIdx: index("ob_tags_cpf_idx").on(t.cpfId),
+  keyIdx: uniqueIndex("ob_tags_key_idx").on(t.cpfId, t.key),
+  labelIdx: uniqueIndex("ob_tags_label_idx").on(t.cpfId, t.label),
+}));
+
 export const obEntryTags = sqliteTable("ob_entry_tags", {
   entryId: text("entry_id")
     .notNull()

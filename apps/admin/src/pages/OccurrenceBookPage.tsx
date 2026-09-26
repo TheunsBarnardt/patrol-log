@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DANGER_LEVELS,
@@ -23,17 +23,22 @@ import {
 } from "@patrol-log/shared";
 import { adminFetch, authStore } from "../lib/api";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
+import { LocationMap } from "../components/LocationMap";
+import { MultiSelect } from "../components/MultiSelect";
 import { Btn, Field, inputCls, selectCls } from "../components/Modal";
 
 interface Suburb { id: string; name: string; aliases: string[] }
 interface Company { id: string; name: string }
 interface Sector { id: string; name: string; code: string | null }
 interface OnPatrol { id: string; callSign: string; name: string; sectorId: string }
+interface PatrolOption { id: string; label: string; sectorId: string }
 interface Meta {
   suburbs: Suburb[];
   securityCompanies: Company[];
   sectors: Sector[];
   onPatrol: OnPatrol[];
+  patrols: PatrolOption[];
+  tags: { key: string; label: string }[];
   canMaintainCompanies: boolean;
 }
 interface ListRow {
@@ -80,6 +85,9 @@ interface EntryDetail {
   types: { key: string; isPrimary: boolean }[];
   services: { key: string; reference: string | null; otherName: string | null; securityCompanyId: string | null }[];
   responderIds: string[];
+  responders: { id: string; callSign: string; name: string }[];
+  patrolIds: string[];
+  patrols: { id: string; label: string }[];
   tagKeys: string[];
   vehicles: VehicleForm[];
   persons: { kind: "poi" | "patient"; gender: string | null; clothing: string | null; direction: string | null; injuryTag: string | null; note: string | null }[];
@@ -104,6 +112,7 @@ interface FormState {
   actionDetails: string;
   tagKeys: string[];
   responderIds: string[];
+  patrolIds: string[];
   serviceOn: Record<string, boolean>;
   serviceRef: Record<string, string>;
   otherName: string;
@@ -151,6 +160,7 @@ function emptyForm(sectorId: string): FormState {
     actionDetails: "",
     tagKeys: [],
     responderIds: [],
+    patrolIds: [],
     serviceOn: {},
     serviceRef: {},
     otherName: "",
@@ -194,6 +204,7 @@ function fromEntry(entry: EntryDetail): FormState {
     actionDetails: entry.actionDetails ?? "",
     tagKeys: entry.tagKeys ?? [],
     responderIds: entry.responderIds ?? [],
+    patrolIds: entry.patrolIds ?? [],
     serviceOn,
     serviceRef,
     otherName,
@@ -220,8 +231,33 @@ function dangerClass(level: ObDangerLevel | null): string {
   return "bg-gray-100 text-gray-600";
 }
 
-function toggle(list: string[], value: string): string[] {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+function AccordionSection({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border bg-white">
+      <h2>
+        <button
+          type="button"
+          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left sm:px-6"
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          <span className="text-sm font-semibold text-gray-900">{title}</span>
+          <span className="text-lg leading-none text-gray-400" aria-hidden>{open ? "▴" : "▾"}</span>
+        </button>
+      </h2>
+      {open && <div className="border-t px-4 py-4 sm:px-6">{children}</div>}
+    </section>
+  );
 }
 
 export function OccurrenceBookPage() {
@@ -238,10 +274,15 @@ export function OccurrenceBookPage() {
   const [typeQuery, setTypeQuery] = useState("");
   const [newSuburb, setNewSuburb] = useState("");
   const [newCompany, setNewCompany] = useState("");
+  const [newTag, setNewTag] = useState("");
   const [seenDate, setSeenDate] = useState("");
   const [seenTime, setSeenTime] = useState("");
   const [seenStreet, setSeenStreet] = useState("");
   const [seenNote, setSeenNote] = useState("");
+  const [openSection, setOpenSection] = useState("incident");
+  function toggleSection(id: string) {
+    setOpenSection((current) => (current === id ? "" : id));
+  }
 
   const meta = useQuery({
     queryKey: ["admin.ob.meta"],
@@ -286,6 +327,20 @@ export function OccurrenceBookPage() {
   const mustAttend = requiresAttendance(form.category, typeKeys);
   const isCommence = detail.data?.types.some((t) => t.key === "commence_shift") ?? false;
   const onPatrol = (meta.data?.onPatrol ?? []).filter((p) => !form.sectorId || p.sectorId === form.sectorId);
+  const memberOptions = [
+    ...onPatrol.map((p) => ({ value: p.id, label: `${p.callSign} · ${p.name}` })),
+    ...(mode === "edit" ? detail.data?.responders ?? [] : [])
+      .filter((p) => !onPatrol.some((row) => row.id === p.id))
+      .map((p) => ({ value: p.id, label: `${p.callSign} · ${p.name}` })),
+  ];
+  const patrolOptions = [
+    ...(meta.data?.patrols ?? [])
+      .filter((p) => !form.sectorId || p.sectorId === form.sectorId)
+      .map((p) => ({ value: p.id, label: p.label })),
+    ...(mode === "edit" ? detail.data?.patrols ?? [] : [])
+      .filter((p) => !(meta.data?.patrols ?? []).some((row) => row.id === p.id))
+      .map((p) => ({ value: p.id, label: p.label })),
+  ];
 
   function startNew() {
     const sectorId = profile?.sector_id || meta.data?.sectors[0]?.id || "";
@@ -294,6 +349,7 @@ export function OccurrenceBookPage() {
     setHydrated(null);
     setError("");
     setTypeQuery("");
+    setOpenSection("incident");
     setMode("new");
   }
 
@@ -332,6 +388,7 @@ export function OccurrenceBookPage() {
       action_details: form.actionDetails,
       tag_keys: form.tagKeys,
       responder_ids: form.responderIds,
+      patrol_ids: form.patrolIds,
       services,
       vehicles: form.vehicles,
       persons: [
@@ -389,6 +446,23 @@ export function OccurrenceBookPage() {
       void qc.invalidateQueries({ queryKey: ["admin.ob.entries"] });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not log the shift");
+    }
+  }
+
+  async function addTag() {
+    const label = newTag.trim();
+    if (label.length < 2) return;
+    setError("");
+    try {
+      const row = await adminFetch<{ key: string; label: string }>("/admin/ob/tags", { method: "POST", body: JSON.stringify({ label }) });
+      setNewTag("");
+      setForm((current) => ({
+        ...current,
+        tagKeys: current.tagKeys.includes(row.key) ? current.tagKeys : [...current.tagKeys, row.key],
+      }));
+      await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the tag");
     }
   }
 
@@ -483,9 +557,8 @@ export function OccurrenceBookPage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Incident</h2>
+          <div className="space-y-2">
+            <AccordionSection title="Incident" open={openSection === "incident"} onToggle={() => toggleSection("incident")}>
               {(meta.data?.sectors.length ?? 0) > 1 && (
                 <Field label="Sector" required>
                   <select className={selectCls} value={form.sectorId} disabled={mode === "edit"} onChange={(e) => setForm({ ...form, sectorId: e.target.value })}>
@@ -512,14 +585,14 @@ export function OccurrenceBookPage() {
                 </select>
               </Field>
               <Field label="Also happened (extra types)">
-                <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border p-2">
-                  {filteredTypes.filter((t) => t.key !== form.primaryKey).map((t) => (
-                    <label key={t.key} className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" checked={form.extraKeys.includes(t.key)} onChange={() => setForm({ ...form, extraKeys: toggle(form.extraKeys, t.key) })} />
-                      {t.name}{t.code ? ` (${t.code})` : ""}
-                    </label>
-                  ))}
-                </div>
+                <MultiSelect
+                  searchable
+                  placeholder="Choose extra types"
+                  emptyText="No other types match"
+                  options={types.filter((t) => t.key !== form.primaryKey).map((t) => ({ value: t.key, label: t.code ? `${t.name} (${t.code})` : t.name }))}
+                  value={form.extraKeys}
+                  onChange={(extraKeys) => setForm({ ...form, extraKeys })}
+                />
               </Field>
               {form.category === "criminal" && (
                 <Field label="Alpha or Bravo" required>
@@ -540,14 +613,12 @@ export function OccurrenceBookPage() {
               </div>
               {band && <p className="mb-4 text-xs text-gray-500">{band.label} ({band.range})</p>}
               <Field label="Received from" required>
-                <div className="flex flex-wrap gap-3 text-sm">
-                  {OB_RECEIVED_FROM.map((label) => (
-                    <label key={label} className="flex items-center gap-2">
-                      <input type="checkbox" checked={form.receivedFrom.includes(label)} onChange={() => setForm({ ...form, receivedFrom: toggle(form.receivedFrom, label) })} />
-                      {label}
-                    </label>
-                  ))}
-                </div>
+                <MultiSelect
+                  placeholder="Choose who it came from"
+                  options={OB_RECEIVED_FROM.map((label) => ({ value: label, label }))}
+                  value={form.receivedFrom}
+                  onChange={(receivedFrom) => setForm({ ...form, receivedFrom })}
+                />
               </Field>
               <Field label={mustAttend ? "CPF on scene (required)" : "CPF attendance"}>
                 <select className={selectCls} value={form.attendance} onChange={(e) => setForm({ ...form, attendance: e.target.value as FormState["attendance"] })}>
@@ -558,10 +629,9 @@ export function OccurrenceBookPage() {
                 </select>
                 {mustAttend && <p className="mt-1 text-xs text-gray-500">Emergencies, disasters and by-law are only logged if we were present or assisting.</p>}
               </Field>
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Location</h2>
+            <AccordionSection title="Location" open={openSection === "location"} onToggle={() => toggleSection("location")}>
               <Field label="Suburb" required>
                 <select className={selectCls} value={form.suburbId} onChange={(e) => setForm({ ...form, suburbId: e.target.value })}>
                   <option value="">Choose a suburb</option>
@@ -577,19 +647,23 @@ export function OccurrenceBookPage() {
               <Field label="Street number and name / complex">
                 <input className={inputCls} value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} />
               </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Latitude"><input className={inputCls} inputMode="decimal" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} /></Field>
-                <Field label="Longitude"><input className={inputCls} inputMode="decimal" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} /></Field>
-              </div>
-            </section>
+              {(mode === "new" || hydrated) && (
+                <LocationMap
+                  key={hydrated ?? "new"}
+                  lat={form.lat}
+                  lng={form.lng}
+                  street={form.street}
+                  suburbName={meta.data?.suburbs.find((s) => s.id === form.suburbId)?.name ?? ""}
+                  onChange={(lat, lng) => setForm((current) => ({ ...current, lat, lng }))}
+                />
+              )}
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Description</h2>
+            <AccordionSection title="Description" open={openSection === "description"} onToggle={() => toggleSection("description")}>
               <textarea className={inputCls} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Vehicle of interest</h2>
+            <AccordionSection title="Vehicle of interest" open={openSection === "vehicle"} onToggle={() => toggleSection("vehicle")}>
               {form.vehicles.map((v, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-2">
                   <select className={selectCls} value={v.colour} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, colour: e.target.value } : row) })}>
@@ -607,10 +681,9 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, vehicles: [...form.vehicles, emptyVehicle()] })}>+ Another vehicle</Btn>
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Person of interest</h2>
+            <AccordionSection title="Person of interest" open={openSection === "person"} onToggle={() => toggleSection("person")}>
               {form.pois.map((p, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-3">
                   <select className={selectCls} value={p.gender} onChange={(e) => setForm({ ...form, pois: form.pois.map((row, j) => j === i ? { ...row, gender: e.target.value } : row) })}>
@@ -622,10 +695,9 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, pois: [...form.pois, { gender: "", clothing: "", direction: "" }] })}>+ Person</Btn>
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-1 text-sm font-semibold text-gray-900">Injured people</h2>
+            <AccordionSection title="Injured people" open={openSection === "injured"} onToggle={() => toggleSection("injured")}>
               <p className="mb-3 text-xs text-gray-500">P1–P4 describes that person, not how dangerous the scene is.</p>
               {form.patients.map((p, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-2">
@@ -637,53 +709,77 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, patients: [...form.patients, { injuryTag: "", note: "" }] })}>+ Injured person</Btn>
-              <div className="mt-4 flex flex-wrap gap-3 text-sm">
-                {OB_TAGS.map((t) => (
-                  <label key={t.key} className="flex items-center gap-2">
-                    <input type="checkbox" checked={form.tagKeys.includes(t.key)} onChange={() => setForm({ ...form, tagKeys: toggle(form.tagKeys, t.key) })} />
-                    {t.label}
-                  </label>
-                ))}
-              </div>
-            </section>
+            </AccordionSection>
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Who reacted</h2>
-              <Field label="CPF members on patrol">
-                {onPatrol.length === 0 && <p className="text-sm text-gray-500">Nobody is on patrol in this sector right now.</p>}
-                <div className="flex flex-wrap gap-3 text-sm">
-                  {onPatrol.map((p) => (
-                    <label key={p.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={form.responderIds.includes(p.id)} onChange={() => setForm({ ...form, responderIds: toggle(form.responderIds, p.id) })} />
-                      {p.callSign} · {p.name}
-                    </label>
-                  ))}
-                </div>
+            <AccordionSection title="Tags" open={openSection === "tags"} onToggle={() => toggleSection("tags")}>
+              <Field label="Tags">
+                <MultiSelect
+                  searchable
+                  placeholder="Choose tags"
+                  options={(meta.data?.tags ?? OB_TAGS).map((t) => ({ value: t.key, label: t.label }))}
+                  value={form.tagKeys}
+                  onChange={(tagKeys) => setForm({ ...form, tagKeys })}
+                />
               </Field>
-              {OB_SERVICES.map((s) => (
-                <div key={s.key} className="mb-2 grid items-center gap-2 sm:grid-cols-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={!!form.serviceOn[s.key]} onChange={() => setForm({ ...form, serviceOn: { ...form.serviceOn, [s.key]: !form.serviceOn[s.key] } })} />
-                    {s.label}
-                  </label>
-                  {s.referenceLabel && form.serviceOn[s.key] && (
-                    <input className={inputCls} placeholder={s.referenceLabel} value={form.serviceRef[s.key] ?? ""} onChange={(e) => setForm({ ...form, serviceRef: { ...form.serviceRef, [s.key]: e.target.value } })} />
+              <div className="flex gap-2">
+                <input className={inputCls} placeholder="Add a tag if it is missing" value={newTag} onChange={(e) => setNewTag(e.target.value)} />
+                <Btn variant="ghost" onClick={() => void addTag()}>Add</Btn>
+              </div>
+            </AccordionSection>
+
+            <AccordionSection title="Who reacted" open={openSection === "reacted"} onToggle={() => toggleSection("reacted")}>
+              <Field label="Patrols that responded">
+                <MultiSelect
+                  placeholder="Choose patrols"
+                  emptyText="No active patrols in this sector right now."
+                  options={patrolOptions}
+                  value={form.patrolIds}
+                  onChange={(patrolIds) => setForm({ ...form, patrolIds })}
+                />
+              </Field>
+              <Field label="CPF members on patrol">
+                <MultiSelect
+                  placeholder="Choose members"
+                  emptyText="Nobody is on patrol in this sector right now."
+                  options={memberOptions}
+                  value={form.responderIds}
+                  onChange={(responderIds) => setForm({ ...form, responderIds })}
+                />
+              </Field>
+              <Field label="Services">
+                <MultiSelect
+                  placeholder="Choose services"
+                  options={OB_SERVICES.map((s) => ({ value: s.key, label: s.label }))}
+                  value={OB_SERVICES.filter((s) => form.serviceOn[s.key]).map((s) => s.key)}
+                  onChange={(keys) => {
+                    const serviceOn: Record<string, boolean> = {};
+                    for (const key of keys) serviceOn[key] = true;
+                    setForm({ ...form, serviceOn });
+                  }}
+                />
+              </Field>
+              {OB_SERVICES.filter((s) => form.serviceOn[s.key] && (s.referenceLabel || s.key === "other")).map((s) => (
+                <div key={s.key} className="mb-3 grid gap-2 sm:grid-cols-2">
+                  {s.referenceLabel && (
+                    <Field label={s.referenceLabel}>
+                      <input className={inputCls} value={form.serviceRef[s.key] ?? ""} onChange={(e) => setForm({ ...form, serviceRef: { ...form.serviceRef, [s.key]: e.target.value } })} />
+                    </Field>
                   )}
-                  {s.key === "other" && form.serviceOn[s.key] && (
-                    <input className={inputCls} placeholder="Name" value={form.otherName} onChange={(e) => setForm({ ...form, otherName: e.target.value })} />
+                  {s.key === "other" && (
+                    <Field label="Other service name">
+                      <input className={inputCls} value={form.otherName} onChange={(e) => setForm({ ...form, otherName: e.target.value })} />
+                    </Field>
                   )}
                 </div>
               ))}
               <Field label="Security companies">
-                <div className="flex flex-wrap gap-3 text-sm">
-                  {(meta.data?.securityCompanies ?? []).map((c) => (
-                    <label key={c.id} className="flex items-center gap-2">
-                      <input type="checkbox" checked={form.companyIds.includes(c.id)} onChange={() => setForm({ ...form, companyIds: toggle(form.companyIds, c.id) })} />
-                      {c.name}
-                    </label>
-                  ))}
-                  {(meta.data?.securityCompanies.length ?? 0) === 0 && <span className="text-gray-500">No companies loaded yet.</span>}
-                </div>
+                <MultiSelect
+                  placeholder="Choose security companies"
+                  emptyText="No companies loaded yet."
+                  options={(meta.data?.securityCompanies ?? []).map((c) => ({ value: c.id, label: c.name }))}
+                  value={form.companyIds}
+                  onChange={(companyIds) => setForm({ ...form, companyIds })}
+                />
               </Field>
               {meta.data?.canMaintainCompanies && (
                 <div className="mb-4 flex gap-2">
@@ -694,11 +790,10 @@ export function OccurrenceBookPage() {
               <Field label="Action taken">
                 <textarea className={inputCls} rows={3} value={form.actionDetails} onChange={(e) => setForm({ ...form, actionDetails: e.target.value })} />
               </Field>
-            </section>
+            </AccordionSection>
 
             {mode === "edit" && detail.data && (
-              <section className="rounded-xl border bg-white p-4 sm:p-6">
-                <h2 className="mb-3 text-sm font-semibold text-gray-900">Last seen</h2>
+              <AccordionSection title="Last seen" open={openSection === "seen"} onToggle={() => toggleSection("seen")}>
                 <ul className="mb-3 space-y-1 text-sm text-gray-700">
                   {detail.data.sightings.length === 0 && <li>No later sightings. The incident location is the last known place.</li>}
                   {detail.data.sightings.map((s) => (
@@ -712,11 +807,10 @@ export function OccurrenceBookPage() {
                   <input className={inputCls} placeholder="What was seen" value={seenNote} onChange={(e) => setSeenNote(e.target.value)} />
                 </div>
                 <div className="mt-2"><Btn variant="ghost" onClick={() => void addSighting()}>Add sighting</Btn></div>
-              </section>
+              </AccordionSection>
             )}
 
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">Close</h2>
+            <AccordionSection title="Close" open={openSection === "close"} onToggle={() => toggleSection("close")}>
               <Field label="Conclusion">
                 <select className={selectCls} value={form.conclusion} onChange={(e) => setForm({ ...form, conclusion: e.target.value })}>
                   <option value="">Leave active</option>
@@ -724,7 +818,7 @@ export function OccurrenceBookPage() {
                 </select>
               </Field>
               <p className="text-xs text-gray-500">Photos are not on this form yet. They will be stored on the incident once file upload is in place.</p>
-            </section>
+            </AccordionSection>
 
             <div className="flex flex-wrap justify-end gap-2">
               <Btn variant="ghost" onClick={backToList}>Cancel</Btn>
@@ -800,7 +894,7 @@ export function OccurrenceBookPage() {
             {
               header: "",
               className: "text-right",
-              render: (r) => <RowActions onEdit={() => { setEditingId(r.id); setHydrated(null); setMode("edit"); }} />,
+              render: (r) => <RowActions onEdit={() => { setEditingId(r.id); setHydrated(null); setOpenSection("incident"); setMode("edit"); }} />,
             },
           ]}
         />
