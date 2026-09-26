@@ -58,7 +58,7 @@ ob.use("*", requireAuth());
 ob.use("*", async (c, next) => {
   const path = c.req.path;
   const patrollerWrite = c.req.method === "POST" && /\/entries$/.test(path);
-  const patrollerRead = c.req.method === "GET" && path.endsWith("/meta");
+  const patrollerRead = c.req.method === "GET" && (path.endsWith("/meta") || path.endsWith("/lookup"));
   if (patrollerWrite || patrollerRead) return next();
   if (!DESK.has(getAuth(c).patroller.access_level)) throw new AppError("ACCESS_FORBIDDEN");
   return next();
@@ -655,6 +655,165 @@ ob.get("/meta", async (c) => {
     tags: [...OB_TAGS, ...tagRows],
     canMaintainCompanies: canMaintainCompanies(auth),
   });
+});
+
+function addressTokens(raw: string): string[] {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length >= 2 || /^\d/.test(token))
+    .slice(0, 8);
+}
+
+function formatLookupAddress(street: string, suburbName: string | null): string {
+  return [street.trim(), (suburbName ?? "").trim()].filter(Boolean).join(", ");
+}
+
+/** Patrollers search an address to see if a vehicle or person of interest was logged there. */
+ob.get("/lookup", async (c) => {
+  const auth = getAuth(c);
+  const db = getDb(c.env);
+  const tokens = addressTokens(c.req.query("q") ?? "");
+  if (tokens.join("").length < 3) return c.json({ vehicles: [], persons: [] });
+
+  await ensureSuburbs(db, auth.patroller.cpf_id);
+  const suburbRows = await db.select().from(obSuburbs).where(eq(obSuburbs.cpfId, auth.patroller.cpf_id));
+  const suburbIdsFor = (token: string) =>
+    suburbRows
+      .filter((suburb) => {
+        if (suburb.name.toLowerCase().includes(token)) return true;
+        return (suburb.aliases ?? []).some((alias) => alias.toLowerCase().includes(token));
+      })
+      .map((suburb) => suburb.id);
+
+  const tokenOn = (
+    streetCol: typeof obEntries.street | typeof obSightings.street,
+    suburbCol: typeof obEntries.suburbId | typeof obSightings.suburbId,
+    token: string,
+  ) => {
+    const streetLike = like(streetCol, `%${token.replace(/[%_]/g, "")}%`);
+    const ids = suburbIdsFor(token);
+    return ids.length ? or(streetLike, inArray(suburbCol, ids)) : streetLike;
+  };
+
+  const scope = eq(obEntries.cpfId, auth.patroller.cpf_id);
+  const [entryHits, sightingHits] = await Promise.all([
+    db
+      .select({ entry: obEntries, suburbName: obSuburbs.name })
+      .from(obEntries)
+      .leftJoin(obSuburbs, eq(obEntries.suburbId, obSuburbs.id))
+      .where(and(scope, ...tokens.map((token) => tokenOn(obEntries.street, obEntries.suburbId, token))))
+      .orderBy(desc(obEntries.occurredAt))
+      .limit(80),
+    db
+      .select({
+        entryId: obSightings.entryId,
+        street: obSightings.street,
+        suburbName: obSuburbs.name,
+        seenAt: obSightings.seenAt,
+      })
+      .from(obSightings)
+      .innerJoin(obEntries, eq(obSightings.entryId, obEntries.id))
+      .leftJoin(obSuburbs, eq(obSightings.suburbId, obSuburbs.id))
+      .where(and(scope, ...tokens.map((token) => tokenOn(obSightings.street, obSightings.suburbId, token))))
+      .orderBy(desc(obSightings.seenAt))
+      .limit(80),
+  ]);
+
+  const known = new Set(entryHits.map((row) => row.entry.id));
+  const extraIds = [...new Set(sightingHits.map((row) => row.entryId).filter((id) => !known.has(id)))];
+  const extraEntries = extraIds.length
+    ? await db
+        .select({ entry: obEntries, suburbName: obSuburbs.name })
+        .from(obEntries)
+        .leftJoin(obSuburbs, eq(obEntries.suburbId, obSuburbs.id))
+        .where(and(scope, inArray(obEntries.id, extraIds)))
+    : [];
+
+  const entries = [...entryHits, ...extraEntries]
+    .sort((a, b) => b.entry.occurredAt.localeCompare(a.entry.occurredAt))
+    .slice(0, 40);
+  const ids = entries.map((row) => row.entry.id);
+  if (!ids.length) return c.json({ vehicles: [], persons: [] });
+
+  const [vehicleRows, personRows] = await Promise.all([
+    db.select().from(obVehicles).where(inArray(obVehicles.entryId, ids)),
+    db.select().from(obPersons).where(and(inArray(obPersons.entryId, ids), eq(obPersons.kind, "poi"))),
+  ]);
+
+  const latestSighting = new Map<string, { street: string; suburbName: string | null }>();
+  for (const sighting of sightingHits) {
+    if (!latestSighting.has(sighting.entryId)) {
+      latestSighting.set(sighting.entryId, { street: sighting.street, suburbName: sighting.suburbName });
+    }
+  }
+
+  const vehicles: {
+    colour: string | null;
+    shape: string | null;
+    make: string | null;
+    model: string | null;
+    registration: string | null;
+    features: string | null;
+    address: string;
+    ob_number: string;
+    status: "active" | "closed";
+    occurred_at: string;
+    last_seen: boolean;
+  }[] = [];
+  const persons: {
+    gender: string | null;
+    clothing: string | null;
+    direction: string | null;
+    note: string | null;
+    address: string;
+    ob_number: string;
+    status: "active" | "closed";
+    occurred_at: string;
+    last_seen: boolean;
+  }[] = [];
+
+  for (const row of entries) {
+    const sighting = latestSighting.get(row.entry.id);
+    const lastSeen = !known.has(row.entry.id) && !!sighting;
+    const address = lastSeen
+      ? formatLookupAddress(sighting.street, sighting.suburbName)
+      : formatLookupAddress(row.entry.street, row.suburbName);
+    const base = {
+      address,
+      ob_number: row.entry.obNumber,
+      status: row.entry.status,
+      occurred_at: row.entry.occurredAt,
+      last_seen: lastSeen,
+    };
+    for (const vehicle of vehicleRows) {
+      if (vehicle.entryId !== row.entry.id) continue;
+      if (!vehicle.colour && !vehicle.shape && !vehicle.make && !vehicle.model && !vehicle.registration && !vehicle.features) continue;
+      vehicles.push({
+        ...base,
+        colour: vehicle.colour,
+        shape: vehicle.shape,
+        make: vehicle.make,
+        model: vehicle.model,
+        registration: vehicle.registration,
+        features: vehicle.features,
+      });
+    }
+    for (const person of personRows) {
+      if (person.entryId !== row.entry.id) continue;
+      persons.push({
+        ...base,
+        gender: person.gender,
+        clothing: person.clothing,
+        direction: person.direction,
+        note: person.note,
+      });
+    }
+  }
+
+  return c.json({ vehicles, persons });
 });
 
 ob.get("/entries", async (c) => {
