@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Patrol Log — Occurrence Book Business Requirements</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm 16mm 20mm 16mm;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", Calibri, Arial, sans-serif;
+      color: #1a2332;
+      font-size: 11pt;
+      line-height: 1.45;
+    }
+    h1, h2, h3, h4 { color: #0b2a4a; page-break-after: avoid; }
+    h1 { font-size: 22pt; margin: 0 0 8px; }
+    h2 {
+      font-size: 15pt;
+      border-bottom: 2.5px solid #0b2a4a;
+      padding-bottom: 4px;
+      margin: 28px 0 12px;
+    }
+    h3 { font-size: 12.5pt; margin: 20px 0 8px; }
+    p { margin: 0 0 10px; }
+    ul, ol { margin: 0 0 12px 18px; padding: 0; }
+    li { margin-bottom: 4px; }
+    .cover {
+      page-break-after: always;
+      min-height: 240mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 12mm 4mm 8mm;
+    }
+    .cover-top { text-align: center; }
+    .badge {
+      display: inline-block;
+      background: #0b2a4a;
+      color: #fff;
+      letter-spacing: 0.14em;
+      font-size: 9pt;
+      font-weight: 700;
+      padding: 6px 14px;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+    .cover h1 { font-size: 28pt; line-height: 1.2; margin-bottom: 10px; }
+    .cover .sub { font-size: 14pt; color: #3d5166; margin-bottom: 28px; }
+    .meta {
+      width: 100%;
+      max-width: 420px;
+      margin: 0 auto;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    .meta th, .meta td {
+      border: 1px solid #c5d0db;
+      padding: 8px 10px;
+      font-size: 10.5pt;
+    }
+    .meta th { width: 38%; background: #eef3f8; }
+    .purpose-box {
+      background: #eef3f8;
+      border-left: 5px solid #0b2a4a;
+      padding: 14px 16px;
+      margin: 24px 0 0;
+      text-align: left;
+    }
+    .footer-note { font-size: 9pt; color: #5a6b7d; text-align: center; }
+    .page-break { page-break-before: always; }
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 14px;
+      font-size: 9.5pt;
+    }
+    table.data th {
+      background: #0b2a4a;
+      color: #fff;
+      text-align: left;
+      padding: 6px 7px;
+      font-weight: 600;
+    }
+    table.data td {
+      border: 1px solid #d5dee7;
+      padding: 5px 7px;
+      vertical-align: top;
+    }
+    table.data tr:nth-child(even) td { background: #f5f8fb; }
+    table.data tr { page-break-inside: avoid; }
+    .note {
+      background: #fff8e8;
+      border: 1px solid #e6d3a3;
+      padding: 10px 12px;
+      margin: 10px 0 14px;
+      font-size: 10.5pt;
+    }
+    .ok {
+      background: #eef7ef;
+      border: 1px solid #b7d8bc;
+      padding: 10px 12px;
+      margin: 10px 0 14px;
+      font-size: 10.5pt;
+    }
+    .two-col { display: table; width: 100%; }
+    .two-col > div { display: table-cell; width: 50%; vertical-align: top; padding-right: 12px; }
+    .two-col > div:last-child { padding-right: 0; padding-left: 12px; }
+    .list-plain { columns: 2; column-gap: 18px; margin: 0 0 12px; }
+    .list-plain li { break-inside: avoid; }
+    .sign {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+    .sign th, .sign td {
+      border: 1px solid #c5d0db;
+      padding: 14px 10px;
+      font-size: 10.5pt;
+    }
+    .sign th { background: #eef3f8; text-align: left; width: 28%; }
+    .small { font-size: 9pt; color: #4a5b6d; }
+    .toc a { color: #0b2a4a; text-decoration: none; }
+    .toc td { padding: 5px 4px; border-bottom: 1px dotted #c5d0db; }
+    .d-police { color: #b00020; font-weight: 700; }
+    .d-caution { color: #c45c00; font-weight: 700; }
+    .d-respond { color: #1a6b2c; font-weight: 700; }
+    .d-none { color: #2a4d8f; font-weight: 700; }
+    .pri1 { color: #b00020; font-weight: 700; }
+    .pri2 { color: #c45c00; font-weight: 700; }
+    .pri3 { color: #1a6b2c; font-weight: 700; }
+    .pri4 { color: #2a4d8f; font-weight: 700; }
+    .section-lead { font-size: 11pt; }
+  </style>
+</head>
+<body>
+
+  <section class="cover">
+    <div class="cover-top">
+      <div class="badge">For discussion — not for sign-off</div>
+      <h1>Occurrence Book<br />Business Requirements</h1>
+      <p class="sub">Patrol Log — Wierdabrug CPF</p>
+      <table class="meta">
+        <tr><th>Document</th><td>OB-BOOK-SPEC-001</td></tr>
+        <tr><th>Version</th><td>1.3 — discussion draft</td></tr>
+        <tr><th>Date</th><td>17 September 2026</td></tr>
+        <tr><th>Audience</th><td>Call centre, sector leads, CPF committee</td></tr>
+        <tr><th>Purpose</th><td>Work through section by section. Not a sign-off form. Old lists can be scrapped where the group agrees.</td></tr>
+      </table>
+      <div class="purpose-box">
+        <strong>This is a business requirements document, not software.</strong>
+        Every dropdown, type and report heading for the new book is listed here.
+        If a word is wrong, missing or should be renamed, mark it on this document.
+        We will build the system from this PDF.
+      </div>
+    </div>
+    <p class="footer-note">Discussion draft. Crime types from Le Roux’s spreadsheet (8 Sep 2026). Comments through 16 Sep 2026.</p>
+  </section>
+
+  <h2>1. Discussion so far</h2>
+  <p>Work through this <strong>section by section</strong>. Old OB lists can be scrapped. This v1.3 applies the WhatsApp thread of 8–16 September 2026 plus Le Roux’s updated type spreadsheet.</p>
+  <table class="data">
+    <thead><tr><th>When / who</th><th>Comment</th><th>What this draft does</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>5 Sep — Le Roux / Hein</td>
+        <td>Alpha vs Bravo danger; many types on one incident; shorter Received from; services changes.</td>
+        <td>Kept from v1.2.</td>
+      </tr>
+      <tr>
+        <td>8 Sep — Le Roux</td>
+        <td>Updated crime type list is missing items. IR/OB numbers today are sequence/year e.g. 215/2026. Must each sector have its own sequence?</td>
+        <td>Type list replaced from the spreadsheet. OB number = <strong>S1/215/2026</strong> — sector code + sequence + year. Each sector has its own sequence (Theuns).</td>
+      </tr>
+      <tr>
+        <td>8 Sep — Angelique, Le Roux, Niel</td>
+        <td>Attempted suicide vs suicide: starts as emergency; if it becomes P4 / death it is criminal (unnatural death, docket). Agreed: attempted = emergency, suicide = crime.</td>
+        <td>Attempted Suicide stays Emergency (055C). Suicide moves to Criminal (055). If an attempted suicide ends in death, change type to Suicide / Unnatural Death and tag Injuries - P4.</td>
+      </tr>
+      <tr>
+        <td>8 Sep — Niel</td>
+        <td>Some sectors still run a basic Telegram OB (address, date, incident heading, chat with screenshots). Stats are pulled by hand. They want Patrol Log OB for stats.</td>
+        <td>WhatsApp / CSV / Summary / Detail / map reports are specified from the current Sierra 1 August pack so stats are not manual.</td>
+      </tr>
+      <tr>
+        <td>8–9 Sep — Hein / Le Roux / Niel</td>
+        <td>Grey codes: Smash-n-Grab 016+017; Cable Theft 013+017; Dog Poisoning 017; Protest ≈ 070; disasters are not crime; fireworks = Metro by-law. Tags can mark dog poisoning etc. Sector 2 only logs emergencies if they were present. Le Roux: capture <em>all crime we know about</em> even if we were not there, as “Captured for Information Only”. Emergencies, disasters and by-law only if we were present or assisting.</td>
+        <td>Capture rule in section 3. Tags for smash-and-grab, dog poisoning, fireworks. Multiple types cover 016+017. Protest March 070 on the new list.</td>
+      </tr>
+      <tr>
+        <td>Hein’s photo — SAPS 100–108</td>
+        <td>108 = Robbery from Person. Also Bank Robbery 104, CIT 105, Armed Robbery – Person 107.</td>
+        <td>108 confirmed. 104–108 added. House robbery extras (013, GBH, 017) still use multi-type.</td>
+      </tr>
+      <tr>
+        <td>13 Sep — Le Roux / Hein / Niel</td>
+        <td>One vehicle must link to more than one patroller (Lex/Chiminay; WV17/18/42; WV19/49; WV37/38 would not save).</td>
+        <td>Related Patrol Log change: a vehicle can have several members. Not part of the OB form, but required before go-live.</td>
+      </tr>
+      <tr>
+        <td>16 Sep — Hein / Angelique</td>
+        <td>Patrollers cannot add or edit Residents in Patrol Log, so people put residents on the old OB.</td>
+        <td>Related Patrol Log change: patrollers can add/edit residents (same as they wanted on the OB).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>2. What this document covers</h2>
+  <p class="section-lead">The new Patrol Log system will replace the current Sierra 1 Occurrence Book for logging incidents. This BRD sets out the lists and rules so the book matches how the sector actually works.</p>
+  <ul>
+    <li>The <strong>types of incident</strong> (Criminal, Emergency, Of Interest, Other) and their SAPS-style codes</li>
+    <li>For criminal types only: a <strong>danger level</strong> that tells a patroller whether to attend, or leave it to police and armed response</li>
+    <li>Medical <strong>patient priority</strong> (P1–P4) — how badly the injured person is hurt, not how dangerous the scene is</li>
+    <li>How an incident is <strong>opened and closed</strong> (Active / Closed, and the conclusion list)</li>
+    <li>Who an incident can be <strong>received from</strong>, and which <strong>services</strong> can be marked on scene</li>
+    <li>The <strong>suburb list</strong> for Wierdabrug / Centurion</li>
+    <li>How <strong>patrollers</strong> log an incident on the phone, including while already on patrol</li>
+    <li>How <strong>call centre</strong> logs a Commence Shift in the book</li>
+    <li>How <strong>BOLOs</strong> are shown to patrollers</li>
+    <li>That <strong>photos</strong> are kept as proof on each incident</li>
+    <li>How <strong>hotspots</strong> are filled from last month’s crime (not accidents), and can still be amended by admin</li>
+    <li>How the monthly <strong>Summary Report</strong>, WhatsApp community post, Detail report and crime map work</li>
+    <li>Related Patrol Log gaps: one vehicle, several patrollers; patrollers add/edit Residents</li>
+  </ul>
+  <div class="ok">Nothing in this document is software yet. It is the business specification we will build from.</div>
+
+  <h2>2. Contents</h2>
+  <table class="toc" style="width:100%;border-collapse:collapse;font-size:10.5pt;">
+    <tr><td>1.</td><td>Discussion so far</td></tr>
+    <tr><td>2.</td><td>What this document covers / contents</td></tr>
+    <tr><td>3.</td><td>How an incident will work, OB numbers, and what we capture</td></tr>
+    <tr><td>4.</td><td>Who does what</td></tr>
+    <tr><td>5.</td><td>Status and conclusions (closing an incident)</td></tr>
+    <tr><td>6.</td><td>Danger level — Alpha vs Bravo — and medical patient tags</td></tr>
+    <tr><td>7.</td><td>Categories and all incident types</td></tr>
+    <tr><td>8.</td><td>Crime groups used only on the Summary Report</td></tr>
+    <tr><td>9.</td><td>Received from</td></tr>
+    <tr><td>10.</td><td>Services on scene / reacted</td></tr>
+    <tr><td>11.</td><td>Suburbs</td></tr>
+    <tr><td>12.</td><td>Time of day and day of week</td></tr>
+    <tr><td>13.</td><td>Vehicle of Interest, Person of Interest, and medical patient tags</td></tr>
+    <tr><td>14.</td><td>Photos</td></tr>
+    <tr><td>15.</td><td>Patrollers: log incident and respond while on patrol</td></tr>
+    <tr><td>16.</td><td>Call centre: Commence Shift in the book</td></tr>
+    <tr><td>17.</td><td>BOLOs — last seen where and when</td></tr>
+    <tr><td>18.</td><td>Hotspots — last month’s crime trends</td></tr>
+    <tr><td>19.</td><td>Reports (WhatsApp, Summary, Detail, Crime map)</td></tr>
+    <tr><td>20.</td><td>Moving old Sierra 1 records across</td></tr>
+    <tr><td>21.</td><td>Related Patrol Log changes (vehicles, residents)</td></tr>
+    <tr><td>22.</td><td>Radio lingo and phonetic alphabet</td></tr>
+    <tr><td>23.</td><td>Fields on the capture form</td></tr>
+  </table>
+
+  <h2 class="page-break">3. How an incident will work</h2>
+  <p>Every event that belongs in the book becomes one <strong>Occurrence Book entry</strong> (an incident).</p>
+  <h3>3.1 OB / IR number — per sector, per year</h3>
+  <p>Today Sierra 1 uses <strong>sequence/year</strong>, for example <strong>215/2026</strong>. Le Roux asked whether each sector has its own sequence. Yes.</p>
+  <p>Format: <strong>{sector}/{sequence}/{year}</strong> — example <strong>S1/215/2026</strong> (Theuns). WBS2 would be S2/1/2026, WBS3 would be S3/1/2026. Sequence restarts at 1 each calendar year, separately per sector. The number is assigned on first save and is not typed by the operator.</p>
+  <h3>3.2 Capture — crime vs emergency</h3>
+  <p>Le Roux (agreed with Sector 2’s practice on emergencies):</p>
+  <ul>
+    <li><strong>Crime</strong> — capture everything the sector knows about, even if nobody from CPF was on scene. That is how we see trends and hotspots. Those rows use conclusion <strong>Captured for Information Only</strong>.</li>
+    <li><strong>Emergencies, natural disasters and by-law</strong> (flood, lightning, fireworks, MVA, fire, medical) — only capture if we were present or actually assisting. If we only phoned Metro and were not needed, do not log it.</li>
+  </ul>
+  <h3>3.3 How a row is filled</h3>
+  <ol>
+    <li>Someone captures the incident (call centre on the admin website, or a patroller on the phone).</li>
+    <li>They choose the <strong>category</strong>, then one or more <strong>types</strong> (for example House Robbery <em>and</em> Theft <em>and</em> Assault GBH <em>and</em> Malicious Damage). The first type is the primary one for reports. Extra types record everything else that happened. Code <strong>108 is Robbery from Person</strong>.</li>
+    <li>For a criminal type they also mark <strong>Alpha (A) — still active</strong> or <strong>Bravo (B) — already happened</strong>. That drives the danger level (Le Roux: 023A leave to police; 023B patrollers can assist).</li>
+    <li>They fill in date and estimated time, where it happened, a description, who reported it, and who responded.</li>
+    <li>The entry stays <strong>Active</strong> until someone closes it.</li>
+    <li>To close it they must choose a <strong>conclusion</strong> (what the outcome was).</li>
+    <li>Photos can be attached as proof at any time.</li>
+  </ol>
+  <div class="note"><strong>What we are not changing:</strong> Commencing and standing down a patrol stays as it is today. A patrol is not the same thing as an incident. A patroller can be on patrol and then log or respond to an incident without ending the patrol.</div>
+
+  <h2>4. Who does what</h2>
+  <table class="data">
+    <thead>
+      <tr>
+        <th style="width:22%">Who</th>
+        <th>What they can do</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Call centre</td>
+        <td>Full capture form (same idea as Sierra 1). Optional “Commence Shift” entry in the book. See and edit all incidents for the sector. Add photos, VOI / POI / tags, close incidents.</td>
+      </tr>
+      <tr>
+        <td>Patroller (phone)</td>
+        <td>Log a new incident from Home or while already on patrol. Mark “Responding” to an existing active incident. See BOLOs (who / what to look for, last seen where and when). Add a “I saw this here” update. Add photos. Add and edit Residents. Work offline — it will send when signal returns.</td>
+      </tr>
+      <tr>
+        <td>Sector lead / Admin</td>
+        <td>Everything the call centre can do, plus maintain lists (for example add a suburb) and import the old Sierra 1 history once it has been formatted.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. Status and conclusions</h2>
+  <h3>5.1 Status — only two</h3>
+  <table class="data">
+    <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Active</td><td>Still open. Work is ongoing or waiting for feedback.</td></tr>
+      <tr><td>Closed</td><td>Finished. A conclusion has been chosen.</td></tr>
+    </tbody>
+  </table>
+  <p>There is no “pending”, “investigating” or “false alarm” status. If it was a false alarm or nothing was found, that is recorded in the <strong>conclusion</strong>, then the incident is Closed.</p>
+
+  <h3>5.2 Conclusions — choose one when closing</h3>
+  <p>These are the same outcomes used in the current Sierra 1 book. Please confirm the wording is still what you want operators to see.</p>
+  <table class="data">
+    <thead><tr><th>#</th><th>Conclusion (exact wording)</th><th>When to use it (plain language)</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>All in Order - Nothing Found</td><td>Checked the scene or address; nothing to action.</td></tr>
+      <tr><td>2</td><td>Authorities notified</td><td>SAPS / Metro / other authority was informed; we are not holding the scene.</td></tr>
+      <tr><td>3</td><td>No feedback received</td><td>Logged, but nobody came back with an outcome.</td></tr>
+      <tr><td>4</td><td>Scene Handed over to Authorities</td><td>We were on scene and handed it to SAPS / Metro / Fire / EMS.</td></tr>
+      <tr><td>5</td><td>Scene Cleared - Patients Transported</td><td>Medical: patients taken away; scene then cleared.</td></tr>
+      <tr><td>6</td><td>Scene Cleared</td><td>Work at the scene is done; no patients transported.</td></tr>
+      <tr><td>7</td><td>Captured for Information Only</td><td>Crime we know about but were not present for (Le Roux). Also used for notes / BOLOs where nobody needs to attend.</td></tr>
+      <tr><td>8</td><td>Other</td><td>Does not fit the list. Explain in the action details.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>6. Two different ideas — do not mix them</h2>
+  <div class="note"><strong>These are not the same thing.</strong> How badly an injured person is hurt is <em>not</em> the same as how dangerous the scene is for a patroller. We do not put a P1–P4 “urgency” on the incident type. That old number mixed those ideas together and is dropped.</div>
+
+  <h3>6.1 Danger level — Alpha (A) vs Bravo (B)</h3>
+  <p>Le Roux: the same crime is not equally dangerous when it is <strong>still happening</strong> as when it is <strong>already over</strong>.</p>
+  <table class="data">
+    <thead><tr><th>Radio / code</th><th>Meaning</th><th>Example (Armed Robbery 023)</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Alpha / A</strong></td><td>Active — still in progress</td><td>023A — leave it to the police and armed response</td></tr>
+      <tr><td><strong>Bravo / B</strong></td><td>Already happened — scene after the fact</td><td>023B — patrollers can assist</td></tr>
+      <tr><td><strong>Charlie / C</strong></td><td>Attempted (already a separate type on the list, for example 023C Attempted Armed Robbery)</td><td>If it is still on, treat like Alpha; if it is over, treat like Bravo</td></tr>
+    </tbody>
+  </table>
+  <p>So danger is <strong>not</strong> one fixed label on “Armed Robbery”. The operator picks the type(s) <em>and</em> whether it is Alpha or Bravo. The phone then tells the patroller what to do.</p>
+  <p>Starting rule (the group can move any row):</p>
+  <ul>
+    <li><strong>Contact / serious crime, Alpha</strong> → Leave to police</li>
+    <li><strong>Same crime, Bravo</strong> → Caution (patrollers may assist)</li>
+    <li><strong>Property crime, Alpha</strong> → Caution (suspect may still be there)</li>
+    <li><strong>Property crime, Bravo</strong> → Respond</li>
+    <li><strong>Book-only types</strong> (fraud, DUI, recovered goods) → No response either way</li>
+  </ul>
+  <p>Emergency, Of Interest and Other types still have no danger level.</p>
+  <table class="data">
+    <thead><tr><th>Danger level</th><th>What the patroller must do</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="d-police">Leave to police</td>
+        <td>Do <strong>not</strong> attend the scene. This is for SAPS and armed response only. If you are already nearby, stay at a safe distance and observe. Do not approach armed suspects, a shooting, a hijacking, a hostage situation, or similar.</td>
+      </tr>
+      <tr>
+        <td class="d-caution">Caution</td>
+        <td>You may attend if asked or if you are already close, but treat the scene as still dangerous. Do not go in alone if suspects may still be there. Wait for backup or armed response if needed.</td>
+      </tr>
+      <tr>
+        <td class="d-respond">Respond</td>
+        <td>Normal CPF attendance. Go, check, help residents, take details and photos, and write it in the book.</td>
+      </tr>
+      <tr>
+        <td class="d-none">No response</td>
+        <td>For the book only. No need to send a patroller unless someone specifically asks.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="small">Danger follows the contact / property / book-only rules above. Mark any type that should move.</p>
+
+  <h3>6.2 Medical patient priority — the injured person only</h3>
+  <p>P1–P4 is used <strong>only</strong> as an optional tag for a person who was hurt (or for a deceased person). It is the condition of that individual, not the danger of the scene, and not “how urgent is this incident type”.</p>
+  <p>Example: an MVA can have one patient tagged P1 (critical) and another tagged P3 (walking wounded). The accident type itself has no priority and no danger level.</p>
+  <table class="data">
+    <thead><tr><th>Patient tag</th><th>Meaning for that person</th></tr></thead>
+    <tbody>
+      <tr><td class="pri1">Injuries - P1</td><td>Code Red — life and death / critical</td></tr>
+      <tr><td class="pri2">Injuries - P2</td><td>Code Yellow — hurt but not critical</td></tr>
+      <tr><td class="pri3">Injuries - P3</td><td>Code Green — walking wounded / stable</td></tr>
+      <tr><td class="pri4">Injuries - P4</td><td>Code Blue — deceased</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="page-break">7. Categories and all incident types</h2>
+  <p>First choose a <strong>category</strong>, then one or more <strong>types</strong>. Operators see the name and the SAPS-style code. The list below is Le Roux’s spreadsheet (8 Sep 2026), plus 107 and 108 from the SAPS 100–108 table.</p>
+  <p><strong>The four categories:</strong> Criminal · Emergency · Of Interest · Other</p>
+
+  <h3>7.1 Criminal types</h3>
+  <p>Source: Le Roux spreadsheet 8 Sep 2026, plus SAPS 100–108 (photo). Names replace the old Sierra 1 wording (for example House Breaking, not “Breaking (House)”). Pick a <strong>primary</strong> type plus extras. Example: House Robbery (103) + Theft (013) + Assault GBH (010) + Malicious Damage (017). <strong>108 = Robbery from Person</strong>.</p>
+  <p>Alpha / Bravo is chosen on the incident (section 6), not as a separate column here. Grey cases use extra types and tags (section 13): Smash-n-Grab = 016 + 017 + tag; Cable Theft = 013 + 017; Dog Poisoning = 017 + tag; Protest = 070 Protest March.</p>
+  <table class="data">
+    <thead><tr><th>Type name</th><th>Code</th><th>Report group</th></tr></thead>
+    <tbody>
+<tr><td>Abduction</td><td>046</td><td>Contact crime</td></tr>
+<tr><td>Animal Abuse</td><td>063</td><td>Other criminal</td></tr>
+<tr><td>Armed Robbery</td><td>023</td><td>Contact crime</td></tr>
+<tr><td>Armed Robbery – Person</td><td>107</td><td>Contact crime</td></tr>
+<tr><td>Arson</td><td>036</td><td>Property</td></tr>
+<tr><td>Assault</td><td>011</td><td>Contact crime</td></tr>
+<tr><td>Assault GBH</td><td>010</td><td>Contact crime</td></tr>
+<tr><td>ATM Robbery</td><td>106</td><td>Contact crime</td></tr>
+<tr><td>Attempted Child Abuse</td><td>027C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Robbery</td><td>024C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Armed Robbery</td><td>023C</td><td>Contact crime</td></tr>
+<tr><td>Attempted ATM Robbery</td><td>106C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Bank Robbery</td><td>104C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Business Robbery</td><td>102C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Cable Theft</td><td>—</td><td>Property</td></tr>
+<tr><td>Attempted Car Jacking</td><td>100C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Cash in Transit Robbery</td><td>105C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Drowning</td><td>080C</td><td>Other criminal</td></tr>
+<tr><td>Attempted Hi-Jacking of Truck</td><td>101C</td><td>Contact crime</td></tr>
+<tr><td>Attempted House Breaking</td><td>014C</td><td>Property</td></tr>
+<tr><td>Attempted House Robbery</td><td>103C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Indecent Assault</td><td>043C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Malicious Damage</td><td>017C</td><td>Property</td></tr>
+<tr><td>Attempted Murder</td><td>022C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Rape</td><td>021C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Shooting</td><td>019C</td><td>Contact crime</td></tr>
+<tr><td>Attempted Stock Theft</td><td>—</td><td>Property</td></tr>
+<tr><td>Attempted Theft of Vehicle</td><td>015C</td><td>Property</td></tr>
+<tr><td>Attempted Theft out of Vehicle</td><td>016C</td><td>Property</td></tr>
+<tr><td>Bank Robbery</td><td>104</td><td>Contact crime</td></tr>
+<tr><td>Bomb Exploding</td><td>031</td><td>Contact crime</td></tr>
+<tr><td>Bomb Threat</td><td>032</td><td>Contact crime</td></tr>
+<tr><td>Business Robbery</td><td>102</td><td>Contact crime</td></tr>
+<tr><td>Cable Theft</td><td>—</td><td>Property</td></tr>
+<tr><td>Car Jacking</td><td>100</td><td>Contact crime</td></tr>
+<tr><td>Cash in Transit Robbery</td><td>105</td><td>Contact crime</td></tr>
+<tr><td>Child Abuse</td><td>027</td><td>Contact crime</td></tr>
+<tr><td>Crimen Injuria</td><td>042</td><td>Other criminal</td></tr>
+<tr><td>Dangerous Animal</td><td>074</td><td>Other criminal</td></tr>
+<tr><td>Desecration of Grave</td><td>065</td><td>Other criminal</td></tr>
+<tr><td>Disturbing the Peace</td><td>029</td><td>Other criminal</td></tr>
+<tr><td>Domestic Violence</td><td>092</td><td>Contact crime</td></tr>
+<tr><td>Drive under Influence</td><td>050</td><td>Other criminal</td></tr>
+<tr><td>Drowning</td><td>080</td><td>Other criminal</td></tr>
+<tr><td>Drunkenness</td><td>041</td><td>Other criminal</td></tr>
+<tr><td>Dumping Chemicals</td><td>098</td><td>Other criminal</td></tr>
+<tr><td>Escaping</td><td>045</td><td>Other criminal</td></tr>
+<tr><td>Fighting</td><td>012</td><td>Contact crime</td></tr>
+<tr><td>Fraud</td><td>034</td><td>Property</td></tr>
+<tr><td>Gang Fighting</td><td>048</td><td>Contact crime</td></tr>
+<tr><td>Gathering</td><td>056</td><td>Other criminal</td></tr>
+<tr><td>Hi-Jacking of Truck</td><td>101</td><td>Contact crime</td></tr>
+<tr><td>Hit by Train</td><td>057</td><td>Other criminal</td></tr>
+<tr><td>Hostage Situation</td><td>020</td><td>Contact crime</td></tr>
+<tr><td>House Breaking</td><td>014</td><td>Property</td></tr>
+<tr><td>House Robbery</td><td>103</td><td>Contact crime</td></tr>
+<tr><td>Illegal Strikes</td><td>069</td><td>Other criminal</td></tr>
+<tr><td>Incest</td><td>066</td><td>Contact crime</td></tr>
+<tr><td>Indecent Assault</td><td>043</td><td>Contact crime</td></tr>
+<tr><td>Injured Person</td><td>062</td><td>Other criminal</td></tr>
+<tr><td>Interdict</td><td>073</td><td>Other criminal</td></tr>
+<tr><td>Intimidation</td><td>033</td><td>Contact crime</td></tr>
+<tr><td>Kidnapping</td><td>088</td><td>Contact crime</td></tr>
+<tr><td>Loitering</td><td>086</td><td>Other criminal</td></tr>
+<tr><td>Lost Property</td><td>082</td><td>Other criminal</td></tr>
+<tr><td>Malicious Damage</td><td>017</td><td>Property</td></tr>
+<tr><td>Mentally Deranged</td><td>078</td><td>Other criminal</td></tr>
+<tr><td>Mentally Disturbed</td><td>064</td><td>Other criminal</td></tr>
+<tr><td>Missing on Mountain</td><td>087</td><td>Other criminal</td></tr>
+<tr><td>Missing Person</td><td>047</td><td>Other criminal</td></tr>
+<tr><td>Murder</td><td>022</td><td>Contact crime</td></tr>
+<tr><td>Pointing of Firearm</td><td>077</td><td>Contact crime</td></tr>
+<tr><td>Possess/Deal in Drugs</td><td>054</td><td>Other criminal</td></tr>
+<tr><td>Possession Dangerous Weapons</td><td>052</td><td>Other criminal</td></tr>
+<tr><td>Possession Stolen Goods</td><td>049</td><td>Property</td></tr>
+<tr><td>Protest March</td><td>070</td><td>Other criminal</td></tr>
+<tr><td>Public Indecency</td><td>085</td><td>Other criminal</td></tr>
+<tr><td>Rape</td><td>021</td><td>Contact crime</td></tr>
+<tr><td>Rebellious Person</td><td>075</td><td>Other criminal</td></tr>
+<tr><td>Recovered Property</td><td>072</td><td>Property</td></tr>
+<tr><td>Riots</td><td>068</td><td>Contact crime</td></tr>
+<tr><td>Robbery</td><td>024</td><td>Contact crime</td></tr>
+<tr><td>Robbery from Person</td><td>108</td><td>Contact crime</td></tr>
+<tr><td>Shooting</td><td>019</td><td>Contact crime</td></tr>
+<tr><td>Shoplifting</td><td>044</td><td>Property</td></tr>
+<tr><td>Stock Theft</td><td>053</td><td>Property</td></tr>
+<tr><td>Stone Throwing</td><td>030</td><td>Contact crime</td></tr>
+<tr><td>Sudden Death</td><td>079</td><td>Other criminal</td></tr>
+<tr><td>Suicide</td><td>055</td><td>Other criminal</td></tr>
+<tr><td>Theft</td><td>013</td><td>Property</td></tr>
+<tr><td>Theft of Vehicle</td><td>015</td><td>Property</td></tr>
+<tr><td>Theft out of Vehicle</td><td>016</td><td>Property</td></tr>
+<tr><td>Theft with Detention</td><td>058</td><td>Property</td></tr>
+<tr><td>Traffic Offence</td><td>081</td><td>Other criminal</td></tr>
+<tr><td>Trespassing</td><td>028</td><td>Trespassing / wall jumpers</td></tr>
+<tr><td>Unnatural Death</td><td>052</td><td>Other criminal</td></tr>
+<tr><td>Use Vehicle without Consent</td><td>018</td><td>Property</td></tr>
+<tr><td>Wanted Person</td><td>084</td><td>Other criminal</td></tr>
+    </tbody>
+  </table>
+  <p class="small">Note: spreadsheet lists both Possession Dangerous Weapons and Unnatural Death as 052 — keep both names; confirm with Le Roux if one code is wrong. Kidnapping is 088 on the new list (was 046). Suicide is criminal (055). Attempted Suicide is emergency (055C), not in this table.</p>
+
+  <h3>7.2 Emergency types</h3>
+  <p>No danger level on the type. If someone is hurt, tag that <strong>person</strong> P1–P4. <strong>Attempted Suicide (055C)</strong> lives here. If it ends in death, change the type to Suicide (criminal 055) / Unnatural Death and tag Injuries - P4 (Angelique / Le Roux). Natural disasters (flood, lightning, sinkhole, tree) have no SAPS crime code. Only log emergencies if CPF was present or assisting.</p>
+  <table class="data">
+    <thead><tr><th>Type name</th><th>Code</th></tr></thead>
+    <tbody>
+      <tr><td>Fire (House/Building/Factory)</td><td>035</td></tr>
+      <tr><td>Fire (Vehicle)</td><td>035</td></tr>
+      <tr><td>Fire (Veld/Field/Stand)</td><td>035</td></tr>
+      <tr><td>Attempted Suicide</td><td>055C</td></tr>
+      <tr><td>Flooding</td><td>—</td></tr>
+      <tr><td>Lightning / storm damage</td><td>—</td></tr>
+      <tr><td>MBA (Motor Bike Accident)</td><td>—</td></tr>
+      <tr><td>Medical Emergency</td><td>—</td></tr>
+      <tr><td>MVA (Motor Vehicle Accident)</td><td>—</td></tr>
+      <tr><td>PVA (Pedestrian Vehicle Accident)</td><td>—</td></tr>
+      <tr><td>Sinkhole</td><td>—</td></tr>
+      <tr><td>Tree Fallen Over</td><td>—</td></tr>
+      <tr><td>Other</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p class="small">Emergencies do not create crime hotspots. They are counted under Emergencies on the Summary Report (August 2026: 14 emergencies vs 42 criminal).</p>
+
+  <h3>7.3 Of Interest types</h3>
+  <table class="data">
+    <thead><tr><th>Type name</th><th>What it is for</th></tr></thead>
+    <tbody>
+      <tr><td>Vehicle of Interest</td><td>Suspect / watched vehicle (VOI). BOLO list.</td></tr>
+      <tr><td>Person of Interest</td><td>Suspect / watched person (POI). BOLO list.</td></tr>
+      <tr><td>Place of Interest</td><td>Address or landmark to watch.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.4 Other types</h3>
+  <table class="data">
+    <thead><tr><th>Type name</th><th>What it is for</th></tr></thead>
+    <tbody>
+      <tr><td>Note</td><td>Information only.</td></tr>
+      <tr><td>BOLO</td><td>Be On the Look Out.</td></tr>
+      <tr><td>Drive by Request</td><td>Asked to drive past an address.</td></tr>
+      <tr><td>Open Gate</td><td>Open / unsecured gate.</td></tr>
+      <tr><td>Metro By-Law (e.g. fireworks)</td><td>Only if CPF was present or assisting. Hein: fireworks as Metro by-law. Sector 2 calls Metro and does not count it if they were not needed.</td></tr>
+      <tr><td>Commence Shift</td><td>Call centre optional book entry.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="page-break">8. Crime groups — Summary Report only</h2>
+  <p>This is <strong>not</strong> an extra field when logging. The operator still just picks the type (for example “Armed Robbery”). When the monthly Summary Report is printed or copied for WhatsApp, every <em>Criminal</em> incident is counted under one of these four headings — the same idea as the current Sierra 1 Summary Report.</p>
+  <table class="data">
+    <thead><tr><th>Report heading</th><th>Which types fall under it</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Contact crime and other serious crime</td>
+        <td>Abduction; Armed Robbery and Armed Robbery – Person (107); ATM / Bank / Business / House Robbery and attempts; Assault and Assault GBH; Car Jacking and Hi-Jacking of Truck and attempts; Cash in Transit; Child Abuse and attempts; Domestic Violence; Fighting / Gang Fighting; Hostage; Kidnapping; Murder and Attempted Murder; Pointing of Firearm; Rape and Attempted Rape; Riots; Robbery and Robbery from Person (108); Shooting and Attempted Shooting; Indecent Assault and attempts; Intimidation; Bomb Exploding / Threat; Stone Throwing.</td>
+      </tr>
+      <tr>
+        <td>Property crime</td>
+        <td>House Breaking and Attempted House Breaking; Theft, Theft of Vehicle, Theft out of Vehicle, Theft with Detention and attempts; Cable Theft and attempts; Arson; Malicious Damage and attempts; Shoplifting; Fraud; Stock Theft and attempts; Recovered Property; Possession Stolen Goods; Use Vehicle without Consent.</td>
+      </tr>
+      <tr>
+        <td>Trespassing / wall jumpers</td>
+        <td>Trespassing (028). Tag <strong>Wall Jumper</strong> when that is how they entered. Kept as its own report heading because it is high-volume in this sector (August 2026 WhatsApp list: many Valhalla wall-jumper rows).</td>
+      </tr>
+      <tr>
+        <td>Other criminal</td>
+        <td>Animal Abuse; Crimen Injuria; Dangerous Animal; Disturbing the Peace; Drive under Influence; Drunkenness; Drowning and attempts; Escaping; Gathering; Protest March (070); Illegal Strikes; Loitering; Lost Property; Mentally Deranged / Disturbed; Missing Person / Missing on Mountain; Possess/Deal in Drugs; Possession Dangerous Weapons; Public Indecency; Rebellious Person; Suicide (055); Sudden Death; Unnatural Death; Traffic Offence; Wanted Person; and similar book types. Rape and Suicide are criminal for the book, but they are <strong>left off the WhatsApp community post</strong> (section 19).</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>The top of the Summary Report will still show the simple totals: all incidents, Criminal, Emergencies, Vehicles/People of Interest, Other.</p>
+
+  <h2>9. Received from</h2>
+  <p>Le Roux: we do not need the old eight-item list. Tick one or more of these only. Put anything else back if the group still uses it.</p>
+  <table class="data">
+    <thead><tr><th>#</th><th>Exact wording</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Emergency Number</td></tr>
+      <tr><td>2</td><td>CPF Group</td></tr>
+      <tr><td>3</td><td>Other Groups</td></tr>
+      <tr><td>4</td><td>CPF Member / Patroller</td></tr>
+      <tr><td>5</td><td>Other</td></tr>
+    </tbody>
+  </table>
+  <p>On the phone, if a patroller logs the incident themselves, this will default to <strong>CPF Member / Patroller</strong>.</p>
+  <p class="small">Dropped from the old book unless someone asks to keep them: Emergency Phone (replaced by Emergency Number), Centurion OPS, ACPAT Group, CPF NW Group, Other CPF Group, Other W/T Group.</p>
+
+  <h2>10. Services on scene / reacted</h2>
+  <p>Le Roux: update security companies; for CPF pick the actual members who are out; ambulance only Private and State; the rest can stay.</p>
+  <table class="data">
+    <thead><tr><th>#</th><th>Service</th><th>How it is captured</th><th>Reference number</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>CPF patrollers</td>
+        <td>Multi-select from members <strong>currently on patrol</strong> in Patrol Log (not a single “CPF S1 Patrollers” tick box). You pick the call signs who reacted.</td>
+        <td>—</td>
+      </tr>
+      <tr><td>2</td><td>SA Police Services</td><td>Tick</td><td>SAPS Reference</td></tr>
+      <tr><td>3</td><td>Tshwane Metro Police</td><td>Tick</td><td>Metro Police Reference</td></tr>
+      <tr>
+        <td>4</td>
+        <td>Security companies</td>
+        <td>Multi-select from an <strong>admin-maintained list</strong>. The old ADT / Aequitas / Brincor / Cop Watch / CounterPoint / Monitor Net / Scorpion / Other tick boxes are dropped until the sector gives the current companies.</td>
+        <td>—</td>
+      </tr>
+      <tr><td>5</td><td>Ambulance (Private)</td><td>Tick</td><td>Ambulance Reference</td></tr>
+      <tr><td>6</td><td>Ambulance (State)</td><td>Tick</td><td>Ambulance Reference</td></tr>
+      <tr><td>7</td><td>CERT</td><td>Tick</td><td>—</td></tr>
+      <tr><td>8</td><td>Paramedic</td><td>Tick</td><td>Ambulance Reference</td></tr>
+      <tr><td>9</td><td>Fire Brigade</td><td>Tick</td><td>Fire Brigade Reference</td></tr>
+      <tr><td>10</td><td>Trauma Counseling</td><td>Tick</td><td>—</td></tr>
+      <tr><td>11</td><td>City of Tshwane</td><td>Tick</td><td>—</td></tr>
+      <tr><td>12</td><td>Other</td><td>Tick + name in details</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p class="small">Dropped unless the group wants them back: Ambulance (Aequitas) as its own line; the old fixed security-company names. Admin will load the current security companies before go-live.</p>
+
+  <h2 class="page-break">11. Suburbs</h2>
+  <p>Choose one suburb per incident. Admin can add a new suburb if a name is missing (same “+” idea as Sierra 1). Known alternative spellings are shown so both “Lyttelton” and “Lyttleton” still match.</p>
+  <table class="data">
+    <thead><tr><th>#</th><th>Suburb name</th><th>Also accept</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Clubview</td><td></td></tr>
+      <tr><td>2</td><td>Hennopspark</td><td></td></tr>
+      <tr><td>3</td><td>Valhalla</td><td>Monrich</td></tr>
+      <tr><td>4</td><td>Wierdapark</td><td></td></tr>
+      <tr><td>5</td><td>Bronberrick</td><td></td></tr>
+      <tr><td>6</td><td>Lyttelton</td><td>Lyttleton</td></tr>
+      <tr><td>7</td><td>Eldoglen</td><td></td></tr>
+      <tr><td>8</td><td>Eldoraigne</td><td></td></tr>
+      <tr><td>9</td><td>Heuweloord</td><td></td></tr>
+      <tr><td>10</td><td>Centurion Central</td><td>Centurion</td></tr>
+      <tr><td>11</td><td>Rooihuiskraal</td><td></td></tr>
+      <tr><td>12</td><td>The Reeds</td><td></td></tr>
+      <tr><td>13</td><td>Cranbrook Vale</td><td></td></tr>
+      <tr><td>14</td><td>Zwartkop</td><td></td></tr>
+      <tr><td>15</td><td>Die Hoewes</td><td></td></tr>
+      <tr><td>16</td><td>Raslouw</td><td></td></tr>
+      <tr><td>17</td><td>Sunderland Ridge</td><td></td></tr>
+      <tr><td>18</td><td>Highveld</td><td></td></tr>
+      <tr><td>19</td><td>Southdowns</td><td></td></tr>
+      <tr><td>20</td><td>Celtis Ridge</td><td></td></tr>
+      <tr><td>21</td><td>Monrick</td><td></td></tr>
+      <tr><td>22</td><td>Glen Lauriston</td><td></td></tr>
+      <tr><td>23</td><td>Laudium</td><td></td></tr>
+    </tbody>
+  </table>
+  <p>Street is free text: <strong>Street number and name / complex</strong>, as today.</p>
+
+  <h2>12. Time of day and day of week</h2>
+  <p>These are calculated from the incident date and estimated time. Nobody types them. They appear on the OB list and on reports.</p>
+  <table class="data">
+    <thead><tr><th>Time of day label</th><th>Hours</th></tr></thead>
+    <tbody>
+      <tr><td>During the Night</td><td>00:00 – 04:00</td></tr>
+      <tr><td>Early Morning</td><td>04:00 – 08:00</td></tr>
+      <tr><td>Morning</td><td>08:00 – 12:00</td></tr>
+      <tr><td>Afternoon</td><td>12:00 – 16:00</td></tr>
+      <tr><td>Late Afternoon</td><td>16:00 – 18:00</td></tr>
+      <tr><td>Evening</td><td>18:00 – 22:00</td></tr>
+      <tr><td>Late Evening</td><td>22:00 – 24:00</td></tr>
+    </tbody>
+  </table>
+  <p>Day of week is the normal week: Monday through Sunday.</p>
+
+  <h2>13. Vehicle of Interest, Person of Interest, and medical patient tags</h2>
+  <p>Call centre / admin fill these in on the full form. Patrollers <strong>see</strong> them on the phone so they know what to look for.</p>
+
+  <h3>13.1 Vehicle of Interest fields</h3>
+  <table class="data">
+    <thead><tr><th>Field</th><th>How it is captured</th></tr></thead>
+    <tbody>
+      <tr><td>Colour</td><td>Choose from: Black, White, Silver, Grey, Red, Blue, Green, Yellow, Orange, Brown, Gold, Maroon, Other</td></tr>
+      <tr><td>Shape</td><td>Choose from: Sedan, Hatchback, SUV / 4x4, Bakkie / Truck, Van / Minibus, Motorcycle, Bus, Other</td></tr>
+      <tr><td>Make</td><td>Typed (for example Toyota). Previous makes can be reused.</td></tr>
+      <tr><td>Model</td><td>Typed (for example Hilux).</td></tr>
+      <tr><td>Registration</td><td>Typed in capitals.</td></tr>
+      <tr><td>Distinguishing features</td><td>Free text (canopy, smash-and-grab film, spare wheel, and so on).</td></tr>
+    </tbody>
+  </table>
+
+  <h3>13.2 Person of Interest fields</h3>
+  <table class="data">
+    <thead><tr><th>Field</th><th>How it is captured</th></tr></thead>
+    <tbody>
+      <tr><td>Gender</td><td>Male · Female · Unknown</td></tr>
+      <tr><td>Clothing description</td><td>Free text</td></tr>
+      <tr><td>Direction of travel</td><td>Free text (for example “south on Ben Viljoen”)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>13.3 Tags (optional extra flags)</h3>
+  <p>The injury tags describe <strong>the person</strong>, not the incident type and not the danger of the scene. You can have more than one injured person with different tags on the same accident.</p>
+  <table class="data">
+    <thead><tr><th>Tag</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="pri1">Injuries - P1</td><td>That person: Code Red — critical / life and death</td></tr>
+      <tr><td class="pri2">Injuries - P2</td><td>That person: Code Yellow — hurt but not critical</td></tr>
+      <tr><td class="pri3">Injuries - P3</td><td>That person: Code Green — walking wounded / stable</td></tr>
+      <tr><td class="pri4">Injuries - P4</td><td>That person: Code Blue — deceased</td></tr>
+      <tr><td>Remote Jamming</td><td>Remote / key jamming suspected</td></tr>
+      <tr><td>Gate Motor</td><td>Gate motor involved</td></tr>
+      <tr><td>Cable Theft</td><td>Flag even if the main type is something else</td></tr>
+      <tr><td>Beams</td><td>Beams triggered / damaged</td></tr>
+      <tr><td>Bicycle</td><td>Bicycle involved</td></tr>
+      <tr><td>Wall Jumper</td><td>Trespassing by jumping a wall / fence (high volume — also a crime-group heading)</td></tr>
+      <tr><td>Smash-n-Grab</td><td>Use with Theft out of Vehicle (016) + Malicious Damage (017). SAPS grey area (Hein / Le Roux).</td></tr>
+      <tr><td>Dog Poisoning</td><td>Use with Malicious Damage (017). Not its own SAPS code.</td></tr>
+      <tr><td>Fireworks</td><td>Metro by-law. Only log if CPF was present or assisting.</td></tr>
+      <tr><td>Information only</td><td>Shortcut flag that this crime row was not attended (pairs with conclusion Captured for Information Only).</td></tr>
+    </tbody>
+  </table>
+  <p class="small">Le Roux: tags are how we mark grey cases (dog poisoning, smash-and-grab) without inventing extra SAPS codes.</p>
+
+  <h2>14. Photos</h2>
+  <p>Each incident can have one or more photos. This is required as <strong>proof</strong> (scene, vehicle, open gate, injuries context, and so on).</p>
+  <ul>
+    <li>Call centre and patrollers can both add photos.</li>
+    <li>Photos stay with that OB number and are not public on the internet.</li>
+    <li>They are stored securely (Cloudflare R2). The free allowance is large enough for normal sector use (about 10 GB per month included).</li>
+  </ul>
+
+  <h2 class="page-break">15. Patrollers — log and respond while on patrol</h2>
+  <p>A patroller must be able to put something in the book without first going back to the office, and without standing down.</p>
+  <h3>15.1 Log a new incident</h3>
+  <p>From Home, or from the live patrol screen. Typical examples: they come across an <strong>open gate</strong>, or they walk into a house breaking while already patrolling.</p>
+  <p>On the phone they fill in a short form: type, time (defaults to now), suburb, street (GPS can help), description, photos. “Received from” defaults to CPF Patroller. Their call sign and sector are filled in automatically.</p>
+
+  <h3>15.2 Respond to an incident that is already open</h3>
+  <p>If the call centre (or another member) already logged it, the patroller can tap <strong>Responding</strong> and choose that active incident. If the danger for the chosen Alpha/Bravo is <strong>Leave to police</strong> (for example 023A), the phone must warn them not to approach — that incident is for SAPS and armed response. On 023B they may assist with caution.</p>
+  <ul>
+    <li>The patrol does <strong>not</strong> end.</li>
+    <li>The live map will show that unit as <strong>Responding</strong> (this patrol type already exists when starting a patrol; now they can switch to it mid-shift).</li>
+    <li>When they are done they <strong>resume</strong> the original patrol type (foot, vehicle, and so on).</li>
+  </ul>
+  <p>They can also start a patrol already as Responding, but they must then link or create the incident.</p>
+
+  <h2>16. Call centre — Commence Shift in the book</h2>
+  <p>In Sierra 1, “Commence Shift” is often written as a row in the OB Book. In Patrol Log, commencing a <em>patrol</em> is already a separate action for patrollers.</p>
+  <p>For a member whose role is <strong>call centre agent</strong>, there will be an optional button: <strong>Log Commence Shift</strong>. That creates one Other / Commence Shift entry (sector, call sign, time). It is not created automatically when a patroller starts a patrol.</p>
+
+  <h2>17. BOLOs — last seen where and when</h2>
+  <p>When admin or call centre captures a BOLO, Vehicle of Interest or Person of Interest, patrollers must be able to look it up on the phone.</p>
+  <p>Each item on that list shows:</p>
+  <ul>
+    <li>What to look for (type, description, vehicle and/or person details)</li>
+    <li><strong>Where last seen</strong> (suburb and street)</li>
+    <li><strong>When last seen</strong> (date and time)</li>
+    <li>Photos if any</li>
+  </ul>
+  <p>If a patroller sees that vehicle or person, they can add a short “seen here now” update. That becomes the new last-seen place and time for everyone else.</p>
+
+  <h2>18. Hotspots — last month’s crime trends</h2>
+  <p>The live map already has admin-drawn hotspot circles. Those will stay, but they will also be <strong>filled from the book</strong>.</p>
+  <ul>
+    <li>The system looks at <strong>criminal incidents only</strong> from the last month (for example armed robbery, house breaking, theft, wall jumpers). Accidents, fire, medical and other emergencies do <strong>not</strong> create hotspots.</li>
+    <li>Where several crimes cluster in the same area, a hotspot is suggested or updated so patrollers can see last month’s trend.</li>
+    <li>Admin can still <strong>amend</strong> every hotspot: add one, move it, change the size or rating, or delete it if the trend is wrong or outdated.</li>
+    <li>A hotspot that admin has edited by hand is not blindly overwritten. The trend is shown; a person decides whether to keep the change.</li>
+  </ul>
+  <div class="ok">In short: hotspots follow last month’s <em>crime</em> pattern, not accidents, and a person can always correct the map.</div>
+
+  <h2 class="page-break">19. Reports</h2>
+  <p>Sectors still on Telegram pull stats by hand. The new book must print and copy the same reports Sierra 1 already posts, so stats are not manual. Source examples: August 2026 WhatsApp summary (42 crime rows posted), Sierra 1 Summary PDF (56 incidents: 42 criminal, 14 emergencies), and the Detail incidents PDF.</p>
+
+  <h3>19.1 WhatsApp community summary</h3>
+  <p>Posted to CPF community groups. <strong>Crime incidents only.</strong> Exclude rape and suicide. Strip street numbers (road / suburb only). Filter by date range.</p>
+  <p>Heading example:</p>
+  <p><em>Wierdabrug Sector 1<br />Crime Incidents Summary Report<br />(1 - 31 August 2026)</em></p>
+  <p>Each row:</p>
+  <ul>
+    <li>Date and time (24-hour)</li>
+    <li>Suburb — Type (code) — street name only (no house number). Extra tag in the heading if used, e.g. Wall Jumper</li>
+    <li>Day of week — Time of day band (e.g. Saturday - Afternoon (12:00 - 16:00))</li>
+  </ul>
+  <p class="small">August example: “🔺 Valhalla - Armed Robbery (023B) - Myrdal Rd” then “⏱️ Saturday - Afternoon (12:00 - 16:00)”. Alpha/Bravo letter stays on the code when it was captured (023B).</p>
+
+  <h3>19.2 Summary Report (PDF / print)</h3>
+  <p>Same idea as the current Sierra 1 Summary: date range, sector name, totals at the top, then the four crime groups with counts, then Emergencies / Of Interest / Other as category totals only (not mixed into the four crime buckets). August 2026 pack: 56 incidents, 42 criminal, 14 emergencies.</p>
+
+  <h3>19.3 Detail Incidents Report</h3>
+  <p>One page or block per incident for the chosen date range: OB number, date/time, suburb, street, types, Alpha/Bravo, description, action taken, services, conclusion. Used internally — not posted to community groups (street numbers stay on this report).</p>
+
+  <h3>19.4 Crime map</h3>
+  <p>Pins on the sector map (Valhalla / Clubview / Hennopspark pattern as in the current map). Filters:</p>
+  <table class="data">
+    <thead><tr><th>Filter</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td>Date range</td><td>1–31 August 2026</td></tr>
+      <tr><td>Suburb</td><td>Valhalla</td></tr>
+      <tr><td>OB number</td><td>S1/215/2026</td></tr>
+      <tr><td>Category</td><td>Criminal</td></tr>
+      <tr><td>Type</td><td>Armed Robbery</td></tr>
+      <tr><td>Crime group</td><td>Contact crime</td></tr>
+      <tr><td>Day of week</td><td>Mondays</td></tr>
+      <tr><td>Time of day</td><td>During the night (00:00 - 04:00)</td></tr>
+      <tr><td>Estimated time</td><td>Exact captured time</td></tr>
+      <tr><td>Tags</td><td>Wall Jumper, Smash-n-Grab, Cable Theft</td></tr>
+    </tbody>
+  </table>
+  <p>Hotspots still follow section 18 (last month’s crime only, admin can amend).</p>
+
+  <h2>20. Moving old Sierra 1 records across</h2>
+  <p>There are several thousand existing book entries. They will be brought into the new system after they have been formatted to match this document (same type names, same conclusions, same suburbs).</p>
+  <ul>
+    <li>Old OB numbers will be kept where possible so history stays searchable.</li>
+    <li>Photos from the old system can be attached later if they are available as files.</li>
+    <li>We will not guess at types that no longer exist. Anything that does not match this list will be flagged for a person to fix before import.</li>
+  </ul>
+
+  <h2 class="page-break">21. Related Patrol Log changes (not on the OB form)</h2>
+  <p>These are already in Patrol Log, not new OB fields. People are using the old OB for them, so they must be fixed before the new book goes live.</p>
+  <h3>21.1 One vehicle, several patrollers</h3>
+  <p>Le Roux (13 Sep): Lex sometimes drives the car, sometimes Chiminay — they do not always ride together. Niel: other sectors do the same. Hein: WV17, WV18 and WV42 share one vehicle; WV19 and WV49 share; WV37 and WV38 could not be saved together on the current system.</p>
+  <p><strong>Change:</strong> a vehicle can be linked to more than one patroller. On a given patrol you still pick who is in that car tonight.</p>
+  <h3>21.2 Patrollers add and edit Residents</h3>
+  <p>Hein (16 Sep): as a patroller he could not add or edit Residents, so Nicolette and Wesma put residents on the old OB. Angelique had the same problem.</p>
+  <p><strong>Change:</strong> patrollers can add and edit Residents in Patrol Log (same details they were writing on the OB). Admin still sees everything.</p>
+
+  <h2>22. Radio lingo and phonetic alphabet</h2>
+  <p>This is a shared reference for wording in descriptions and radio. It is not a dropdown in the system (except where the same words already appear as types, for example BOLO, MVA, MBA, PVA).</p>
+  <table class="data">
+    <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>BOLO</td><td>Be On the Look Out</td></tr>
+      <tr><td>MVA</td><td>Motor Vehicle Accident</td></tr>
+      <tr><td>MBA</td><td>Motorbike Accident</td></tr>
+      <tr><td>PVA</td><td>Pedestrian Vehicle Accident</td></tr>
+      <tr><td>S1</td><td>Sierra 1 (WBS1 call centre)</td></tr>
+      <tr><td>ETA</td><td>Estimated time of arrival</td></tr>
+      <tr><td>COS</td><td>Contact on Scene</td></tr>
+      <tr><td>SB</td><td>Standby (get back to you)</td></tr>
+      <tr><td>EMS</td><td>Emergency Services</td></tr>
+      <tr><td>Ambo / Bus</td><td>Ambulance</td></tr>
+      <tr><td>SAPS</td><td>SA Police Service</td></tr>
+      <tr><td>TMPD / Metro</td><td>Tshwane Metro Police</td></tr>
+      <tr><td>COT</td><td>City of Tshwane services</td></tr>
+      <tr><td>SC / PSC</td><td>Private security company</td></tr>
+      <tr><td>POI</td><td>Person of Interest</td></tr>
+      <tr><td>VOI</td><td>Vehicle of Interest</td></tr>
+      <tr><td>Reg</td><td>Vehicle registration</td></tr>
+      <tr><td>Sitrep</td><td>Situation report</td></tr>
+      <tr><td>Copy</td><td>Message received</td></tr>
+      <tr><td>Mobile / En route</td><td>On the way</td></tr>
+      <tr><td>On Scene</td><td>Arrived at the scene</td></tr>
+      <tr><td>Standing Down</td><td>Leaving scene / stopping patrol</td></tr>
+    </tbody>
+  </table>
+  <h3>Phonetic alphabet — NATO for the system</h3>
+  <p>Radio in Patrol Log uses the current NATO / ICAO alphabet. Hein shared the 1954 Weermagswordeboek alphabet (Able, Baker, Charlie, Dog, Easy, Fox, George, How, Item, Jig, King, Love, Mike, Nan, Oboe, Peter, Queen, Roger, Sugar, Tare, Uncle, Victor, William, X-ray, Yoke, Zebra). Niel still hears “S for Sugar” and “N for Nellie” on the air; he was taught Mamba instead of Mike. That list is for training and history only — it is not the system default.</p>
+  <p><strong>NATO (default):</strong> A Alpha · B Bravo · C Charlie · D Delta · E Echo · F Foxtrot · G Golf · H Hotel · I India · J Juliet · K Kilo · L Lima · M Mike · N November · O Oscar · P Papa · Q Quebec · R Romeo · S Sierra · T Tango · U Uniform · V Victor · W Whiskey · X X-ray · Y Yankee · Z Zulu</p>
+  <p class="small">Alpha and Bravo on an incident still mean active vs already happened (section 6), not the letters of someone’s call sign.</p>
+
+  <h2>23. Fields on the capture form (checklist)</h2>
+  <p>This is the full form the call centre will see. Patrollers see a shorter version of the same fields.</p>
+  <table class="data">
+    <thead><tr><th>Section</th><th>Fields</th><th>Phone (patroller)</th></tr></thead>
+    <tbody>
+      <tr><td>Header</td><td>OB number (given on save), Status, Sector, Call sign</td><td>Filled automatically</td></tr>
+      <tr><td>Incident</td><td>Category, one or more types (primary + extra), Alpha or Bravo, date, hour and minutes, Received from (short list)</td><td>Yes. Danger level from Alpha/Bravo. Warn on Leave to police.</td></tr>
+      <tr><td>Location</td><td>Suburb, Street no. &amp; name / complex, map pin</td><td>Yes (GPS can help)</td></tr>
+      <tr><td>Description</td><td>Description / summary</td><td>Yes</td></tr>
+      <tr><td>VOI / POI / tags</td><td>Vehicle and person details; medical patient tags if someone was hurt</td><td>View on BOLO list; injury tags if they logged a medical / accident</td></tr>
+      <tr><td>Action taken</td><td>CPF members on patrol (multi-select), security companies (admin list), ambulance Private/State, SAPS / Metro / Fire / others, details and references</td><td>Optional</td></tr>
+      <tr><td>Photos</td><td>One or more photos</td><td>Yes</td></tr>
+      <tr><td>Close</td><td>Conclusion (required to close)</td><td>Optional if they close on scene</td></tr>
+    </tbody>
+  </table>
+  <p class="small" style="margin-top:16px;">Document control: this PDF is the business specification for discussion. Later list changes (new suburb, new security company) can be done in admin without a new PDF, unless a type is added or renamed, or a danger rule is changed.</p>
+  <p class="footer-note" style="margin-top:24px;">Wierdabrug CPF · Patrol Log · OB-BOOK-SPEC-001 v1.3 discussion · 17 September 2026 · comments: Le Roux, WV20 Hein, Angelique WC06, Niel</p>
+
+</body>
+</html>
