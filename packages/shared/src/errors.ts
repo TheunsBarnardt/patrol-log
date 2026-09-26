@@ -106,6 +106,7 @@ export const ERROR_CODES = {
   OB_SUBURB_REQUIRED: { status: 422, message: "Choose a suburb." },
   OB_SUBURB_DUPLICATE: { status: 409, message: "That suburb is already on the list (check the known spelling)." },
   OB_COMPANY_DUPLICATE: { status: 409, message: "That security company is already on the list." },
+  OB_TAG_DUPLICATE: { status: 409, message: "That tag is already on the list." },
   OB_GEOCODE_QUERY: { status: 422, message: "Enter an address to find on the map." },
   OB_GEOCODE_UNAVAILABLE: { status: 503, message: "Address search is unavailable. Click the map and drag it to place the pin." },
 } as const;

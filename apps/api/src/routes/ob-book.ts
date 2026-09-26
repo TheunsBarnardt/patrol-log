@@ -40,6 +40,7 @@ import {
   obSecurityCompanies,
   obSightings,
   obSuburbs,
+  obTags,
   obVehicles,
   patrolMembers,
   patrollers,
@@ -200,7 +201,7 @@ async function nextSequence(dbBinding: AppContext["Bindings"]["DB"], sectorId: s
   return seq;
 }
 
-function normalize(body: WriteBody, opts: { commenceShift?: boolean }): Normalized {
+function normalize(body: WriteBody, opts: { commenceShift?: boolean; extraTagKeys?: Set<string> }): Normalized {
   const source: WriteBody = opts.commenceShift
     ? {
         ...body,
@@ -274,7 +275,8 @@ function normalize(body: WriteBody, opts: { commenceShift?: boolean }): Normaliz
   }
 
   const tagKeys = [...new Set((source.tag_keys ?? []).map((k) => k.trim()).filter(Boolean))];
-  if (tagKeys.some((k) => !TAG_KEYS.has(k))) throw new AppError("OB_INVALID_INPUT");
+  const extraTags = opts.extraTagKeys ?? new Set<string>();
+  if (tagKeys.some((k) => !TAG_KEYS.has(k) && !extraTags.has(k))) throw new AppError("OB_INVALID_INPUT");
   if (attendance === "not_present" && !tagKeys.includes("information_only")) tagKeys.push("information_only");
 
   const services = (source.services ?? [])
@@ -349,6 +351,16 @@ function normalize(body: WriteBody, opts: { commenceShift?: boolean }): Normaliz
     vehicles,
     persons,
   };
+}
+
+async function extraTagKeys(db: Db, cpfId: string): Promise<Set<string>> {
+  const rows = await db.select({ key: obTags.key }).from(obTags).where(eq(obTags.cpfId, cpfId));
+  return new Set(rows.map((row) => row.key));
+}
+
+function customTagKey(label: string): string {
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48);
+  return slug ? `custom_${slug}` : "";
 }
 
 async function assertSuburb(db: Db, cpfId: string, suburbId: string | null) {
@@ -593,7 +605,7 @@ ob.get("/meta", async (c) => {
   await ensureSuburbs(db, auth.patroller.cpf_id);
   const sectorId = auth.patroller.access_level === "system_admin" ? null : auth.patroller.sector_id;
 
-  const [suburbRows, companyRows, sectorRows, onPatrol, activePatrols] = await Promise.all([
+  const [suburbRows, companyRows, sectorRows, onPatrol, activePatrols, tagRows] = await Promise.all([
     db.select().from(obSuburbs).where(eq(obSuburbs.cpfId, auth.patroller.cpf_id)).orderBy(asc(obSuburbs.sortOrder), asc(obSuburbs.name)),
     db
       .select()
@@ -631,6 +643,7 @@ ob.get("/meta", async (c) => {
         sectorId ? eq(patrols.sectorId, sectorId) : undefined,
       ),
     ),
+    db.select({ key: obTags.key, label: obTags.label }).from(obTags).where(eq(obTags.cpfId, auth.patroller.cpf_id)).orderBy(asc(obTags.label)),
   ]);
 
   return c.json({
@@ -639,6 +652,7 @@ ob.get("/meta", async (c) => {
     sectors: sectorRows,
     onPatrol,
     patrols: activePatrols,
+    tags: [...OB_TAGS, ...tagRows],
     canMaintainCompanies: canMaintainCompanies(auth),
   });
 });
@@ -765,7 +779,7 @@ ob.post("/entries", async (c) => {
     if (!body.received_from?.length) body.received_from = ["CPF Member / Patroller"];
   }
   const db = getDb(c.env);
-  const norm = normalize(body, {});
+  const norm = normalize(body, { extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
   const sector = await resolveSector(db, auth, body.sector_id);
   await assertSuburb(db, auth.patroller.cpf_id, norm.suburbId);
   await assertResponders(db, auth, sector.id, norm.responderIds);
@@ -783,7 +797,7 @@ ob.patch("/entries/:id", async (c) => {
   const existing = await loadOwned(db, auth, c.req.param("id"));
   const currentTypes = await db.select().from(obEntryTypes).where(eq(obEntryTypes.entryId, existing.id));
   const isCommence = currentTypes.some((t) => t.typeKey === "commence_shift");
-  const norm = normalize(body, { commenceShift: isCommence });
+  const norm = normalize(body, { commenceShift: isCommence, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
   await assertSuburb(db, auth.patroller.cpf_id, norm.suburbId);
   await assertResponders(db, auth, existing.sectorId, norm.responderIds);
   await assertPatrols(db, auth, existing.sectorId, norm.patrolIds);
@@ -878,11 +892,30 @@ ob.post("/commence-shift", async (c) => {
   const body = await c.req.json<WriteBody>().catch(() => ({}) as WriteBody);
   const clock = nowSast();
   const db = getDb(c.env);
-  const norm = normalize({ ...body, date: body.date || clock.date, time: body.time || clock.time }, { commenceShift: true });
+  const norm = normalize({ ...body, date: body.date || clock.date, time: body.time || clock.time }, { commenceShift: true, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
   const sector = await resolveSector(db, auth, body.sector_id);
   const created = await insertEntry(c, db, auth, sector, norm);
   await logAudit(db, "ob.commence_shift", auth, { ob_number: created.obNumber });
   return c.json(await presentEntry(db, created), 201);
+});
+
+ob.post("/tags", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{ label?: string }>();
+  const label = blank(body.label).replace(/\s+/g, " ");
+  if (label.length < 2 || label.length > 60) throw new AppError("OB_INVALID_INPUT");
+  const key = customTagKey(label);
+  if (!key) throw new AppError("OB_INVALID_INPUT");
+  const known = OB_TAGS.some((tag) => tag.key === key || tag.label.toLowerCase() === label.toLowerCase());
+  if (known) throw new AppError("OB_TAG_DUPLICATE");
+  const db = getDb(c.env);
+  const existing = await db.select().from(obTags).where(eq(obTags.cpfId, auth.patroller.cpf_id));
+  if (existing.some((tag) => tag.key === key || tag.label.toLowerCase() === label.toLowerCase())) {
+    throw new AppError("OB_TAG_DUPLICATE");
+  }
+  const [row] = await db.insert(obTags).values({ cpfId: auth.patroller.cpf_id, key, label }).returning();
+  await logAudit(db, "ob.tag.created", auth, { key, label });
+  return c.json({ key: row!.key, label: row!.label }, 201);
 });
 
 ob.post("/suburbs", async (c) => {

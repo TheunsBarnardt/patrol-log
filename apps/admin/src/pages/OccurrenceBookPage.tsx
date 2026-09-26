@@ -38,6 +38,7 @@ interface Meta {
   sectors: Sector[];
   onPatrol: OnPatrol[];
   patrols: PatrolOption[];
+  tags: { key: string; label: string }[];
   canMaintainCompanies: boolean;
 }
 interface ListRow {
@@ -273,6 +274,7 @@ export function OccurrenceBookPage() {
   const [typeQuery, setTypeQuery] = useState("");
   const [newSuburb, setNewSuburb] = useState("");
   const [newCompany, setNewCompany] = useState("");
+  const [newTag, setNewTag] = useState("");
   const [seenDate, setSeenDate] = useState("");
   const [seenTime, setSeenTime] = useState("");
   const [seenStreet, setSeenStreet] = useState("");
@@ -444,6 +446,23 @@ export function OccurrenceBookPage() {
       void qc.invalidateQueries({ queryKey: ["admin.ob.entries"] });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not log the shift");
+    }
+  }
+
+  async function addTag() {
+    const label = newTag.trim();
+    if (label.length < 2) return;
+    setError("");
+    try {
+      const row = await adminFetch<{ key: string; label: string }>("/admin/ob/tags", { method: "POST", body: JSON.stringify({ label }) });
+      setNewTag("");
+      setForm((current) => ({
+        ...current,
+        tagKeys: current.tagKeys.includes(row.key) ? current.tagKeys : [...current.tagKeys, row.key],
+      }));
+      await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the tag");
     }
   }
 
@@ -690,15 +709,21 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, patients: [...form.patients, { injuryTag: "", note: "" }] })}>+ Injured person</Btn>
-              <div className="mt-4">
-                <Field label="Tags">
-                  <MultiSelect
-                    placeholder="Choose tags"
-                    options={OB_TAGS.map((t) => ({ value: t.key, label: t.label }))}
-                    value={form.tagKeys}
-                    onChange={(tagKeys) => setForm({ ...form, tagKeys })}
-                  />
-                </Field>
+            </AccordionSection>
+
+            <AccordionSection title="Tags" open={openSection === "tags"} onToggle={() => toggleSection("tags")}>
+              <Field label="Tags">
+                <MultiSelect
+                  searchable
+                  placeholder="Choose tags"
+                  options={(meta.data?.tags ?? OB_TAGS).map((t) => ({ value: t.key, label: t.label }))}
+                  value={form.tagKeys}
+                  onChange={(tagKeys) => setForm({ ...form, tagKeys })}
+                />
+              </Field>
+              <div className="flex gap-2">
+                <input className={inputCls} placeholder="Add a tag if it is missing" value={newTag} onChange={(e) => setNewTag(e.target.value)} />
+                <Btn variant="ghost" onClick={() => void addTag()}>Add</Btn>
               </div>
             </AccordionSection>
 
