@@ -1,3 +1,9 @@
+import { extractIncident, joinMessages, type NeedleFill } from "../lib/needle";
+import { adminFetch, authStore } from "../lib/api";
+import { DataTable, PageHeader, RowActions } from "../components/DataTable";
+import { LocationMap } from "../components/LocationMap";
+import { MultiSelect } from "../components/MultiSelect";
+import { Btn, Field, inputCls, selectCls } from "../components/Modal";
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,28 +33,34 @@ import {
   type ObDangerLevel,
   type ObPhase,
 } from "@patrol-log/shared";
-import { adminFetch, authStore } from "../lib/api";
-import { extractIncident, type NeedleFill } from "../lib/needle";
-import { DataTable, PageHeader, RowActions } from "../components/DataTable";
-import { LocationMap } from "../components/LocationMap";
-import { MultiSelect } from "../components/MultiSelect";
-import { Btn, Field, inputCls, selectCls } from "../components/Modal";
 
 interface Suburb { id: string; name: string; aliases: string[] }
 interface Company { id: string; name: string }
 interface Sector { id: string; name: string; code: string | null }
-interface Member { id: string; callSign: string; name: string; sectorId: string; onPatrol: boolean }
+interface Member { id: string; callSign: string; name: string; phone: string | null; sectorId: string; onPatrol: boolean }
 interface PatrolOption { id: string; label: string; sectorId: string }
 interface PasteGroup { id: string; name: string; sectorId: string; receivedFrom: "CPF Group" | "Other Groups" }
+interface ResidentRef { id: string; name: string; phone: string; address: string; sectorId: string }
+interface NeedleExampleRow {
+  id: string;
+  passage: string;
+  vote: "up" | "down";
+  notes: string;
+  needleFill: Partial<NeedleFill>;
+  correctedFill: Partial<NeedleFill> | null;
+  createdAt: string;
+}
 interface Meta {
   suburbs: Suburb[];
   securityCompanies: Company[];
   sectors: Sector[];
   members: Member[];
+  residents: ResidentRef[];
   patrols: PatrolOption[];
   tags: { key: string; label: string }[];
   canMaintainCompanies: boolean;
   pasteGroups: PasteGroup[];
+  needleExamples: NeedleExampleRow[];
 }
 interface ListRow {
   id: string;
@@ -298,7 +310,16 @@ function applyFill(
   previousDescription: string,
 ): { form: FormState; autoDescription: string } {
   const next = { ...form, tagKeys: [...form.tagKeys], extraKeys: [...form.extraKeys], receivedFrom: [...form.receivedFrom] };
-  if (!next.description || next.description === previousDescription) next.description = fill.description;
+  let description = fill.description;
+  if (fill.contactName || fill.contactPhone) {
+    const contactLine = `Contact: ${[fill.contactName, fill.contactPhone].filter(Boolean).join(" ")}`.trim();
+    if (!description.toLowerCase().includes("contact:")) description = `${description}\n\n${contactLine}`.trim();
+  }
+  if (fill.directoryHits.length) {
+    const hits = fill.directoryHits.map((hit) => `${hit.kind === "resident" ? "Resident" : "Member"} ${hit.name}${hit.callSign ? ` (${hit.callSign})` : ""}`).join("; ");
+    if (!description.toLowerCase().includes("directory:")) description = `${description}\nDirectory: ${hits}`.trim();
+  }
+  if (!next.description || next.description === previousDescription) next.description = description;
   if (first && sectorId) next.sectorId = sectorId;
   if (next.receivedFrom.length === 0 && receivedFrom.length) next.receivedFrom = receivedFrom;
   if (!next.primaryKey && fill.incidentKey) {
@@ -319,12 +340,67 @@ function applyFill(
     if (!next.tagKeys.includes(tag)) next.tagKeys = [...next.tagKeys, tag];
   }
   if (fill.vehicle && !vehicleFilled(next.vehicles)) {
-    next.vehicles = [{ ...emptyVehicle(), colour: fill.vehicle.colour, make: fill.vehicle.make, model: fill.vehicle.model, registration: fill.vehicle.registration }];
+    next.vehicles = [{
+      ...emptyVehicle(),
+      colour: fill.vehicle.colour,
+      shape: fill.vehicle.shape,
+      make: fill.vehicle.make,
+      model: fill.vehicle.model,
+      registration: fill.vehicle.registration,
+    }];
   }
-  if (fill.person && !poiFilled(next.pois)) {
-    next.pois = [{ ...emptyPoi(), gender: fill.person.gender, clothing: fill.person.clothing, direction: fill.person.direction }];
+  const people = fill.persons.length ? fill.persons : fill.person ? [fill.person] : [];
+  if (people.length && !poiFilled(next.pois)) {
+    next.pois = people.map((person) => ({
+      ...emptyPoi(),
+      gender: person.gender,
+      clothing: person.clothing,
+      direction: person.direction,
+      name: person.name,
+      ethnicity: person.ethnicity,
+    }));
   }
-  return { form: next, autoDescription: next.description === fill.description ? fill.description : previousDescription };
+  return { form: next, autoDescription: next.description === description ? description : previousDescription };
+}
+
+function formAsCorrectedFill(form: FormState): Partial<NeedleFill> {
+  const attendance = form.attendance === "present" || form.attendance === "assisting" ? form.attendance : "";
+  return {
+    incidentKey: form.primaryKey || null,
+    tagKeys: form.tagKeys,
+    phase: form.phase || "",
+    suburbId: form.suburbId || null,
+    street: form.street,
+    description: form.description,
+    date: form.date,
+    time: form.time,
+    attendance,
+    vehicle: vehicleFilled(form.vehicles)
+      ? {
+          colour: form.vehicles[0]!.colour,
+          shape: form.vehicles[0]!.shape,
+          make: form.vehicles[0]!.make,
+          model: form.vehicles[0]!.model,
+          registration: form.vehicles[0]!.registration,
+        }
+      : null,
+    persons: form.pois.filter((p) => p.gender || p.clothing || p.name || p.ethnicity).map((p) => ({
+      gender: p.gender,
+      clothing: p.clothing,
+      direction: p.direction,
+      name: p.name,
+      ethnicity: p.ethnicity,
+    })),
+    person: form.pois[0]
+      ? {
+          gender: form.pois[0].gender,
+          clothing: form.pois[0].clothing,
+          direction: form.pois[0].direction,
+          name: form.pois[0].name,
+          ethnicity: form.pois[0].ethnicity,
+        }
+      : null,
+  };
 }
 
 export function OccurrenceBookPage() {
@@ -356,6 +432,14 @@ export function OccurrenceBookPage() {
   const [filled, setFilled] = useState(false);
   const [autoDescription, setAutoDescription] = useState("");
   const [filling, setFilling] = useState(false);
+  const [lastNeedle, setLastNeedle] = useState<{
+    passage: string;
+    messages: { groupName: string; body: string }[];
+    fill: NeedleFill;
+  } | null>(null);
+  const [trainingNote, setTrainingNote] = useState("");
+  const [trainingBusy, setTrainingBusy] = useState(false);
+  const [trainingSaved, setTrainingSaved] = useState<"up" | "down" | null>(null);
   const [shiftOpen, setShiftOpen] = useState(false);
   const [shiftMemberId, setShiftMemberId] = useState("");
   const [shiftSector, setShiftSector] = useState("");
@@ -460,6 +544,9 @@ export function OccurrenceBookPage() {
     setPasteBody("");
     setFilled(false);
     setAutoDescription("");
+    setLastNeedle(null);
+    setTrainingSaved(null);
+    setTrainingNote("");
     setMode("new");
   }
 
@@ -471,6 +558,8 @@ export function OccurrenceBookPage() {
       setHydrated(null);
       setFilled(false);
       setAutoDescription("");
+      setLastNeedle(null);
+      setTrainingSaved(null);
       setMode("new");
       setError("");
       return;
@@ -478,6 +567,8 @@ export function OccurrenceBookPage() {
     setEditingId(id);
     setHydrated(null);
     setFilled(true);
+    setLastNeedle(null);
+    setTrainingSaved(null);
     setMode("edit");
     setError("");
   }
@@ -616,15 +707,38 @@ export function OccurrenceBookPage() {
   async function fillFromMessages() {
     const stored = detail.data?.messages ?? [];
     const groups = meta.data?.pasteGroups ?? [];
-    const passage = [
+    const passageMessages = [
       ...stored.map((message) => ({ groupName: message.groupName, body: message.body })),
       ...drafts.map((draft) => ({ groupName: groups.find((group) => group.id === draft.groupId)?.name ?? "", body: draft.body })),
     ];
-    if (!passage.length) return;
+    if (!passageMessages.length) return;
     setFilling(true);
     setError("");
+    setTrainingSaved(null);
     try {
-      const fill = await extractIncident(passage, meta.data?.suburbs ?? []);
+      const directory = [
+        ...(meta.data?.residents ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          phone: row.phone,
+          kind: "resident" as const,
+        })),
+        ...(meta.data?.members ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          phone: row.phone,
+          callSign: row.callSign,
+          kind: "member" as const,
+        })),
+      ];
+      const examples = (meta.data?.needleExamples ?? [])
+        .filter((row) => row.vote === "up")
+        .slice(0, 8)
+        .map((row) => ({
+          passage: row.passage,
+          corrected: (row.correctedFill ?? row.needleFill) as Partial<NeedleFill>,
+        }));
+      const fill = await extractIncident(passageMessages, meta.data?.suburbs ?? [], { directory, examples });
       const firstGroup = groups.find((group) => group.id === (stored[0]?.groupId || drafts[0]?.groupId));
       const groupIds = [...stored.map((message) => message.groupId), ...drafts.map((draft) => draft.groupId)];
       const received = [...new Set(groupIds.map((id) => groups.find((group) => group.id === id)?.receivedFrom).filter((value): value is "CPF Group" | "Other Groups" => !!value))];
@@ -632,11 +746,39 @@ export function OccurrenceBookPage() {
       setForm(applied.form);
       setAutoDescription(applied.autoDescription);
       setFilled(true);
+      setLastNeedle({ passage: joinMessages(passageMessages), messages: passageMessages, fill });
+      setOpenSection("incident");
       if (fill.warning) setError(fill.warning);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not fill the entry");
     } finally {
       setFilling(false);
+    }
+  }
+
+  async function rateNeedle(vote: "up" | "down") {
+    if (!lastNeedle) return;
+    setTrainingBusy(true);
+    setError("");
+    try {
+      await adminFetch("/admin/ob/needle-examples", {
+        method: "POST",
+        body: JSON.stringify({
+          passage: lastNeedle.passage,
+          messages: lastNeedle.messages,
+          needle_fill: lastNeedle.fill,
+          corrected_fill: formAsCorrectedFill(form),
+          vote,
+          notes: trainingNote.trim(),
+        }),
+      });
+      setTrainingSaved(vote);
+      setTrainingNote("");
+      await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save the training vote");
+    } finally {
+      setTrainingBusy(false);
     }
   }
 
@@ -872,6 +1014,82 @@ export function OccurrenceBookPage() {
                   <Btn onClick={() => void fillFromMessages()} disabled={filling || storedMessages.length + drafts.length === 0}>
                     {filling ? "Reading messages…" : "Fill entry"}
                   </Btn>
+                </div>
+              )}
+              {lastNeedle && entryOpen && (
+                <div className="mt-4 rounded-lg border border-black/10 bg-white px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900">Needle fill — rate this for training</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Thumbs up keeps the corrected fields as a good example. Thumbs down stores what you fixed so the next fill can learn from it.
+                        {" "}
+                        <Link to="/settings/needle" className="font-medium text-gray-700 underline">Manage training in Settings</Link>
+                      </p>
+                      <ul className="mt-2 space-y-0.5 text-xs text-gray-700">
+                        <li>Type: {lastNeedle.fill.incidentKey ? (obType(lastNeedle.fill.incidentKey)?.name ?? lastNeedle.fill.incidentKey) : "—"}</li>
+                        <li>Place: {[lastNeedle.fill.street, meta.data?.suburbs.find((s) => s.id === lastNeedle.fill.suburbId)?.name].filter(Boolean).join(", ") || "—"}</li>
+                        <li>Time: {[lastNeedle.fill.date, lastNeedle.fill.time].filter(Boolean).join(" ") || "—"}</li>
+                        <li>
+                          Vehicle: {lastNeedle.fill.vehicle
+                            ? [lastNeedle.fill.vehicle.colour, lastNeedle.fill.vehicle.make, lastNeedle.fill.vehicle.model, lastNeedle.fill.vehicle.shape].filter(Boolean).join(" ")
+                            : "—"}
+                        </li>
+                        <li>
+                          People: {lastNeedle.fill.persons.length
+                            ? lastNeedle.fill.persons.map((p) => [p.ethnicity, p.gender, p.name, p.clothing].filter(Boolean).join(" ")).join(" · ")
+                            : "—"}
+                        </li>
+                        <li>Contact: {[lastNeedle.fill.contactName, lastNeedle.fill.contactPhone].filter(Boolean).join(" ") || "—"}</li>
+                        {lastNeedle.fill.directoryHits.length > 0 && (
+                          <li>
+                            Directory: {lastNeedle.fill.directoryHits.map((h) => `${h.kind} ${h.name}`).join("; ")}
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={trainingBusy || trainingSaved !== null}
+                        onClick={() => void rateNeedle("up")}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-3 py-2 text-sm font-medium text-gray-800 hover:bg-green-50 disabled:opacity-40"
+                        title="Good fill"
+                        aria-label="Thumbs up"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                          <path d="M7 11v9H4v-9h3zm3 9h7.2a2 2 0 0 0 1.95-1.55l1.3-5.2A1.8 1.8 0 0 0 18.7 11H14V7.2A2.2 2.2 0 0 0 11.8 5L10 11v9z" />
+                        </svg>
+                        Good
+                      </button>
+                      <button
+                        type="button"
+                        disabled={trainingBusy || trainingSaved !== null}
+                        onClick={() => void rateNeedle("down")}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-3 py-2 text-sm font-medium text-gray-800 hover:bg-red-50 disabled:opacity-40"
+                        title="Needs correction"
+                        aria-label="Thumbs down"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                          <path d="M17 13V4h3v9h-3zm-3-9H6.8a2 2 0 0 0-1.95 1.55l-1.3 5.2A1.8 1.8 0 0 0 5.3 13H10v3.8A2.2 2.2 0 0 0 12.2 19L14 13V4z" />
+                        </svg>
+                        Fix needed
+                      </button>
+                    </div>
+                  </div>
+                  {trainingSaved && (
+                    <p className="mt-2 text-xs text-green-800">
+                      Saved as {trainingSaved === "up" ? "a good example" : "a correction"} for future fills.
+                    </p>
+                  )}
+                  {!trainingSaved && (
+                    <input
+                      className={`${inputCls} mt-3`}
+                      placeholder="Optional note (what should have been filled)"
+                      value={trainingNote}
+                      onChange={(e) => setTrainingNote(e.target.value)}
+                    />
+                  )}
                 </div>
               )}
             </section>

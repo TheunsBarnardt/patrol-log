@@ -36,6 +36,7 @@ import {
   obEntries,
   obEntryMessages,
   obEntryPatrols,
+  obNeedleExamples,
   obEntryResponders,
   obEntryServices,
   obEntryTags,
@@ -50,6 +51,7 @@ import {
   patrolMembers,
   patrollers,
   patrols,
+  residents,
   sectors,
   vehicles,
 } from "../db/schema.js";
@@ -721,7 +723,7 @@ ob.get("/meta", async (c) => {
   await ensureSuburbs(db, auth.patroller.cpf_id);
   const sectorId = auth.patroller.access_level === "system_admin" ? null : auth.patroller.sector_id;
 
-  const [suburbRows, companyRows, sectorRows, onPatrol, memberRows, activePatrols, tagRows, groupRows] = await Promise.all([
+  const [suburbRows, companyRows, sectorRows, onPatrol, memberRows, residentRows, activePatrols, tagRows, groupRows, exampleRows] = await Promise.all([
     db.select().from(obSuburbs).where(eq(obSuburbs.cpfId, auth.patroller.cpf_id)).orderBy(asc(obSuburbs.sortOrder), asc(obSuburbs.name)),
     db
       .select()
@@ -756,6 +758,7 @@ ob.get("/meta", async (c) => {
         id: patrollers.id,
         callSign: patrollers.callSign,
         name: patrollers.name,
+        phone: patrollers.phone,
         sectorId: patrollers.sectorId,
       })
       .from(patrollers)
@@ -767,6 +770,23 @@ ob.get("/meta", async (c) => {
         ),
       )
       .orderBy(asc(patrollers.callSign)),
+    db
+      .select({
+        id: residents.id,
+        name: residents.name,
+        phone: residents.phone,
+        address: residents.address,
+        sectorId: residents.sectorId,
+      })
+      .from(residents)
+      .where(
+        and(
+          eq(residents.cpfId, auth.patroller.cpf_id),
+          sectorId ? eq(residents.sectorId, sectorId) : undefined,
+        ),
+      )
+      .orderBy(asc(residents.name))
+      .limit(2000),
     loadPatrolOptions(
       db,
       and(
@@ -781,6 +801,12 @@ ob.get("/meta", async (c) => {
       .from(obPasteGroups)
       .where(sectorId ? and(eq(obPasteGroups.cpfId, auth.patroller.cpf_id), eq(obPasteGroups.sectorId, sectorId)) : eq(obPasteGroups.cpfId, auth.patroller.cpf_id))
       .orderBy(asc(obPasteGroups.name)),
+    db
+      .select()
+      .from(obNeedleExamples)
+      .where(eq(obNeedleExamples.cpfId, auth.patroller.cpf_id))
+      .orderBy(desc(obNeedleExamples.createdAt))
+      .limit(40),
   ]);
 
   const onPatrolIds = new Set(onPatrol.map((row) => row.id));
@@ -790,6 +816,7 @@ ob.get("/meta", async (c) => {
     sectors: sectorRows,
     onPatrol,
     members: memberRows.map((row) => ({ ...row, onPatrol: onPatrolIds.has(row.id) })),
+    residents: residentRows,
     patrols: activePatrols,
     tags: [...OB_TAGS, ...tagRows],
     canMaintainCompanies: canMaintainCompanies(auth),
@@ -798,6 +825,15 @@ ob.get("/meta", async (c) => {
       name: g.name,
       sectorId: g.sectorId,
       receivedFrom: g.receivedFrom,
+    })),
+    needleExamples: exampleRows.map((row) => ({
+      id: row.id,
+      passage: row.passage,
+      vote: row.vote,
+      notes: row.notes,
+      needleFill: JSON.parse(row.needleFillJson || "{}"),
+      correctedFill: row.correctedFillJson ? JSON.parse(row.correctedFillJson) : null,
+      createdAt: row.createdAt,
     })),
   });
 });
@@ -1543,6 +1579,77 @@ ob.post("/tags", async (c) => {
   const [row] = await db.insert(obTags).values({ cpfId: auth.patroller.cpf_id, key, label }).returning();
   await logAudit(db, "ob.tag.created", auth, { key, label });
   return c.json({ key: row!.key, label: row!.label }, 201);
+});
+
+ob.get("/needle-examples", async (c) => {
+  const auth = getAuth(c);
+  const db = getDb(c.env);
+  const rows = await db
+    .select()
+    .from(obNeedleExamples)
+    .where(eq(obNeedleExamples.cpfId, auth.patroller.cpf_id))
+    .orderBy(desc(obNeedleExamples.createdAt))
+    .limit(100);
+  return c.json({
+    results: rows.map((row) => ({
+      id: row.id,
+      passage: row.passage,
+      vote: row.vote,
+      notes: row.notes,
+      needleFill: JSON.parse(row.needleFillJson || "{}"),
+      correctedFill: row.correctedFillJson ? JSON.parse(row.correctedFillJson) : null,
+      createdAt: row.createdAt,
+    })),
+  });
+});
+
+ob.post("/needle-examples", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{
+    passage?: string;
+    messages?: { groupName?: string; body?: string }[];
+    needle_fill?: unknown;
+    corrected_fill?: unknown;
+    vote?: string;
+    notes?: string;
+  }>();
+  const passage = (body.passage ?? "").trim();
+  const vote = body.vote === "up" || body.vote === "down" ? body.vote : "";
+  if (!passage || !vote) throw new AppError("OB_TRAINING_INVALID");
+  const db = getDb(c.env);
+  const [row] = await db
+    .insert(obNeedleExamples)
+    .values({
+      cpfId: auth.patroller.cpf_id,
+      passage,
+      messagesJson: JSON.stringify(body.messages ?? []),
+      needleFillJson: JSON.stringify(body.needle_fill ?? {}),
+      correctedFillJson: body.corrected_fill == null ? null : JSON.stringify(body.corrected_fill),
+      vote,
+      notes: (body.notes ?? "").trim(),
+      createdById: auth.patroller.patroller_id,
+    })
+    .returning();
+  await logAudit(db, "ob.needle_example.created", auth, { vote, example_id: row!.id });
+  return c.json({
+    id: row!.id,
+    passage: row!.passage,
+    vote: row!.vote,
+    notes: row!.notes,
+    needleFill: JSON.parse(row!.needleFillJson || "{}"),
+    correctedFill: row!.correctedFillJson ? JSON.parse(row!.correctedFillJson) : null,
+    createdAt: row!.createdAt,
+  }, 201);
+});
+
+ob.delete("/needle-examples/:id", async (c) => {
+  const auth = getAuth(c);
+  const db = getDb(c.env);
+  const row = await db.query.obNeedleExamples.findFirst({ where: eq(obNeedleExamples.id, c.req.param("id")) });
+  if (!row || row.cpfId !== auth.patroller.cpf_id) throw new AppError("OB_NOT_FOUND");
+  await db.delete(obNeedleExamples).where(eq(obNeedleExamples.id, row.id));
+  await logAudit(db, "ob.needle_example.deleted", auth, { example_id: row.id });
+  return c.json({ ok: true });
 });
 
 ob.post("/suburbs", async (c) => {

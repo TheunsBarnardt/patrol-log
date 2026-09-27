@@ -663,20 +663,61 @@ export function matchSuburbName(
   return best?.id ?? null;
 }
 
-/** Clock written in a message, as HH:MM. */
+/** Clock written in a message, as HH:MM. Accepts 13:14, 13h14, 13H14. */
 export function clockInText(text: string): string | null {
-  const match = text.match(/\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/);
+  const match = text.match(/\b([01]?\d|2[0-3])[:hH]([0-5]\d)\b/);
   if (!match) return null;
   return `${match[1]!.padStart(2, "0")}:${match[2]}`;
 }
 
-/** Calendar date written in a message, as YYYY-MM-DD. */
-export function dateInText(text: string): string | null {
+/** Calendar date written in a message, as YYYY-MM-DD. "today" uses the SAST calendar day. */
+export function dateInText(text: string, todayIso?: string): string | null {
   const iso = text.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const dmy = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b/);
-  if (!dmy) return null;
-  return `${dmy[3]}-${dmy[2]!.padStart(2, "0")}-${dmy[1]!.padStart(2, "0")}`;
+  if (dmy) return `${dmy[3]}-${dmy[2]!.padStart(2, "0")}-${dmy[1]!.padStart(2, "0")}`;
+  if (/\btoday\b/i.test(text) && todayIso && /^\d{4}-\d{2}-\d{2}$/.test(todayIso)) return todayIso;
+  return null;
+}
+
+/** SA desk shorthand: BM = Black Male, IM = Indian Male, and so on. */
+export function ethnicityFromCode(code: string): string | null {
+  const letter = code.trim().toUpperCase()[0];
+  if (letter === "B") return "Black";
+  if (letter === "W") return "White";
+  if (letter === "C") return "Coloured";
+  if (letter === "I") return "Indian";
+  if (letter === "A") return "Asian";
+  return null;
+}
+
+export function genderFromCode(code: string): string | null {
+  const letter = code.trim().toUpperCase().slice(-1);
+  if (letter === "M") return "Male";
+  if (letter === "F") return "Female";
+  return null;
+}
+
+/** Persons written like "1 BM - Jean with black shirt & 1 IM with a white t-shirt". */
+export function personsInText(text: string): { name: string; ethnicity: string; gender: string; clothing: string; direction: string }[] {
+  const people: { name: string; ethnicity: string; gender: string; clothing: string; direction: string }[] = [];
+  const re = /\b(\d+\s*)?([BWCIA])([MF])\b(?:\s*[-–:]?\s*([A-Za-z][A-Za-z .'-]{1,40}))?(?:\s*(?:with|wearing)\s+([^.&;\n]+))?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const code = `${match[2]}${match[3]}`;
+    const ethnicity = ethnicityFromCode(code) ?? "";
+    const gender = genderFromCode(code) ?? "";
+    const name = (match[4] ?? "").trim();
+    const clothing = (match[5] ?? "").replace(/\s+/g, " ").trim();
+    people.push({ name, ethnicity, gender, clothing, direction: "" });
+  }
+  return people;
+}
+
+/** Phone numbers in a message, digits only for matching. */
+export function phonesInText(text: string): string[] {
+  const found = text.match(/(?:\+?27|0)\s*\d[\d\s-]{7,14}\d/g) ?? [];
+  return [...new Set(found.map((raw) => raw.replace(/\D/g, "").replace(/^27/, "0")))];
 }
 
 export function attendanceInText(text: string): "present" | "assisting" | null {

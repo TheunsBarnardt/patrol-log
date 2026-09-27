@@ -661,6 +661,27 @@ export const obEntryMessages = sqliteTable("ob_entry_messages", {
   hashIdx: uniqueIndex("ob_entry_messages_hash_idx").on(t.cpfId, t.bodyHash),
 }));
 
+/** Desk thumbs on Needle fills. Good and corrected rows are fed back as training examples. */
+export const obNeedleExamples = sqliteTable("ob_needle_examples", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  passage: text("passage").notNull(),
+  messagesJson: text("messages_json").notNull().default("[]"),
+  needleFillJson: text("needle_fill_json").notNull().default("{}"),
+  correctedFillJson: text("corrected_fill_json"),
+  vote: text("vote").notNull().$type<"up" | "down">(),
+  notes: text("notes").notNull().default(""),
+  createdById: text("created_by_id").references(() => patrollers.id, { onDelete: "set null" }),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  cpfIdx: index("ob_needle_examples_cpf_idx").on(t.cpfId, t.createdAt),
+  voteIdx: index("ob_needle_examples_vote_idx").on(t.cpfId, t.vote),
+}));
+
 /** Later “seen here” updates. The latest row is last-seen for BOLOs. */
 export const obSightings = sqliteTable("ob_sightings", {
   id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),

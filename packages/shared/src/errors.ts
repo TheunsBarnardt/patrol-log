@@ -114,6 +114,7 @@ export const ERROR_CODES = {
   OB_ENTRY_CLOSED: { status: 409, message: "That incident is already closed." },
   OB_NO_OPEN_SHIFT: { status: 409, message: "There is no open Commence Shift to stand down." },
   OB_NEEDLE_UNAVAILABLE: { status: 503, message: "Needle is not available yet. The weights file has not been uploaded." },
+  OB_TRAINING_INVALID: { status: 422, message: "Choose thumbs up or thumbs down, and keep the messages." },
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;
