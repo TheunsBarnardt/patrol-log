@@ -530,7 +530,7 @@ export function OccurrenceBookPage() {
           method: "POST",
           body: JSON.stringify({
             ...payload(),
-            messages: drafts.map((draft) => ({ body: draft.body, group_id: draft.groupId })),
+            ...(drafts.length ? { messages: drafts.map((draft) => ({ body: draft.body, group_id: draft.groupId })) } : {}),
           }),
         });
         setDrafts([]);
@@ -649,6 +649,9 @@ export function OccurrenceBookPage() {
       });
       setGroupName("");
       setPasteGroupId(row.id);
+      qc.setQueryData<Meta>(["admin.ob.meta"], (current) => current
+        ? { ...current, pasteGroups: [...current.pasteGroups.filter((group) => group.id !== row.id), row].sort((a, b) => a.name.localeCompare(b.name)) }
+        : current);
       await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add the group");
@@ -660,6 +663,9 @@ export function OccurrenceBookPage() {
     try {
       await adminFetch(`/admin/ob/paste-groups/${id}`, { method: "DELETE" });
       if (pasteGroupId === id) setPasteGroupId("");
+      qc.setQueryData<Meta>(["admin.ob.meta"], (current) => current
+        ? { ...current, pasteGroups: current.pasteGroups.filter((group) => group.id !== id) }
+        : current);
       await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not remove the group");
@@ -799,7 +805,7 @@ export function OccurrenceBookPage() {
           <div className="space-y-2">
             <section className="rounded-xl border bg-white p-4 sm:p-6">
               <h2 className="mb-1 text-sm font-semibold text-gray-900">Messages</h2>
-              <p className="mb-3 text-xs text-gray-500">Add every message for this incident first. Fill entry reads them once. The incident stays active until you close it.</p>
+              <p className="mb-3 text-xs text-gray-500">Paste the messages for this incident, then fill the entry. Or log it manually. The incident stays active until you close it.</p>
               <Field label="Add these messages to">
                 <select className={selectCls} value={mode === "edit" ? editingId ?? "" : ""} onChange={(e) => chooseEntry(e.target.value)}>
                   <option value="">New incident</option>
@@ -812,20 +818,23 @@ export function OccurrenceBookPage() {
                 <>
                   <Field label="Group">
                     <select className={selectCls} value={pasteGroupId} onChange={(e) => setPasteGroupId(e.target.value)}>
-                      <option value="">Choose a group</option>
+                      <option value="">{pasteGroups.length ? "Choose a group" : "No groups yet"}</option>
                       {pasteGroups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.receivedFrom}</option>)}
                     </select>
                   </Field>
-                  <div className="mb-3 flex justify-end">
-                    <button type="button" className="text-xs font-medium text-gray-600 hover:text-gray-900" onClick={() => setShowGroups((value) => !value)}>
-                      {showGroups ? "Hide groups" : "Groups"}
-                    </button>
-                  </div>
-                  {showGroups && (
+                  {pasteGroups.length > 0 && (
+                    <div className="mb-3 flex justify-end">
+                      <button type="button" className="text-xs font-medium text-gray-600 hover:text-gray-900" onClick={() => setShowGroups((value) => !value)}>
+                        {showGroups ? "Hide groups" : "Add or remove groups"}
+                      </button>
+                    </div>
+                  )}
+                  {(showGroups || pasteGroups.length === 0) && (
                     <div className="mb-4 rounded-lg border p-3">
+                      <p className="mb-2 text-xs text-gray-500">Add the WhatsApp group this message came from. It stays in the list for the next incident.</p>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <input className={inputCls} placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
-                        <select className={selectCls} value={groupSector || profile?.sector_id || ""} onChange={(e) => setGroupSector(e.target.value)}>
+                        <select className={selectCls} value={groupSector || profile?.sector_id || meta.data?.sectors[0]?.id || ""} onChange={(e) => setGroupSector(e.target.value)}>
                           {meta.data?.sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}
                         </select>
                         <select className={selectCls} value={groupFrom} onChange={(e) => setGroupFrom(e.target.value as "CPF Group" | "Other Groups")}>
@@ -834,15 +843,16 @@ export function OccurrenceBookPage() {
                         </select>
                         <Btn variant="ghost" onClick={() => void addGroup()}>Add group</Btn>
                       </div>
-                      <ul className="mt-3 space-y-1 text-sm">
-                        {pasteGroups.map((group) => (
-                          <li key={group.id} className="flex items-center justify-between gap-2">
-                            <span>{group.name}</span>
-                            <button type="button" className="text-xs text-red-700" onClick={() => void removeGroup(group.id)}>Remove</button>
-                          </li>
-                        ))}
-                        {pasteGroups.length === 0 && <li className="text-gray-500">No groups yet.</li>}
-                      </ul>
+                      {pasteGroups.length > 0 && (
+                        <ul className="mt-3 space-y-1 text-sm">
+                          {pasteGroups.map((group) => (
+                            <li key={group.id} className="flex items-center justify-between gap-2">
+                              <span>{group.name}</span>
+                              <button type="button" className="text-xs text-red-700" onClick={() => void removeGroup(group.id)}>Remove</button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
                   )}
                   <textarea className={inputCls} rows={4} placeholder="Paste one message" value={pasteBody} onChange={(e) => setPasteBody(e.target.value)} />
@@ -871,7 +881,10 @@ export function OccurrenceBookPage() {
                 {storedMessages.length + drafts.length === 0 && <li className="text-gray-500">No messages yet.</li>}
               </ul>
               {entryOpen && (
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex justify-end gap-2">
+                  {mode === "new" && !filled && (
+                    <Btn variant="ghost" onClick={() => { setFilled(true); setOpenSection("incident"); }}>Log manually</Btn>
+                  )}
                   <Btn onClick={() => void fillFromMessages()} disabled={filling || storedMessages.length + drafts.length === 0}>
                     {filling ? "Reading messages…" : "Fill entry"}
                   </Btn>
