@@ -1285,15 +1285,28 @@ ob.post("/entries/:id/sightings", async (c) => {
   return c.json(await presentEntry(db, fresh), 201);
 });
 
+const NEEDLE_WEIGHTS_URL = "https://huggingface.co/Cactus-Compute/needle3/resolve/main/needle3.cact";
+
 ob.get("/needle", async (c) => {
   const object = await c.env.NEEDLE?.get("needle3.cact");
-  if (!object) throw new AppError("OB_NEEDLE_UNAVAILABLE");
-  return new Response(object.body, {
-    headers: {
-      "content-type": "application/octet-stream",
-      "cache-control": "private, max-age=604800",
-    },
+  if (object) {
+    return new Response(object.body, {
+      headers: {
+        "content-type": "application/octet-stream",
+        "cache-control": "private, max-age=604800",
+        "content-length": String(object.size),
+      },
+    });
+  }
+  const upstream = await fetch(NEEDLE_WEIGHTS_URL, { headers: { "user-agent": "patrol-log" } });
+  if (!upstream.ok || !upstream.body) throw new AppError("OB_NEEDLE_UNAVAILABLE");
+  const headers = new Headers({
+    "content-type": "application/octet-stream",
+    "cache-control": "private, max-age=604800",
   });
+  const length = upstream.headers.get("content-length");
+  if (length) headers.set("content-length", length);
+  return new Response(upstream.body, { headers });
 });
 
 ob.post("/messages/check", async (c) => {
