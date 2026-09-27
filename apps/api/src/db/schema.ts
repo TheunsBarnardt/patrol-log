@@ -673,6 +673,9 @@ export const obNeedleExamples = sqliteTable("ob_needle_examples", {
   correctedFillJson: text("corrected_fill_json"),
   vote: text("vote").notNull().$type<"up" | "down">(),
   notes: text("notes").notNull().default(""),
+  source: text("source").notNull().default("live").$type<"live" | "history">(),
+  fieldScore: integer("field_score"),
+  corpusId: text("corpus_id"),
   createdById: text("created_by_id").references(() => patrollers.id, { onDelete: "set null" }),
   createdAt: text("created_at")
     .notNull()
@@ -680,6 +683,28 @@ export const obNeedleExamples = sqliteTable("ob_needle_examples", {
 }, (t) => ({
   cpfIdx: index("ob_needle_examples_cpf_idx").on(t.cpfId, t.createdAt),
   voteIdx: index("ob_needle_examples_vote_idx").on(t.cpfId, t.vote),
+  sourceIdx: index("ob_needle_examples_source_idx").on(t.cpfId, t.source),
+}));
+
+/** Historical message queue for admin train-only sessions (never creates OB entries). */
+export const obNeedleCorpus = sqliteTable("ob_needle_corpus", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  passage: text("passage").notNull(),
+  label: text("label").notNull().default(""),
+  status: text("status").notNull().default("pending").$type<"pending" | "done" | "skipped">(),
+  lastNeedleFillJson: text("last_needle_fill_json"),
+  lastVote: text("last_vote").$type<"up" | "down" | null>(),
+  exampleId: text("example_id"),
+  reviewedAt: text("reviewed_at"),
+  createdById: text("created_by_id").references(() => patrollers.id, { onDelete: "set null" }),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  cpfStatusIdx: index("ob_needle_corpus_cpf_status_idx").on(t.cpfId, t.status, t.createdAt),
 }));
 
 /** Later “seen here” updates. The latest row is last-seen for BOLOs. */

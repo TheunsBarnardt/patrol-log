@@ -728,3 +728,60 @@ export function attendanceInText(text: string): "present" | "assisting" | null {
   }
   return null;
 }
+
+/** Split a bulk paste of historical reports into one passage per incident. */
+export function splitTrainingPassages(text: string): string[] {
+  const raw = text.replace(/\r\n/g, "\n").trim();
+  if (!raw) return [];
+  const blocks = raw.includes("\n---")
+    ? raw.split(/\n-{3,}\n/)
+    : raw.split(/\n\s*\n/);
+  return blocks.map((block) => block.trim()).filter((block) => block.length >= 12);
+}
+
+function foldField(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value).trim().toLowerCase();
+  if (Array.isArray(value)) return value.map(foldField).filter(Boolean).join("|");
+  if (typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${key}:${foldField((value as Record<string, unknown>)[key])}`)
+      .join(";");
+  }
+  return "";
+}
+
+/**
+ * How close Needle was to the corrected fill (0–100).
+ * Used for the improvement graph; thumbs still remain the primary signal.
+ */
+export function needleFieldScore(needle: unknown, corrected: unknown): number | null {
+  if (!needle || !corrected || typeof needle !== "object" || typeof corrected !== "object") return null;
+  const n = needle as Record<string, unknown>;
+  const c = corrected as Record<string, unknown>;
+  const pairs: [unknown, unknown][] = [
+    [n.incidentKey, c.incidentKey],
+    [n.suburbId, c.suburbId],
+    [n.street, c.street],
+    [n.date, c.date],
+    [n.time, c.time],
+    [n.phase, c.phase],
+    [n.contactName, c.contactName],
+    [n.contactPhone, c.contactPhone],
+    [(n.vehicle as { colour?: string } | null)?.colour, (c.vehicle as { colour?: string } | null)?.colour],
+    [(n.vehicle as { make?: string } | null)?.make, (c.vehicle as { make?: string } | null)?.make],
+    [(n.vehicle as { shape?: string } | null)?.shape, (c.vehicle as { shape?: string } | null)?.shape],
+    [n.persons ?? n.person, c.persons ?? c.person],
+  ];
+  let scored = 0;
+  let matched = 0;
+  for (const [left, right] of pairs) {
+    const expect = foldField(right);
+    if (!expect) continue;
+    scored += 1;
+    if (foldField(left) === expect) matched += 1;
+  }
+  if (!scored) return null;
+  return Math.round((matched / scored) * 100);
+}

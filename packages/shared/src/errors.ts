@@ -115,6 +115,8 @@ export const ERROR_CODES = {
   OB_NO_OPEN_SHIFT: { status: 409, message: "There is no open Commence Shift to stand down." },
   OB_NEEDLE_UNAVAILABLE: { status: 503, message: "Needle is not available yet. The weights file has not been uploaded." },
   OB_TRAINING_INVALID: { status: 422, message: "Choose thumbs up or thumbs down, and keep the messages." },
+  OB_TRAINING_FORBIDDEN: { status: 403, message: "Only an admin can import and train on historical incidents." },
+  OB_CORPUS_EMPTY: { status: 404, message: "There are no pending historical messages left to train." },
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;

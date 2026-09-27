@@ -770,6 +770,7 @@ export function OccurrenceBookPage() {
           corrected_fill: formAsCorrectedFill(form),
           vote,
           notes: trainingNote.trim(),
+          source: "live",
         }),
       });
       setTrainingSaved(vote);

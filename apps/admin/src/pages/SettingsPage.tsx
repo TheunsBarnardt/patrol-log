@@ -9,25 +9,18 @@ import { MembersPage } from "./MembersPage";
 import { EmergencyServicesPage } from "./EmergencyServicesPage";
 import { VehiclesPage } from "./VehiclesPage";
 import { HotspotsPage } from "./HotspotsPage";
+import { NeedleTrainingPanel } from "./NeedleTrainingPanel";
 
 interface Sector { id: string; name: string; code: string | null }
 interface PasteGroup { id: string; name: string; sectorId: string; receivedFrom: "CPF Group" | "Other Groups" }
-interface NeedleExampleRow {
-  id: string;
-  passage: string;
-  vote: "up" | "down";
-  notes: string;
-  createdAt: string;
-}
 interface Meta {
   sectors: Sector[];
   pasteGroups: PasteGroup[];
-  needleExamples?: NeedleExampleRow[];
 }
 
 const TABS = [
   { id: "groups", label: "Groups", hint: "WhatsApp groups for the occurrence book" },
-  { id: "needle", label: "Needle training", hint: "Thumbs on auto-fills used to improve the next read" },
+  { id: "needle", label: "Needle training", hint: "History trainer, live thumbs, and improvement graph" },
   { id: "residents", label: "Residents", hint: "People who live in the sector" },
   { id: "members", label: "Members", hint: "CPF members, call signs, and access" },
   { id: "emergency-services", label: "Emergency services", hint: "Police, ambulance, fire, and other numbers" },
@@ -128,13 +121,7 @@ export function SettingsPage() {
   const meta = useQuery({
     queryKey: ["admin.ob.meta"],
     queryFn: () => adminFetch<Meta>("/admin/ob/meta"),
-    enabled: tab === "groups" || tab === "needle",
-  });
-
-  const examples = useQuery({
-    queryKey: ["admin.ob.needle-examples"],
-    queryFn: () => adminFetch<{ results: NeedleExampleRow[] }>("/admin/ob/needle-examples"),
-    enabled: tab === "needle",
+    enabled: tab === "groups",
   });
 
   const tabs = useMemo(() => {
@@ -146,18 +133,6 @@ export function SettingsPage() {
   const sectors = meta.data?.sectors ?? [];
   const groups = [...(meta.data?.pasteGroups ?? [])].sort((a, b) => a.name.localeCompare(b.name));
   const sectorName = (id: string) => sectors.find((sector) => sector.id === id)?.name ?? "Sector";
-  const trainingRows = examples.data?.results ?? meta.data?.needleExamples ?? [];
-
-  async function removeExample(id: string) {
-    setError("");
-    try {
-      await adminFetch(`/admin/ob/needle-examples/${id}`, { method: "DELETE" });
-      await qc.invalidateQueries({ queryKey: ["admin.ob.needle-examples"] });
-      await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not remove that example");
-    }
-  }
 
   async function addGroup() {
     const trimmed = name.trim();
@@ -303,33 +278,9 @@ export function SettingsPage() {
           {tab === "needle" && (
             <Pane
               label="Needle training"
-              blurb="After Fill entry on the occurrence book, rate the result. Good examples and corrections are fed back the next time Needle reads a paste. It also matches contacts against residents and members."
+              blurb="Import historical messages and train one by one without creating incidents. Live occurrence book thumbs still count. The graph tracks how fills improve."
             >
-              {error && <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
-              <section className="flex min-h-48 w-full flex-1 flex-col overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm">
-                <h2 className="border-b border-black/5 px-5 py-4 text-base font-semibold text-gray-900">Saved examples</h2>
-                {(examples.isLoading || meta.isLoading) && <p className="px-5 py-4 text-sm text-gray-500">Loading…</p>}
-                {examples.isError && <p className="px-5 py-4 text-sm text-red-700">Training examples could not be loaded.</p>}
-                {!examples.isLoading && trainingRows.length === 0 && (
-                  <p className="px-5 py-4 text-sm text-gray-500">No votes yet. Fill an occurrence from pasted messages, then use Good or Fix needed.</p>
-                )}
-                <ul className="min-h-0 flex-1 overflow-auto">
-                  {trainingRows.map((row) => (
-                    <li key={row.id} className="border-t border-black/5 px-5 py-3 first:border-t-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                            {row.vote === "up" ? "Good example" : "Correction"} · {row.createdAt}
-                          </p>
-                          <p className="mt-1 whitespace-pre-wrap text-sm text-gray-800">{row.passage.slice(0, 400)}{row.passage.length > 400 ? "…" : ""}</p>
-                          {row.notes && <p className="mt-1 text-xs text-gray-500">{row.notes}</p>}
-                        </div>
-                        <button type="button" className="shrink-0 text-sm text-red-700 hover:underline" onClick={() => void removeExample(row.id)}>Remove</button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              <NeedleTrainingPanel />
             </Pane>
           )}
 

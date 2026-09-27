@@ -19,12 +19,14 @@ import {
   dangerForTypes,
   formatObNumber,
   messageBodyHash,
+  needleFieldScore,
   obGeocodeHits,
   obGeocodeSearchUrl,
   obPrefixFromSectorCode,
   obType,
   parseLocalWhen,
   requiresAttendance,
+  splitTrainingPassages,
   type ObAttendance,
   type ObCategory,
   type ObPhase,
@@ -36,6 +38,7 @@ import {
   obEntries,
   obEntryMessages,
   obEntryPatrols,
+  obNeedleCorpus,
   obNeedleExamples,
   obEntryResponders,
   obEntryServices,
@@ -158,6 +161,39 @@ interface Normalized {
 
 function canMaintainCompanies(auth: AuthenticatedContext): boolean {
   return ["system_admin", "admin", "sector_lead"].includes(auth.patroller.access_level);
+}
+
+function canTrainHistory(auth: AuthenticatedContext): boolean {
+  return ["system_admin", "admin"].includes(auth.patroller.access_level);
+}
+
+function mapExample(row: typeof obNeedleExamples.$inferSelect) {
+  return {
+    id: row.id,
+    passage: row.passage,
+    vote: row.vote,
+    notes: row.notes,
+    source: row.source,
+    fieldScore: row.fieldScore,
+    corpusId: row.corpusId,
+    needleFill: JSON.parse(row.needleFillJson || "{}"),
+    correctedFill: row.correctedFillJson ? JSON.parse(row.correctedFillJson) : null,
+    createdAt: row.createdAt,
+  };
+}
+
+function mapCorpus(row: typeof obNeedleCorpus.$inferSelect) {
+  return {
+    id: row.id,
+    passage: row.passage,
+    label: row.label,
+    status: row.status,
+    lastVote: row.lastVote,
+    exampleId: row.exampleId,
+    reviewedAt: row.reviewedAt,
+    createdAt: row.createdAt,
+    lastNeedleFill: row.lastNeedleFillJson ? JSON.parse(row.lastNeedleFillJson) : null,
+  };
 }
 
 function blank(value: string | null | undefined): string {
@@ -826,15 +862,7 @@ ob.get("/meta", async (c) => {
       sectorId: g.sectorId,
       receivedFrom: g.receivedFrom,
     })),
-    needleExamples: exampleRows.map((row) => ({
-      id: row.id,
-      passage: row.passage,
-      vote: row.vote,
-      notes: row.notes,
-      needleFill: JSON.parse(row.needleFillJson || "{}"),
-      correctedFill: row.correctedFillJson ? JSON.parse(row.correctedFillJson) : null,
-      createdAt: row.createdAt,
-    })),
+    needleExamples: exampleRows.map((row) => mapExample(row)),
   });
 });
 
@@ -1590,17 +1618,7 @@ ob.get("/needle-examples", async (c) => {
     .where(eq(obNeedleExamples.cpfId, auth.patroller.cpf_id))
     .orderBy(desc(obNeedleExamples.createdAt))
     .limit(100);
-  return c.json({
-    results: rows.map((row) => ({
-      id: row.id,
-      passage: row.passage,
-      vote: row.vote,
-      notes: row.notes,
-      needleFill: JSON.parse(row.needleFillJson || "{}"),
-      correctedFill: row.correctedFillJson ? JSON.parse(row.correctedFillJson) : null,
-      createdAt: row.createdAt,
-    })),
-  });
+  return c.json({ results: rows.map(mapExample) });
 });
 
 ob.post("/needle-examples", async (c) => {
@@ -1612,10 +1630,15 @@ ob.post("/needle-examples", async (c) => {
     corrected_fill?: unknown;
     vote?: string;
     notes?: string;
+    source?: string;
+    corpus_id?: string;
   }>();
   const passage = (body.passage ?? "").trim();
   const vote = body.vote === "up" || body.vote === "down" ? body.vote : "";
   if (!passage || !vote) throw new AppError("OB_TRAINING_INVALID");
+  const source = body.source === "history" ? "history" : "live";
+  if (source === "history" && !canTrainHistory(auth)) throw new AppError("OB_TRAINING_FORBIDDEN");
+  const fieldScore = needleFieldScore(body.needle_fill, body.corrected_fill);
   const db = getDb(c.env);
   const [row] = await db
     .insert(obNeedleExamples)
@@ -1627,19 +1650,14 @@ ob.post("/needle-examples", async (c) => {
       correctedFillJson: body.corrected_fill == null ? null : JSON.stringify(body.corrected_fill),
       vote,
       notes: (body.notes ?? "").trim(),
+      source,
+      fieldScore,
+      corpusId: body.corpus_id?.trim() || null,
       createdById: auth.patroller.patroller_id,
     })
     .returning();
-  await logAudit(db, "ob.needle_example.created", auth, { vote, example_id: row!.id });
-  return c.json({
-    id: row!.id,
-    passage: row!.passage,
-    vote: row!.vote,
-    notes: row!.notes,
-    needleFill: JSON.parse(row!.needleFillJson || "{}"),
-    correctedFill: row!.correctedFillJson ? JSON.parse(row!.correctedFillJson) : null,
-    createdAt: row!.createdAt,
-  }, 201);
+  await logAudit(db, "ob.needle_example.created", auth, { vote, source, example_id: row!.id });
+  return c.json(mapExample(row!), 201);
 });
 
 ob.delete("/needle-examples/:id", async (c) => {
@@ -1649,6 +1667,223 @@ ob.delete("/needle-examples/:id", async (c) => {
   if (!row || row.cpfId !== auth.patroller.cpf_id) throw new AppError("OB_NOT_FOUND");
   await db.delete(obNeedleExamples).where(eq(obNeedleExamples.id, row.id));
   await logAudit(db, "ob.needle_example.deleted", auth, { example_id: row.id });
+  return c.json({ ok: true });
+});
+
+ob.get("/needle-stats", async (c) => {
+  const auth = getAuth(c);
+  const db = getDb(c.env);
+  const cpfId = auth.patroller.cpf_id;
+  const [totals] = await db
+    .select({
+      up: sql<number>`sum(case when ${obNeedleExamples.vote} = 'up' then 1 else 0 end)`,
+      down: sql<number>`sum(case when ${obNeedleExamples.vote} = 'down' then 1 else 0 end)`,
+      live: sql<number>`sum(case when ${obNeedleExamples.source} = 'live' then 1 else 0 end)`,
+      history: sql<number>`sum(case when ${obNeedleExamples.source} = 'history' then 1 else 0 end)`,
+      avgScore: sql<number>`avg(${obNeedleExamples.fieldScore})`,
+    })
+    .from(obNeedleExamples)
+    .where(eq(obNeedleExamples.cpfId, cpfId));
+  const [corpus] = await db
+    .select({
+      pending: sql<number>`sum(case when ${obNeedleCorpus.status} = 'pending' then 1 else 0 end)`,
+      done: sql<number>`sum(case when ${obNeedleCorpus.status} = 'done' then 1 else 0 end)`,
+      skipped: sql<number>`sum(case when ${obNeedleCorpus.status} = 'skipped' then 1 else 0 end)`,
+    })
+    .from(obNeedleCorpus)
+    .where(eq(obNeedleCorpus.cpfId, cpfId));
+  const weekly = await db
+    .select({
+      week: sql<string>`strftime('%Y-%W', ${obNeedleExamples.createdAt})`,
+      up: sql<number>`sum(case when ${obNeedleExamples.vote} = 'up' then 1 else 0 end)`,
+      down: sql<number>`sum(case when ${obNeedleExamples.vote} = 'down' then 1 else 0 end)`,
+      avgScore: sql<number>`avg(${obNeedleExamples.fieldScore})`,
+      count: sql<number>`count(*)`,
+    })
+    .from(obNeedleExamples)
+    .where(eq(obNeedleExamples.cpfId, cpfId))
+    .groupBy(sql`strftime('%Y-%W', ${obNeedleExamples.createdAt})`)
+    .orderBy(sql`strftime('%Y-%W', ${obNeedleExamples.createdAt})`);
+  const up = Number(totals?.up ?? 0);
+  const down = Number(totals?.down ?? 0);
+  return c.json({
+    totals: {
+      up,
+      down,
+      live: Number(totals?.live ?? 0),
+      history: Number(totals?.history ?? 0),
+      avgScore: totals?.avgScore == null ? null : Math.round(Number(totals.avgScore)),
+      goodRate: up + down === 0 ? null : Math.round((up / (up + down)) * 100),
+      pending: Number(corpus?.pending ?? 0),
+      done: Number(corpus?.done ?? 0),
+      skipped: Number(corpus?.skipped ?? 0),
+    },
+    weekly: weekly.map((row) => {
+      const wUp = Number(row.up ?? 0);
+      const wDown = Number(row.down ?? 0);
+      return {
+        week: row.week,
+        up: wUp,
+        down: wDown,
+        count: Number(row.count ?? 0),
+        avgScore: row.avgScore == null ? null : Math.round(Number(row.avgScore)),
+        goodRate: wUp + wDown === 0 ? null : Math.round((wUp / (wUp + wDown)) * 100),
+      };
+    }),
+  });
+});
+
+ob.get("/needle-corpus", async (c) => {
+  const auth = getAuth(c);
+  if (!canTrainHistory(auth)) throw new AppError("OB_TRAINING_FORBIDDEN");
+  const db = getDb(c.env);
+  const status = c.req.query("status");
+  const rows = await db
+    .select()
+    .from(obNeedleCorpus)
+    .where(
+      and(
+        eq(obNeedleCorpus.cpfId, auth.patroller.cpf_id),
+        status === "pending" || status === "done" || status === "skipped"
+          ? eq(obNeedleCorpus.status, status)
+          : undefined,
+      ),
+    )
+    .orderBy(asc(obNeedleCorpus.createdAt))
+    .limit(200);
+  const [counts] = await db
+    .select({
+      pending: sql<number>`sum(case when ${obNeedleCorpus.status} = 'pending' then 1 else 0 end)`,
+      done: sql<number>`sum(case when ${obNeedleCorpus.status} = 'done' then 1 else 0 end)`,
+      skipped: sql<number>`sum(case when ${obNeedleCorpus.status} = 'skipped' then 1 else 0 end)`,
+    })
+    .from(obNeedleCorpus)
+    .where(eq(obNeedleCorpus.cpfId, auth.patroller.cpf_id));
+  return c.json({
+    counts: {
+      pending: Number(counts?.pending ?? 0),
+      done: Number(counts?.done ?? 0),
+      skipped: Number(counts?.skipped ?? 0),
+    },
+    results: rows.map(mapCorpus),
+  });
+});
+
+ob.get("/needle-corpus/next", async (c) => {
+  const auth = getAuth(c);
+  if (!canTrainHistory(auth)) throw new AppError("OB_TRAINING_FORBIDDEN");
+  const db = getDb(c.env);
+  const [row] = await db
+    .select()
+    .from(obNeedleCorpus)
+    .where(and(eq(obNeedleCorpus.cpfId, auth.patroller.cpf_id), eq(obNeedleCorpus.status, "pending")))
+    .orderBy(asc(obNeedleCorpus.createdAt))
+    .limit(1);
+  if (!row) throw new AppError("OB_CORPUS_EMPTY");
+  const [counts] = await db
+    .select({
+      pending: sql<number>`sum(case when ${obNeedleCorpus.status} = 'pending' then 1 else 0 end)`,
+      done: sql<number>`sum(case when ${obNeedleCorpus.status} = 'done' then 1 else 0 end)`,
+    })
+    .from(obNeedleCorpus)
+    .where(eq(obNeedleCorpus.cpfId, auth.patroller.cpf_id));
+  return c.json({
+    item: mapCorpus(row),
+    remaining: Number(counts?.pending ?? 0),
+    done: Number(counts?.done ?? 0),
+  });
+});
+
+ob.post("/needle-corpus/import", async (c) => {
+  const auth = getAuth(c);
+  if (!canTrainHistory(auth)) throw new AppError("OB_TRAINING_FORBIDDEN");
+  const body = await c.req.json<{ text?: string; passages?: string[]; label?: string }>();
+  const passages = [
+    ...(body.passages ?? []).map((p) => p.trim()).filter(Boolean),
+    ...splitTrainingPassages(body.text ?? ""),
+  ];
+  const unique = [...new Set(passages)].slice(0, 500);
+  if (!unique.length) throw new AppError("OB_TRAINING_INVALID");
+  const db = getDb(c.env);
+  const label = (body.label ?? "").trim().slice(0, 120);
+  const values = unique.map((passage) => ({
+    cpfId: auth.patroller.cpf_id,
+    passage,
+    label,
+    status: "pending" as const,
+    createdById: auth.patroller.patroller_id,
+  }));
+  await db.insert(obNeedleCorpus).values(values);
+  await logAudit(db, "ob.needle_corpus.imported", auth, { count: values.length, label });
+  return c.json({ imported: values.length }, 201);
+});
+
+ob.post("/needle-corpus/:id/review", async (c) => {
+  const auth = getAuth(c);
+  if (!canTrainHistory(auth)) throw new AppError("OB_TRAINING_FORBIDDEN");
+  const body = await c.req.json<{
+    needle_fill?: unknown;
+    corrected_fill?: unknown;
+    vote?: string;
+    notes?: string;
+  }>();
+  const vote = body.vote === "up" || body.vote === "down" ? body.vote : "";
+  if (!vote) throw new AppError("OB_TRAINING_INVALID");
+  const db = getDb(c.env);
+  const row = await db.query.obNeedleCorpus.findFirst({ where: eq(obNeedleCorpus.id, c.req.param("id")) });
+  if (!row || row.cpfId !== auth.patroller.cpf_id) throw new AppError("OB_NOT_FOUND");
+  const fieldScore = needleFieldScore(body.needle_fill, body.corrected_fill);
+  const [example] = await db
+    .insert(obNeedleExamples)
+    .values({
+      cpfId: auth.patroller.cpf_id,
+      passage: row.passage,
+      messagesJson: JSON.stringify([{ groupName: "History", body: row.passage }]),
+      needleFillJson: JSON.stringify(body.needle_fill ?? {}),
+      correctedFillJson: body.corrected_fill == null ? null : JSON.stringify(body.corrected_fill),
+      vote,
+      notes: (body.notes ?? "").trim(),
+      source: "history",
+      fieldScore,
+      corpusId: row.id,
+      createdById: auth.patroller.patroller_id,
+    })
+    .returning();
+  await db
+    .update(obNeedleCorpus)
+    .set({
+      status: "done",
+      lastNeedleFillJson: JSON.stringify(body.needle_fill ?? {}),
+      lastVote: vote,
+      exampleId: example!.id,
+      reviewedAt: sql`datetime('now')`,
+    })
+    .where(eq(obNeedleCorpus.id, row.id));
+  await logAudit(db, "ob.needle_corpus.reviewed", auth, { corpus_id: row.id, vote, example_id: example!.id });
+  return c.json({ example: mapExample(example!), corpusId: row.id }, 201);
+});
+
+ob.post("/needle-corpus/:id/skip", async (c) => {
+  const auth = getAuth(c);
+  if (!canTrainHistory(auth)) throw new AppError("OB_TRAINING_FORBIDDEN");
+  const db = getDb(c.env);
+  const row = await db.query.obNeedleCorpus.findFirst({ where: eq(obNeedleCorpus.id, c.req.param("id")) });
+  if (!row || row.cpfId !== auth.patroller.cpf_id) throw new AppError("OB_NOT_FOUND");
+  await db
+    .update(obNeedleCorpus)
+    .set({ status: "skipped", reviewedAt: sql`datetime('now')` })
+    .where(eq(obNeedleCorpus.id, row.id));
+  await logAudit(db, "ob.needle_corpus.skipped", auth, { corpus_id: row.id });
+  return c.json({ ok: true });
+});
+
+ob.delete("/needle-corpus/:id", async (c) => {
+  const auth = getAuth(c);
+  if (!canTrainHistory(auth)) throw new AppError("OB_TRAINING_FORBIDDEN");
+  const db = getDb(c.env);
+  const row = await db.query.obNeedleCorpus.findFirst({ where: eq(obNeedleCorpus.id, c.req.param("id")) });
+  if (!row || row.cpfId !== auth.patroller.cpf_id) throw new AppError("OB_NOT_FOUND");
+  await db.delete(obNeedleCorpus).where(eq(obNeedleCorpus.id, row.id));
   return c.json({ ok: true });
 });
 
