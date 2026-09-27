@@ -583,9 +583,14 @@ export const obVehicles = sqliteTable("ob_vehicles", {
   model: text("model"),
   registration: text("registration"),
   features: text("features"),
+  /** Name, if known. */
+  name: text("name"),
+  /** Phonetic code name such as Bravo or Whisky. */
+  identifier: text("identifier"),
 }, (t) => ({
   entryIdx: index("ob_vehicles_entry_idx").on(t.entryId),
   regIdx: index("ob_vehicles_reg_idx").on(t.registration),
+  identifierIdx: index("ob_vehicles_identifier_idx").on(t.identifier),
 }));
 
 export const obPersons = sqliteTable("ob_persons", {
@@ -599,8 +604,15 @@ export const obPersons = sqliteTable("ob_persons", {
   direction: text("direction"),
   injuryTag: text("injury_tag"),
   note: text("note"),
+  /** Name, if known. Used for persons of interest. */
+  name: text("name"),
+  /** Ethnicity, if known. Used for persons of interest. */
+  ethnicity: text("ethnicity"),
+  /** Phonetic code name such as Bravo or Whisky. */
+  identifier: text("identifier"),
 }, (t) => ({
   entryIdx: index("ob_persons_entry_idx").on(t.entryId),
+  identifierIdx: index("ob_persons_identifier_idx").on(t.identifier),
 }));
 
 /** Later “seen here” updates. The latest row is last-seen for BOLOs. */

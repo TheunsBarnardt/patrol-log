@@ -26,6 +26,8 @@ const webLinking: LinkingOptions<RootStackParamList> = {
       Members: "members",
       EmergencyContacts: "emergency",
       LivePatrollerMap: "live-map",
+      LogIncident: "log-incident",
+      AddressLookup: "address",
       Messaging: "messages",
       NewGroup: "messages/new-group",
       Channel: {

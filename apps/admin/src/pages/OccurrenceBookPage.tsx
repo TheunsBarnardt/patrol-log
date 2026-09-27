@@ -4,7 +4,9 @@ import {
   DANGER_LEVELS,
   OB_CATEGORIES,
   OB_CONCLUSIONS,
+  OB_ETHNICITIES,
   OB_INJURY_TAGS,
+  OB_PHONETIC_CODES,
   OB_POI_GENDERS,
   OB_RECEIVED_FROM,
   OB_SERVICES,
@@ -59,8 +61,8 @@ interface ListRow {
   primaryCode: string | null;
   typeCount: number;
 }
-interface VehicleForm { colour: string; shape: string; make: string; model: string; registration: string; features: string }
-interface PoiForm { gender: string; clothing: string; direction: string }
+interface VehicleForm { colour: string; shape: string; make: string; model: string; registration: string; features: string; name: string; identifier: string }
+interface PoiForm { gender: string; clothing: string; direction: string; name: string; ethnicity: string; identifier: string }
 interface PatientForm { injuryTag: string; note: string }
 interface Sighting { id: string; suburbId: string | null; street: string; seenAt: string; note: string | null; callSign: string }
 interface EntryDetail {
@@ -90,7 +92,7 @@ interface EntryDetail {
   patrols: { id: string; label: string }[];
   tagKeys: string[];
   vehicles: VehicleForm[];
-  persons: { kind: "poi" | "patient"; gender: string | null; clothing: string | null; direction: string | null; injuryTag: string | null; note: string | null }[];
+  persons: { kind: "poi" | "patient"; gender: string | null; clothing: string | null; direction: string | null; injuryTag: string | null; note: string | null; name: string | null; ethnicity: string | null; identifier: string | null }[];
   sightings: Sighting[];
 }
 
@@ -123,7 +125,8 @@ interface FormState {
   conclusion: string;
 }
 
-const emptyVehicle = (): VehicleForm => ({ colour: "", shape: "", make: "", model: "", registration: "", features: "" });
+const emptyVehicle = (): VehicleForm => ({ colour: "", shape: "", make: "", model: "", registration: "", features: "", name: "", identifier: "" });
+const emptyPoi = (): PoiForm => ({ gender: "", clothing: "", direction: "", name: "", ethnicity: "", identifier: "" });
 
 function sastNow(): { date: string; time: string } {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -209,8 +212,8 @@ function fromEntry(entry: EntryDetail): FormState {
     serviceRef,
     otherName,
     companyIds,
-    vehicles: entry.vehicles.length ? entry.vehicles.map((v) => ({ ...emptyVehicle(), ...v, colour: v.colour ?? "", shape: v.shape ?? "", make: v.make ?? "", model: v.model ?? "", registration: v.registration ?? "", features: v.features ?? "" })) : [emptyVehicle()],
-    pois: entry.persons.filter((p) => p.kind === "poi").map((p) => ({ gender: p.gender ?? "", clothing: p.clothing ?? "", direction: p.direction ?? "" })),
+    vehicles: entry.vehicles.length ? entry.vehicles.map((v) => ({ ...emptyVehicle(), ...v, colour: v.colour ?? "", shape: v.shape ?? "", make: v.make ?? "", model: v.model ?? "", registration: v.registration ?? "", features: v.features ?? "", name: v.name ?? "", identifier: v.identifier ?? "" })) : [emptyVehicle()],
+    pois: entry.persons.filter((p) => p.kind === "poi").map((p) => ({ ...emptyPoi(), gender: p.gender ?? "", clothing: p.clothing ?? "", direction: p.direction ?? "", name: p.name ?? "", ethnicity: p.ethnicity ?? "", identifier: p.identifier ?? "" })),
     patients: entry.persons.filter((p) => p.kind === "patient").map((p) => ({ injuryTag: p.injuryTag ?? "", note: p.note ?? "" })),
     conclusion: entry.conclusion ?? "",
   };
@@ -392,7 +395,7 @@ export function OccurrenceBookPage() {
       services,
       vehicles: form.vehicles,
       persons: [
-        ...form.pois.map((p) => ({ kind: "poi", gender: p.gender, clothing: p.clothing, direction: p.direction })),
+        ...form.pois.map((p) => ({ kind: "poi", gender: p.gender, clothing: p.clothing, direction: p.direction, name: p.name, ethnicity: p.ethnicity, identifier: p.identifier })),
         ...form.patients.map((p) => ({ kind: "patient", injury_tag: p.injuryTag, note: p.note })),
       ],
     };
@@ -677,6 +680,11 @@ export function OccurrenceBookPage() {
                   <input className={inputCls} placeholder="Make" value={v.make} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, make: e.target.value } : row) })} />
                   <input className={inputCls} placeholder="Model" value={v.model} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, model: e.target.value } : row) })} />
                   <input className={inputCls} placeholder="Registration" value={v.registration} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, registration: e.target.value } : row) })} />
+                  <input className={inputCls} placeholder="Name, if known" value={v.name} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, name: e.target.value } : row) })} />
+                  <select className={selectCls} value={v.identifier} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, identifier: e.target.value } : row) })}>
+                    <option value="">Code name</option>
+                    {OB_PHONETIC_CODES.map((code) => <option key={code}>{code}</option>)}
+                  </select>
                   <input className={inputCls} placeholder="Distinguishing features" value={v.features} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, features: e.target.value } : row) })} />
                 </div>
               ))}
@@ -685,7 +693,16 @@ export function OccurrenceBookPage() {
 
             <AccordionSection title="Person of interest" open={openSection === "person"} onToggle={() => toggleSection("person")}>
               {form.pois.map((p, i) => (
-                <div key={i} className="mb-3 grid gap-2 sm:grid-cols-3">
+                <div key={i} className="mb-3 grid gap-2 sm:grid-cols-2">
+                  <input className={inputCls} placeholder="Name, if known" value={p.name} onChange={(e) => setForm({ ...form, pois: form.pois.map((row, j) => j === i ? { ...row, name: e.target.value } : row) })} />
+                  <select className={selectCls} value={p.identifier} onChange={(e) => setForm({ ...form, pois: form.pois.map((row, j) => j === i ? { ...row, identifier: e.target.value } : row) })}>
+                    <option value="">Code name</option>
+                    {OB_PHONETIC_CODES.map((code) => <option key={code}>{code}</option>)}
+                  </select>
+                  <select className={selectCls} value={p.ethnicity} onChange={(e) => setForm({ ...form, pois: form.pois.map((row, j) => j === i ? { ...row, ethnicity: e.target.value } : row) })}>
+                    <option value="">Ethnicity, if known</option>
+                    {OB_ETHNICITIES.map((item) => <option key={item}>{item}</option>)}
+                  </select>
                   <select className={selectCls} value={p.gender} onChange={(e) => setForm({ ...form, pois: form.pois.map((row, j) => j === i ? { ...row, gender: e.target.value } : row) })}>
                     <option value="">Gender</option>
                     {OB_POI_GENDERS.map((g) => <option key={g}>{g}</option>)}
@@ -694,7 +711,7 @@ export function OccurrenceBookPage() {
                   <input className={inputCls} placeholder="Direction of travel" value={p.direction} onChange={(e) => setForm({ ...form, pois: form.pois.map((row, j) => j === i ? { ...row, direction: e.target.value } : row) })} />
                 </div>
               ))}
-              <Btn variant="ghost" onClick={() => setForm({ ...form, pois: [...form.pois, { gender: "", clothing: "", direction: "" }] })}>+ Person</Btn>
+              <Btn variant="ghost" onClick={() => setForm({ ...form, pois: [...form.pois, emptyPoi()] })}>+ Person</Btn>
             </AccordionSection>
 
             <AccordionSection title="Injured people" open={openSection === "injured"} onToggle={() => toggleSection("injured")}>
