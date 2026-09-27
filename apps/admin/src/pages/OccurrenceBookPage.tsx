@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -355,10 +356,6 @@ export function OccurrenceBookPage() {
   const [filled, setFilled] = useState(false);
   const [autoDescription, setAutoDescription] = useState("");
   const [filling, setFilling] = useState(false);
-  const [showGroups, setShowGroups] = useState(false);
-  const [groupName, setGroupName] = useState("");
-  const [groupSector, setGroupSector] = useState("");
-  const [groupFrom, setGroupFrom] = useState<"CPF Group" | "Other Groups">("CPF Group");
   const [shiftOpen, setShiftOpen] = useState(false);
   const [shiftMemberId, setShiftMemberId] = useState("");
   const [shiftSector, setShiftSector] = useState("");
@@ -643,44 +640,6 @@ export function OccurrenceBookPage() {
     }
   }
 
-  async function addGroup() {
-    const name = groupName.trim();
-    if (name.length < 2) return;
-    setError("");
-    try {
-      const row = await adminFetch<PasteGroup>("/admin/ob/paste-groups", {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          sector_id: groupSector || profile?.sector_id || meta.data?.sectors[0]?.id,
-          received_from: groupFrom,
-        }),
-      });
-      setGroupName("");
-      setPasteGroupId(row.id);
-      qc.setQueryData<Meta>(["admin.ob.meta"], (current) => current
-        ? { ...current, pasteGroups: [...current.pasteGroups.filter((group) => group.id !== row.id), row].sort((a, b) => a.name.localeCompare(b.name)) }
-        : current);
-      await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not add the group");
-    }
-  }
-
-  async function removeGroup(id: string) {
-    setError("");
-    try {
-      await adminFetch(`/admin/ob/paste-groups/${id}`, { method: "DELETE" });
-      if (pasteGroupId === id) setPasteGroupId("");
-      qc.setQueryData<Meta>(["admin.ob.meta"], (current) => current
-        ? { ...current, pasteGroups: current.pasteGroups.filter((group) => group.id !== id) }
-        : current);
-      await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not remove the group");
-    }
-  }
-
   async function removeStoredMessage(id: string) {
     if (!editingId) return;
     setError("");
@@ -876,40 +835,10 @@ export function OccurrenceBookPage() {
                       <option value="">{pasteGroups.length ? "Choose a group" : "No groups yet"}</option>
                       {pasteGroups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.receivedFrom}</option>)}
                     </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      <Link to="/settings" className="font-medium text-gray-700 underline">Add groups in Settings</Link>
+                    </p>
                   </Field>
-                  {pasteGroups.length > 0 && (
-                    <div className="mb-3 flex justify-end">
-                      <button type="button" className="text-xs font-medium text-gray-600 hover:text-gray-900" onClick={() => setShowGroups((value) => !value)}>
-                        {showGroups ? "Hide groups" : "Add or remove groups"}
-                      </button>
-                    </div>
-                  )}
-                  {(showGroups || pasteGroups.length === 0) && (
-                    <div className="mb-4 rounded-lg border p-3">
-                      <p className="mb-2 text-xs text-gray-500">Add the WhatsApp group this message came from. It stays in the list for the next incident.</p>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <input className={inputCls} placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
-                        <select className={selectCls} value={groupSector || profile?.sector_id || meta.data?.sectors[0]?.id || ""} onChange={(e) => setGroupSector(e.target.value)}>
-                          {meta.data?.sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}
-                        </select>
-                        <select className={selectCls} value={groupFrom} onChange={(e) => setGroupFrom(e.target.value as "CPF Group" | "Other Groups")}>
-                          <option value="CPF Group">CPF Group</option>
-                          <option value="Other Groups">Other Groups</option>
-                        </select>
-                        <Btn variant="ghost" onClick={() => void addGroup()}>Add group</Btn>
-                      </div>
-                      {pasteGroups.length > 0 && (
-                        <ul className="mt-3 space-y-1 text-sm">
-                          {pasteGroups.map((group) => (
-                            <li key={group.id} className="flex items-center justify-between gap-2">
-                              <span>{group.name}</span>
-                              <button type="button" className="text-xs text-red-700" onClick={() => void removeGroup(group.id)}>Remove</button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
                   <textarea className={inputCls} rows={4} placeholder="Paste one message" value={pasteBody} onChange={(e) => setPasteBody(e.target.value)} />
                   <div className="mt-2"><Btn variant="ghost" onClick={() => void addDraft()}>Add</Btn></div>
                 </>
