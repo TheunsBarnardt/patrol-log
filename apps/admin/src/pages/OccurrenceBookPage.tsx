@@ -416,6 +416,8 @@ export function OccurrenceBookPage() {
     }
   }, [openSection, showVehicle, showInjured, showPerson]);
   const isCommence = detail.data?.types.some((t) => t.key === "commence_shift") ?? false;
+  const isStandDown = detail.data?.types.some((t) => t.key === "stand_down") ?? false;
+  const isShiftRow = isCommence || isStandDown;
   const members = (meta.data?.members ?? [])
     .filter((p) => !form.sectorId || p.sectorId === form.sectorId)
     .slice()
@@ -694,6 +696,25 @@ export function OccurrenceBookPage() {
     }
   }
 
+  async function standDown(entryId?: string) {
+    setError("");
+    setSaving(true);
+    try {
+      await adminFetch("/admin/ob/stand-down", {
+        method: "POST",
+        body: JSON.stringify({ sector_id: profile?.sector_id, entry_id: entryId }),
+      });
+      setMode("list");
+      setEditingId(null);
+      setHydrated(null);
+      void qc.invalidateQueries({ queryKey: ["admin.ob.entries"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not stand down");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function addTag() {
     const label = newTag.trim();
     if (label.length < 2) return;
@@ -789,15 +810,20 @@ export function OccurrenceBookPage() {
         {error && <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
         {mode === "edit" && detail.isLoading && <p className="text-sm text-gray-500">Loading…</p>}
 
-        {isCommence ? (
+        {isShiftRow ? (
           <div className="rounded-xl border bg-white p-4 sm:p-6">
-            <p className="mb-4 text-sm text-gray-600">Commence Shift for {detail.data?.callSign}. This is a book row, not a patrol.</p>
+            <p className="mb-4 text-sm text-gray-600">
+              {isCommence ? `Commence Shift for ${detail.data?.callSign}.` : `Stand Down for ${detail.data?.callSign}.`} This is a book row, not a patrol.
+            </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Date" required><input className={inputCls} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
               <Field label="Time" required><input className={inputCls} type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} /></Field>
             </div>
             <Field label="Description"><textarea className={inputCls} rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
             <div className="mt-4 flex justify-end gap-2">
+              {isCommence && detail.data?.status === "active" && (
+                <Btn variant="danger" onClick={() => void standDown(detail.data?.id)} disabled={saving}>Stand Down</Btn>
+              )}
               <Btn onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
             </div>
           </div>
@@ -1191,6 +1217,7 @@ export function OccurrenceBookPage() {
         action={
           <div className="flex gap-2">
             <Btn variant="ghost" onClick={() => void logShift()}>Log Commence Shift</Btn>
+            <Btn variant="ghost" onClick={() => void standDown()}>Stand Down</Btn>
             <Btn onClick={startNew}>+ Log incident</Btn>
           </div>
         }

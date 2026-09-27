@@ -231,17 +231,18 @@ async function nextSequence(dbBinding: AppContext["Bindings"]["DB"], sectorId: s
   return seq;
 }
 
-function normalize(body: WriteBody, opts: { commenceShift?: boolean; extraTagKeys?: Set<string> }): Normalized {
-  const source: WriteBody = opts.commenceShift
+function normalize(body: WriteBody, opts: { commenceShift?: boolean; standDown?: boolean; extraTagKeys?: Set<string> }): Normalized {
+  const shiftKey = opts.standDown ? "stand_down" : opts.commenceShift ? "commence_shift" : null;
+  const source: WriteBody = shiftKey
     ? {
         ...body,
         category: "other",
-        type_keys: ["commence_shift"],
+        type_keys: [shiftKey],
         phase: null,
         attendance: null,
         suburb_id: null,
         received_from: body.received_from?.length ? body.received_from : ["CPF Member / Patroller"],
-        description: body.description ?? "Commence Shift",
+        description: body.description ?? (opts.standDown ? "Stand Down" : "Commence Shift"),
       }
     : body;
 
@@ -265,7 +266,7 @@ function normalize(body: WriteBody, opts: { commenceShift?: boolean; extraTagKey
   if (!when) throw new AppError("OB_INVALID_INPUT");
 
   const receivedFrom = [...new Set((source.received_from ?? []).map((r) => r.trim()).filter(Boolean))];
-  if (!opts.commenceShift && !receivedFrom.length) throw new AppError("OB_INVALID_INPUT");
+  if (!shiftKey && !receivedFrom.length) throw new AppError("OB_INVALID_INPUT");
   if (receivedFrom.some((r) => !RECEIVED.has(r))) throw new AppError("OB_INVALID_INPUT");
 
   let attendance: ObAttendance | null = null;
@@ -1195,7 +1196,8 @@ ob.patch("/entries/:id", async (c) => {
   const existing = await loadOwned(db, auth, c.req.param("id"));
   const currentTypes = await db.select().from(obEntryTypes).where(eq(obEntryTypes.entryId, existing.id));
   const isCommence = currentTypes.some((t) => t.typeKey === "commence_shift");
-  const norm = normalize(body, { commenceShift: isCommence, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
+  const isStandDown = currentTypes.some((t) => t.typeKey === "stand_down");
+  const norm = normalize(body, { commenceShift: isCommence, standDown: isStandDown, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
   await assertSuburb(db, auth.patroller.cpf_id, norm.suburbId);
   await assertResponders(db, auth, existing.sectorId, norm.responderIds);
   await assertPatrols(db, auth, existing.sectorId, norm.patrolIds);
@@ -1393,6 +1395,60 @@ ob.post("/commence-shift", async (c) => {
   const created = await insertEntry(c, db, auth, sector, norm);
   await logAudit(db, "ob.commence_shift", auth, { ob_number: created.obNumber });
   return c.json(await presentEntry(db, created), 201);
+});
+
+const SHIFT_CONCLUSION = "All in Order - Nothing Found";
+
+async function closeShiftEntry(db: Db, auth: AuthenticatedContext, entry: typeof obEntries.$inferSelect, actionDetails: string) {
+  const [updated] = await db
+    .update(obEntries)
+    .set({
+      status: "closed",
+      conclusion: SHIFT_CONCLUSION,
+      actionDetails,
+      closedAt: new Date().toISOString(),
+      closedById: auth.patroller.patroller_id,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(obEntries.id, entry.id))
+    .returning();
+  return updated!;
+}
+
+ob.post("/stand-down", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{ sector_id?: string; entry_id?: string }>().catch(() => ({}) as { sector_id?: string; entry_id?: string });
+  const db = getDb(c.env);
+  let open: typeof obEntries.$inferSelect;
+  if (body.entry_id) {
+    const entry = await loadOwned(db, auth, body.entry_id);
+    const types = await db.select().from(obEntryTypes).where(eq(obEntryTypes.entryId, entry.id));
+    if (entry.status !== "active" || !types.some((t) => t.typeKey === "commence_shift")) throw new AppError("OB_NO_OPEN_SHIFT");
+    open = entry;
+  } else {
+    const sector = await resolveSector(db, auth, body.sector_id);
+    const rows = await db
+      .select({ entry: obEntries })
+      .from(obEntries)
+      .innerJoin(obEntryTypes, and(eq(obEntryTypes.entryId, obEntries.id), eq(obEntryTypes.typeKey, "commence_shift")))
+      .where(and(eq(obEntries.cpfId, auth.patroller.cpf_id), eq(obEntries.sectorId, sector.id), eq(obEntries.status, "active")))
+      .orderBy(desc(obEntries.occurredAt))
+      .limit(1);
+    const entry = rows[0]?.entry;
+    if (!entry) throw new AppError("OB_NO_OPEN_SHIFT");
+    open = entry;
+  }
+  await closeShiftEntry(db, auth, open, open.actionDetails.trim() || "Stand down");
+  const clock = nowSast();
+  const norm = normalize(
+    { sector_id: open.sectorId, date: clock.date, time: clock.time, description: "Stand Down" },
+    { standDown: true, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) },
+  );
+  const sector = await resolveSector(db, auth, open.sectorId);
+  const created = await insertEntry(c, db, auth, sector, norm);
+  const closed = await closeShiftEntry(db, auth, created, "Stand down");
+  await logAudit(db, "ob.stand_down", auth, { ob_number: closed.obNumber, closed_commence: open.obNumber });
+  return c.json(await presentEntry(db, closed), 201);
 });
 
 ob.post("/tags", async (c) => {

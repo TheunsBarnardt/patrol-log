@@ -183,6 +183,7 @@ export const OB_TYPES: ObIncidentType[] = [
   ot("open_gate", "Open Gate"),
   ot("metro_by_law", "Metro By-Law (e.g. fireworks)"),
   ot("commence_shift", "Commence Shift"),
+  ot("stand_down", "Stand Down"),
 ];
 
 const TYPE_BY_KEY = new Map(OB_TYPES.map((t) => [t.key, t]));
@@ -638,7 +639,7 @@ export function matchIncidentPhrase(phrase: string): { key: string; tagKeys: str
   }
   let best: { key: string; score: number } | null = null;
   for (const type of OB_TYPES) {
-    if (type.key === "commence_shift") continue;
+    if (type.key === "commence_shift" || type.key === "stand_down") continue;
     const name = foldPhrase(type.name);
     if (name.length < 3 || !text.includes(name)) continue;
     if (!best || name.length > best.score) best = { key: type.key, score: name.length };

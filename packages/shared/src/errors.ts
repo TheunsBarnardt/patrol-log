@@ -112,6 +112,7 @@ export const ERROR_CODES = {
   OB_MESSAGE_DUPLICATE: { status: 409, message: "That message is already on an occurrence book entry." },
   OB_GROUP_DUPLICATE: { status: 409, message: "That group name is already on the list." },
   OB_ENTRY_CLOSED: { status: 409, message: "That incident is already closed." },
+  OB_NO_OPEN_SHIFT: { status: 409, message: "There is no open Commence Shift to stand down." },
   OB_NEEDLE_UNAVAILABLE: { status: 503, message: "Needle is not available yet. The weights file has not been uploaded." },
 } as const;
 
