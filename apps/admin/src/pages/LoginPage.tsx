@@ -8,6 +8,7 @@ import { APP_VERSION } from "../version";
 export function LoginPage() {
   const [callSign, setCallSign] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -75,13 +76,24 @@ export function LoginPage() {
         </label>
         <label className="block">
           <span className="text-sm font-semibold">Password</span>
-          <input
-            type="password"
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-3 text-base"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-          />
+          <span className="relative mt-1 block">
+            <input
+              type={showPassword ? "text" : "password"}
+              className="w-full rounded border border-gray-300 px-3 py-3 pr-12 text-base"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-gray-500 hover:text-gray-800"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+              onClick={() => setShowPassword((value) => !value)}
+            >
+              {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+            </button>
+          </span>
         </label>
         {err && <p className="text-sm text-red-600">{err}</p>}
         <button
@@ -93,6 +105,26 @@ export function LoginPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.6a2.5 2.5 0 003.8 3.2" />
+      <path d="M9.9 5.2A10.8 10.8 0 0112 5c6.5 0 10 7 10 7a18.4 18.4 0 01-3.2 4.2" />
+      <path d="M6.1 6.1C3.7 7.8 2 12 2 12s3.5 6 10 6c1.5 0 2.8-.3 4-.8" />
+    </svg>
   );
 }
 

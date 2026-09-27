@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FontAwesome5 } from "@expo/vector-icons";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 import { getOrCreateDeviceId } from "../lib/device-id";
@@ -63,6 +64,7 @@ function statusColor(status: DiagCheck["status"]): string {
 export function LoginScreen() {
   const [callSign, setCallSign] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checks, setChecks] = useState<DiagCheck[]>(() => initialDiagChecks());
   const [report, setReport] = useState<DiagReport | null>(null);
@@ -233,16 +235,27 @@ export function LoginScreen() {
               />
 
               <Text style={[styles.label, styles.labelSpaced]}>Password</Text>
-              <TextInput
-                style={styles.input}
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Password"
-                placeholderTextColor={colors.textMuted}
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-              />
+              <View style={styles.passwordWrap}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Password"
+                  placeholderTextColor={colors.textMuted}
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
+                />
+                <Pressable
+                  style={styles.eyeBtn}
+                  onPress={() => setShowPassword((value) => !value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                  hitSlop={8}
+                >
+                  <FontAwesome5 name={showPassword ? "eye-slash" : "eye"} size={18} color={colors.textMuted} />
+                </Pressable>
+              </View>
 
               <Pressable
                 style={({ pressed }) => [
@@ -396,6 +409,21 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "600",
     color: colors.text,
+  },
+  passwordWrap: {
+    position: "relative",
+    justifyContent: "center",
+  },
+  passwordInput: {
+    paddingRight: 48,
+  },
+  eyeBtn: {
+    position: "absolute",
+    right: 4,
+    height: 44,
+    width: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   button: {
     width: "100%",
