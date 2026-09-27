@@ -18,6 +18,7 @@ import {
   OB_VOI_SHAPES,
   dangerForTypes,
   formatObNumber,
+  messageBodyHash,
   obGeocodeHits,
   obGeocodeSearchUrl,
   obPrefixFromSectorCode,
@@ -33,11 +34,13 @@ import { getAuth, requireAuth } from "../lib/middleware.js";
 import { getDb, type Db } from "../db/index.js";
 import {
   obEntries,
+  obEntryMessages,
   obEntryPatrols,
   obEntryResponders,
   obEntryServices,
   obEntryTags,
   obEntryTypes,
+  obPasteGroups,
   obPersons,
   obSecurityCompanies,
   obSightings,
@@ -76,6 +79,7 @@ const GENDERS = new Set<string>(OB_POI_GENDERS);
 const PHONETIC = new Set<string>(OB_PHONETIC_CODES);
 const ETHNICITIES = new Set<string>(OB_ETHNICITIES);
 const RECEIVED = new Set<string>(OB_RECEIVED_FROM);
+const PASTE_FROM = new Set(["CPF Group", "Other Groups"]);
 
 interface ServiceInput {
   key: string;
@@ -125,6 +129,7 @@ interface WriteBody {
   services?: ServiceInput[];
   vehicles?: VehicleInput[];
   persons?: PersonInput[];
+  messages?: { body?: string; group_id?: string }[];
 }
 
 interface Normalized {
@@ -511,7 +516,7 @@ function splitWhen(occurredAt: string): { date: string; time: string } {
 }
 
 async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
-  const [types, services, responders, patrolLinks, tags, vehicles, persons, sightings, suburb] = await Promise.all([
+  const [types, services, responders, patrolLinks, tags, vehicles, persons, sightings, suburb, messages] = await Promise.all([
     db.select().from(obEntryTypes).where(eq(obEntryTypes.entryId, entry.id)).orderBy(asc(obEntryTypes.sortOrder)),
     db.select().from(obEntryServices).where(eq(obEntryServices.entryId, entry.id)),
     db
@@ -527,11 +532,17 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
     entry.suburbId
       ? db.query.obSuburbs.findFirst({ where: eq(obSuburbs.id, entry.suburbId) })
       : Promise.resolve(null),
+    db.select().from(obEntryMessages).where(eq(obEntryMessages.entryId, entry.id)).orderBy(asc(obEntryMessages.createdAt)),
   ]);
   const patrolIds = patrolLinks.map((row) => row.patrolId);
   const savedPatrols = patrolIds.length
     ? await loadPatrolOptions(db, and(eq(patrols.cpfId, entry.cpfId), inArray(patrols.id, patrolIds)))
     : [];
+  const groupIds = [...new Set(messages.map((m) => m.groupId).filter((id): id is string => !!id))];
+  const groupRows = groupIds.length
+    ? await db.select().from(obPasteGroups).where(inArray(obPasteGroups.id, groupIds))
+    : [];
+  const groupName = new Map(groupRows.map((g) => [g.id, g.name]));
   const when = splitWhen(entry.occurredAt);
   return {
     id: entry.id,
@@ -557,6 +568,7 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
     attendance: entry.attendance,
     conclusion: entry.conclusion,
     callSign: entry.callSign,
+    source: entry.source,
     closedAt: entry.closedAt,
     types: types.map((t) => {
       const def = obType(t.typeKey);
@@ -602,7 +614,75 @@ async function presentEntry(db: Db, entry: typeof obEntries.$inferSelect) {
       note: s.note,
       callSign: s.callSign,
     })),
+    messages: messages.map((m) => ({
+      id: m.id,
+      groupId: m.groupId,
+      groupName: m.groupId ? groupName.get(m.groupId) ?? "" : "",
+      body: m.body,
+      createdAt: m.createdAt,
+    })),
   };
+}
+
+async function loadPasteGroup(db: Db, auth: AuthenticatedContext, groupId: string) {
+  const group = await db.query.obPasteGroups.findFirst({ where: eq(obPasteGroups.id, groupId) });
+  if (!group || group.cpfId !== auth.patroller.cpf_id || !assertSectorAccess(auth, group.sectorId)) {
+    throw new AppError("OB_INVALID_INPUT");
+  }
+  return group;
+}
+
+async function duplicateMessage(db: Db, auth: AuthenticatedContext, hash: string) {
+  const [row] = await db
+    .select({
+      entryId: obEntryMessages.entryId,
+      obNumber: obEntries.obNumber,
+      sectorId: obEntries.sectorId,
+    })
+    .from(obEntryMessages)
+    .innerJoin(obEntries, eq(obEntryMessages.entryId, obEntries.id))
+    .where(and(eq(obEntryMessages.cpfId, auth.patroller.cpf_id), eq(obEntryMessages.bodyHash, hash)))
+    .limit(1);
+  if (!row) return null;
+  return {
+    entryId: row.entryId,
+    obNumber: assertSectorAccess(auth, row.sectorId) ? row.obNumber : null,
+  };
+}
+
+async function storeMessages(
+  db: Db,
+  auth: AuthenticatedContext,
+  entryId: string,
+  inputs: { body?: string; group_id?: string }[],
+) {
+  const prepared: { groupId: string; hash: string; body: string }[] = [];
+  for (const input of inputs) {
+    const body = (input.body ?? "").trim();
+    const groupId = (input.group_id ?? "").trim();
+    if (!body || !groupId) throw new AppError("OB_INVALID_INPUT");
+    const group = await loadPasteGroup(db, auth, groupId);
+    const hash = await messageBodyHash(body);
+    if (prepared.some((row) => row.hash === hash)) throw new AppError("OB_MESSAGE_DUPLICATE", { entryId });
+    const dup = await duplicateMessage(db, auth, hash);
+    if (dup) throw new AppError("OB_MESSAGE_DUPLICATE", { obNumber: dup.obNumber, entryId: dup.entryId });
+    prepared.push({ groupId: group.id, hash, body });
+  }
+  for (const row of prepared) {
+    await db.insert(obEntryMessages).values({
+      cpfId: auth.patroller.cpf_id,
+      entryId,
+      groupId: row.groupId,
+      bodyHash: row.hash,
+      body: row.body,
+    });
+  }
+  if (prepared.length) {
+    await db
+      .update(obEntries)
+      .set({ source: "paste", updatedAt: new Date().toISOString() })
+      .where(eq(obEntries.id, entryId));
+  }
 }
 
 async function loadOwned(db: Db, auth: AuthenticatedContext, id: string) {
@@ -640,7 +720,7 @@ ob.get("/meta", async (c) => {
   await ensureSuburbs(db, auth.patroller.cpf_id);
   const sectorId = auth.patroller.access_level === "system_admin" ? null : auth.patroller.sector_id;
 
-  const [suburbRows, companyRows, sectorRows, onPatrol, memberRows, activePatrols, tagRows] = await Promise.all([
+  const [suburbRows, companyRows, sectorRows, onPatrol, memberRows, activePatrols, tagRows, groupRows] = await Promise.all([
     db.select().from(obSuburbs).where(eq(obSuburbs.cpfId, auth.patroller.cpf_id)).orderBy(asc(obSuburbs.sortOrder), asc(obSuburbs.name)),
     db
       .select()
@@ -695,6 +775,11 @@ ob.get("/meta", async (c) => {
       ),
     ),
     db.select({ key: obTags.key, label: obTags.label }).from(obTags).where(eq(obTags.cpfId, auth.patroller.cpf_id)).orderBy(asc(obTags.label)),
+    db
+      .select()
+      .from(obPasteGroups)
+      .where(sectorId ? and(eq(obPasteGroups.cpfId, auth.patroller.cpf_id), eq(obPasteGroups.sectorId, sectorId)) : eq(obPasteGroups.cpfId, auth.patroller.cpf_id))
+      .orderBy(asc(obPasteGroups.name)),
   ]);
 
   const onPatrolIds = new Set(onPatrol.map((row) => row.id));
@@ -707,6 +792,12 @@ ob.get("/meta", async (c) => {
     patrols: activePatrols,
     tags: [...OB_TAGS, ...tagRows],
     canMaintainCompanies: canMaintainCompanies(auth),
+    pasteGroups: groupRows.map((g) => ({
+      id: g.id,
+      name: g.name,
+      sectorId: g.sectorId,
+      receivedFrom: g.receivedFrom,
+    })),
   });
 });
 
@@ -970,6 +1061,14 @@ ob.get("/entries", async (c) => {
   const typeRows = ids.length
     ? await db.select().from(obEntryTypes).where(inArray(obEntryTypes.entryId, ids)).orderBy(asc(obEntryTypes.sortOrder))
     : [];
+  const messageCounts = ids.length
+    ? await db
+        .select({ entryId: obEntryMessages.entryId, n: sql<number>`count(*)` })
+        .from(obEntryMessages)
+        .where(inArray(obEntryMessages.entryId, ids))
+        .groupBy(obEntryMessages.entryId)
+    : [];
+  const countByEntry = new Map(messageCounts.map((row) => [row.entryId, Number(row.n)]));
   const byEntry = new Map<string, typeof typeRows>();
   for (const t of typeRows) {
     const list = byEntry.get(t.entryId) ?? [];
@@ -999,6 +1098,8 @@ ob.get("/entries", async (c) => {
         primaryType: def?.name ?? primary?.typeKey ?? "",
         primaryCode: def?.code ?? null,
         typeCount: types.length,
+        source: r.entry.source,
+        messageCount: countByEntry.get(r.entry.id) ?? 0,
       };
     }),
   });
@@ -1045,6 +1146,7 @@ async function insertEntry(
       attendance: norm.attendance,
       capturedById: auth.patroller.patroller_id,
       callSign: auth.patroller.call_sign,
+      source: "manual",
     })
     .returning();
   await replaceChildren(db, created!.id, norm);
@@ -1059,12 +1161,28 @@ ob.post("/entries", async (c) => {
     if (!body.received_from?.length) body.received_from = ["CPF Member / Patroller"];
   }
   const db = getDb(c.env);
+  const messages = DESK.has(auth.patroller.access_level) ? (body.messages ?? []) : [];
+  const sectorId = messages.length
+    ? (await loadPasteGroup(db, auth, (messages[0]?.group_id ?? "").trim())).sectorId
+    : body.sector_id;
   const norm = normalize(body, { extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
-  const sector = await resolveSector(db, auth, body.sector_id);
+  const sector = await resolveSector(db, auth, sectorId);
   await assertSuburb(db, auth.patroller.cpf_id, norm.suburbId);
   await assertResponders(db, auth, sector.id, norm.responderIds);
   await assertPatrols(db, auth, sector.id, norm.patrolIds);
   await assertCompanies(db, auth.patroller.cpf_id, norm.services);
+  if (messages.length) {
+    const created = await insertEntry(c, db, auth, sector, norm);
+    try {
+      await storeMessages(db, auth, created.id, messages);
+    } catch (err) {
+      await db.delete(obEntries).where(eq(obEntries.id, created.id));
+      throw err;
+    }
+    await logAudit(db, "ob.entry.created", auth, { ob_number: created.obNumber, entry_id: created.id, source: "paste" });
+    const fresh = await loadOwned(db, auth, created.id);
+    return c.json(await presentEntry(db, fresh), 201);
+  }
   const created = await insertEntry(c, db, auth, sector, norm);
   await logAudit(db, "ob.entry.created", auth, { ob_number: created.obNumber, entry_id: created.id });
   return c.json(await presentEntry(db, created), 201);
@@ -1165,6 +1283,91 @@ ob.post("/entries/:id/sightings", async (c) => {
   await logAudit(db, "ob.sighting.created", auth, { ob_number: existing.obNumber });
   const fresh = await loadOwned(db, auth, existing.id);
   return c.json(await presentEntry(db, fresh), 201);
+});
+
+ob.get("/needle", async (c) => {
+  const object = await c.env.NEEDLE?.get("needle3.cact");
+  if (!object) throw new AppError("OB_NEEDLE_UNAVAILABLE");
+  return new Response(object.body, {
+    headers: {
+      "content-type": "application/octet-stream",
+      "cache-control": "private, max-age=604800",
+    },
+  });
+});
+
+ob.post("/messages/check", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{ body?: string }>();
+  const text = (body.body ?? "").trim();
+  if (!text) throw new AppError("OB_INVALID_INPUT");
+  const hash = await messageBodyHash(text);
+  const dup = await duplicateMessage(getDb(c.env), auth, hash);
+  return c.json({
+    hash,
+    duplicate: !!dup,
+    obNumber: dup?.obNumber ?? null,
+    entryId: dup?.entryId ?? null,
+  });
+});
+
+ob.post("/entries/:id/messages", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{ messages?: { body?: string; group_id?: string }[] }>();
+  const messages = body.messages ?? [];
+  if (!messages.length) throw new AppError("OB_INVALID_INPUT");
+  const db = getDb(c.env);
+  const existing = await loadOwned(db, auth, c.req.param("id"));
+  if (existing.status !== "active") throw new AppError("OB_ENTRY_CLOSED");
+  await storeMessages(db, auth, existing.id, messages);
+  await logAudit(db, "ob.messages.added", auth, { ob_number: existing.obNumber, count: messages.length });
+  const fresh = await loadOwned(db, auth, existing.id);
+  return c.json(await presentEntry(db, fresh), 201);
+});
+
+ob.delete("/entries/:id/messages/:messageId", async (c) => {
+  const auth = getAuth(c);
+  const db = getDb(c.env);
+  const existing = await loadOwned(db, auth, c.req.param("id"));
+  if (existing.status !== "active") throw new AppError("OB_ENTRY_CLOSED");
+  const messageId = c.req.param("messageId");
+  const message = await db.query.obEntryMessages.findFirst({ where: eq(obEntryMessages.id, messageId) });
+  if (!message || message.entryId !== existing.id) throw new AppError("OB_NOT_FOUND");
+  await db.delete(obEntryMessages).where(eq(obEntryMessages.id, message.id));
+  const fresh = await loadOwned(db, auth, existing.id);
+  return c.json(await presentEntry(db, fresh));
+});
+
+ob.post("/paste-groups", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{ name?: string; sector_id?: string; received_from?: string }>();
+  const name = blank(body.name);
+  const received = (body.received_from ?? "").trim();
+  if (name.length < 2 || !PASTE_FROM.has(received)) throw new AppError("OB_INVALID_INPUT");
+  const db = getDb(c.env);
+  const sector = await resolveSector(db, auth, body.sector_id);
+  const existing = await db.select().from(obPasteGroups).where(eq(obPasteGroups.cpfId, auth.patroller.cpf_id));
+  if (existing.some((g) => g.name.toLowerCase() === name.toLowerCase())) throw new AppError("OB_GROUP_DUPLICATE");
+  const [row] = await db
+    .insert(obPasteGroups)
+    .values({
+      cpfId: auth.patroller.cpf_id,
+      sectorId: sector.id,
+      name,
+      receivedFrom: received as "CPF Group" | "Other Groups",
+    })
+    .returning();
+  await logAudit(db, "ob.paste_group.created", auth, { name });
+  return c.json({ id: row!.id, name: row!.name, sectorId: row!.sectorId, receivedFrom: row!.receivedFrom }, 201);
+});
+
+ob.delete("/paste-groups/:id", async (c) => {
+  const auth = getAuth(c);
+  const db = getDb(c.env);
+  const group = await loadPasteGroup(db, auth, c.req.param("id"));
+  await db.delete(obPasteGroups).where(eq(obPasteGroups.id, group.id));
+  await logAudit(db, "ob.paste_group.deleted", auth, { name: group.name });
+  return c.json({ ok: true });
 });
 
 ob.post("/commence-shift", async (c) => {

@@ -45,6 +45,9 @@ apps/mobile/google-services.json
 apps/mobile/GoogleService-Info.plist
 **/firebase-service-account*.json
 
+# Needle 3 weights (35 MB, over the Pages file limit; production serves them from R2)
+apps/admin/weights/
+
 # drizzle
 apps/api/drizzle/meta/
 

@@ -592,3 +592,97 @@ export function excludedFromCommunityPost(typeKeys: string[]): boolean {
 export function categoryLabel(category: ObCategory): string {
   return OB_CATEGORIES.find((c) => c.key === category)?.label ?? category;
 }
+
+/** Case and spacing folded so the same paste cannot be booked twice. */
+export function normalizeMessageBody(body: string): string {
+  return body.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export async function messageBodyHash(body: string): Promise<string> {
+  const data = new TextEncoder().encode(normalizeMessageBody(body));
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function foldPhrase(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+const PHRASE_ALIASES: { pattern: RegExp; key: string; tagKeys?: string[] }[] = [
+  { pattern: /\bwall ?jump/, key: "trespassing", tagKeys: ["wall_jumper"] },
+  { pattern: /\b(hijack|car ?jack)/, key: "car_jacking" },
+  { pattern: /\bhouse ?break|\bburglary\b|\bbroke into\b/, key: "house_breaking" },
+  { pattern: /\bsmash(?:\s|-|n|\s+and\s+)grab/, key: "theft_out_of_vehicle", tagKeys: ["smash_n_grab"] },
+  { pattern: /\bcable theft\b/, key: "cable_theft", tagKeys: ["cable_theft"] },
+  { pattern: /\barmed robbery\b/, key: "armed_robbery" },
+  { pattern: /\bhouse robbery\b/, key: "house_robbery" },
+  { pattern: /\bbusiness robbery\b/, key: "business_robbery" },
+  { pattern: /\bmva\b|\bmotor vehicle accident\b/, key: "mva" },
+  { pattern: /\bmba\b|\bbike accident\b/, key: "mba" },
+  { pattern: /\bpva\b|\bpedestrian\b/, key: "pva" },
+  { pattern: /\bveld fire\b|\bfield fire\b/, key: "fire_veld" },
+  { pattern: /\b(house|building) fire\b/, key: "fire_building" },
+  { pattern: /\b(car|vehicle) fire\b/, key: "fire_vehicle" },
+  { pattern: /\bsuspicious vehicle\b|\bvehicle of interest\b/, key: "vehicle_of_interest" },
+  { pattern: /\bsuspicious person\b|\bperson of interest\b/, key: "person_of_interest" },
+  { pattern: /\bopen gate\b/, key: "open_gate" },
+  { pattern: /\bshots? fired\b|\bshooting\b/, key: "shooting" },
+];
+
+/** Map a short phrase from the messages onto one incident type. */
+export function matchIncidentPhrase(phrase: string): { key: string; tagKeys: string[] } | null {
+  const text = foldPhrase(phrase);
+  if (text.length < 3) return null;
+  for (const alias of PHRASE_ALIASES) {
+    if (alias.pattern.test(text)) return { key: alias.key, tagKeys: alias.tagKeys ?? [] };
+  }
+  let best: { key: string; score: number } | null = null;
+  for (const type of OB_TYPES) {
+    if (type.key === "commence_shift") continue;
+    const name = foldPhrase(type.name);
+    if (name.length < 3 || !text.includes(name)) continue;
+    if (!best || name.length > best.score) best = { key: type.key, score: name.length };
+  }
+  return best ? { key: best.key, tagKeys: [] } : null;
+}
+
+export function matchSuburbName(
+  text: string,
+  suburbs: { id: string; name: string; aliases: string[] }[],
+): string | null {
+  const hay = foldPhrase(text);
+  let best: { id: string; len: number } | null = null;
+  for (const suburb of suburbs) {
+    for (const label of [suburb.name, ...suburb.aliases]) {
+      const folded = foldPhrase(label);
+      if (folded.length < 3 || !hay.includes(folded)) continue;
+      if (!best || folded.length > best.len) best = { id: suburb.id, len: folded.length };
+    }
+  }
+  return best?.id ?? null;
+}
+
+/** Clock written in a message, as HH:MM. */
+export function clockInText(text: string): string | null {
+  const match = text.match(/\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/);
+  if (!match) return null;
+  return `${match[1]!.padStart(2, "0")}:${match[2]}`;
+}
+
+/** Calendar date written in a message, as YYYY-MM-DD. */
+export function dateInText(text: string): string | null {
+  const iso = text.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const dmy = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b/);
+  if (!dmy) return null;
+  return `${dmy[3]}-${dmy[2]!.padStart(2, "0")}-${dmy[1]!.padStart(2, "0")}`;
+}
+
+export function attendanceInText(text: string): "present" | "assisting" | null {
+  const folded = text.toLowerCase();
+  if (/\bassisting\b/.test(folded)) return "assisting";
+  if (/\b(on scene|on the scene|we are there|attending)\b/.test(folded) || /\bcpf (is )?there\b/.test(folded)) {
+    return "present";
+  }
+  return null;
+}

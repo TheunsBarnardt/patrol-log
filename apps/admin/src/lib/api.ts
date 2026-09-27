@@ -57,7 +57,9 @@ export async function adminFetch<T>(path: string, init: RequestInit = {}): Promi
       authStore.clearProfile();
       if (location.pathname !== "/login") location.href = "/login";
     }
-    throw new Error(body?.message ?? body?.error ?? `HTTP ${res.status}`);
+    const message = body?.message ?? body?.error ?? `HTTP ${res.status}`;
+    const obNumber = body?.details?.obNumber;
+    throw new Error(obNumber ? `${message} (${obNumber})` : message);
   }
   return body as T;
 }

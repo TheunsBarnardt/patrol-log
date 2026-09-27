@@ -3,10 +3,12 @@
 // and `.dev.vars` in local development.
 // DB is a D1 database binding configured in wrangler.toml.
 
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 
 export interface Env {
   DB: D1Database;
+  /** Needle 3 weights. The file is larger than a Pages asset, so it is served from R2. */
+  NEEDLE?: R2Bucket;
   JWT_SECRET: string;
   CORS_ORIGINS?: string;
   ENV?: string;

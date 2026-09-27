@@ -16,7 +16,9 @@ import {
   OB_VOI_SHAPES,
   dangerForTypes,
   dangerMeta,
+  normalizeMessageBody,
   obFormSections,
+  obType,
   obTypesFor,
   requiresAttendance,
   type ObAttendance,
@@ -25,6 +27,7 @@ import {
   type ObPhase,
 } from "@patrol-log/shared";
 import { adminFetch, authStore } from "../lib/api";
+import { extractIncident, type NeedleFill } from "../lib/needle";
 import { DataTable, PageHeader, RowActions } from "../components/DataTable";
 import { LocationMap } from "../components/LocationMap";
 import { MultiSelect } from "../components/MultiSelect";
@@ -35,6 +38,7 @@ interface Company { id: string; name: string }
 interface Sector { id: string; name: string; code: string | null }
 interface Member { id: string; callSign: string; name: string; sectorId: string; onPatrol: boolean }
 interface PatrolOption { id: string; label: string; sectorId: string }
+interface PasteGroup { id: string; name: string; sectorId: string; receivedFrom: "CPF Group" | "Other Groups" }
 interface Meta {
   suburbs: Suburb[];
   securityCompanies: Company[];
@@ -43,6 +47,7 @@ interface Meta {
   patrols: PatrolOption[];
   tags: { key: string; label: string }[];
   canMaintainCompanies: boolean;
+  pasteGroups: PasteGroup[];
 }
 interface ListRow {
   id: string;
@@ -61,7 +66,11 @@ interface ListRow {
   primaryType: string;
   primaryCode: string | null;
   typeCount: number;
+  source: "manual" | "paste";
+  messageCount: number;
 }
+interface StoredMessage { id: string; groupId: string | null; groupName: string; body: string; createdAt: string }
+interface DraftMessage { key: string; body: string; groupId: string }
 interface VehicleForm { colour: string; shape: string; make: string; model: string; registration: string; features: string; name: string; identifier: string }
 interface PoiForm { gender: string; clothing: string; direction: string; name: string; ethnicity: string; identifier: string }
 interface PatientForm { injuryTag: string; note: string }
@@ -85,6 +94,8 @@ interface EntryDetail {
   attendance: ObAttendance | null;
   conclusion: string | null;
   callSign: string;
+  source: "manual" | "paste";
+  messages: StoredMessage[];
   types: { key: string; isPrimary: boolean }[];
   services: { key: string; reference: string | null; otherName: string | null; securityCompanyId: string | null }[];
   responderIds: string[];
@@ -276,6 +287,44 @@ function AccordionSection({
   );
 }
 
+function applyFill(
+  form: FormState,
+  fill: NeedleFill,
+  first: boolean,
+  sectorId: string,
+  receivedFrom: string[],
+  previousDescription: string,
+): { form: FormState; autoDescription: string } {
+  const next = { ...form, tagKeys: [...form.tagKeys], extraKeys: [...form.extraKeys], receivedFrom: [...form.receivedFrom] };
+  if (!next.description || next.description === previousDescription) next.description = fill.description;
+  if (first && sectorId) next.sectorId = sectorId;
+  if (next.receivedFrom.length === 0 && receivedFrom.length) next.receivedFrom = receivedFrom;
+  if (!next.primaryKey && fill.incidentKey) {
+    const type = obType(fill.incidentKey);
+    if (type) {
+      next.category = type.category;
+      next.primaryKey = type.key;
+      next.extraKeys = next.extraKeys.filter((key) => key !== type.key);
+    }
+  }
+  if (next.category === "criminal" && !next.phase && fill.phase) next.phase = fill.phase;
+  if (!next.suburbId && fill.suburbId) next.suburbId = fill.suburbId;
+  if (!next.street && fill.street) next.street = fill.street;
+  if (first && fill.date) next.date = fill.date;
+  if (first && fill.time) next.time = fill.time;
+  if (!next.attendance && fill.attendance) next.attendance = fill.attendance;
+  for (const tag of fill.tagKeys) {
+    if (!next.tagKeys.includes(tag)) next.tagKeys = [...next.tagKeys, tag];
+  }
+  if (fill.vehicle && !vehicleFilled(next.vehicles)) {
+    next.vehicles = [{ ...emptyVehicle(), colour: fill.vehicle.colour, make: fill.vehicle.make, model: fill.vehicle.model, registration: fill.vehicle.registration }];
+  }
+  if (fill.person && !poiFilled(next.pois)) {
+    next.pois = [{ ...emptyPoi(), gender: fill.person.gender, clothing: fill.person.clothing, direction: fill.person.direction }];
+  }
+  return { form: next, autoDescription: next.description === fill.description ? fill.description : previousDescription };
+}
+
 export function OccurrenceBookPage() {
   const qc = useQueryClient();
   const profile = authStore.getProfile();
@@ -299,6 +348,16 @@ export function OccurrenceBookPage() {
   function toggleSection(id: string) {
     setOpenSection((current) => (current === id ? "" : id));
   }
+  const [drafts, setDrafts] = useState<DraftMessage[]>([]);
+  const [pasteBody, setPasteBody] = useState("");
+  const [pasteGroupId, setPasteGroupId] = useState("");
+  const [filled, setFilled] = useState(false);
+  const [autoDescription, setAutoDescription] = useState("");
+  const [filling, setFilling] = useState(false);
+  const [showGroups, setShowGroups] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [groupSector, setGroupSector] = useState("");
+  const [groupFrom, setGroupFrom] = useState<"CPF Group" | "Other Groups">("CPF Group");
 
   const meta = useQuery({
     queryKey: ["admin.ob.meta"],
@@ -321,6 +380,12 @@ export function OccurrenceBookPage() {
     queryKey: ["admin.ob.entry", editingId],
     queryFn: () => adminFetch<EntryDetail>(`/admin/ob/entries/${editingId}`),
     enabled: mode === "edit" && !!editingId,
+  });
+
+  const activeEntries = useQuery({
+    queryKey: ["admin.ob.entries", "active", "picker"],
+    queryFn: () => adminFetch<{ results: ListRow[] }>("/admin/ob/entries?status=active"),
+    enabled: mode !== "list",
   });
 
   useEffect(() => {
@@ -372,6 +437,10 @@ export function OccurrenceBookPage() {
       .filter((p) => !(meta.data?.patrols ?? []).some((row) => row.id === p.id))
       .map((p) => ({ value: p.id, label: p.label })),
   ];
+  const showForm = mode === "edit" || filled;
+  const entryOpen = mode === "new" || detail.data?.status === "active";
+  const pasteGroups = meta.data?.pasteGroups ?? [];
+  const storedMessages = detail.data?.messages ?? [];
 
   function startNew() {
     const sectorId = profile?.sector_id || meta.data?.sectors[0]?.id || "";
@@ -381,7 +450,30 @@ export function OccurrenceBookPage() {
     setError("");
     setTypeQuery("");
     setOpenSection("incident");
+    setDrafts([]);
+    setPasteBody("");
+    setFilled(false);
+    setAutoDescription("");
     setMode("new");
+  }
+
+  function chooseEntry(id: string) {
+    if (!id) {
+      const sectorId = profile?.sector_id || meta.data?.sectors[0]?.id || "";
+      setForm(emptyForm(sectorId));
+      setEditingId(null);
+      setHydrated(null);
+      setFilled(false);
+      setAutoDescription("");
+      setMode("new");
+      setError("");
+      return;
+    }
+    setEditingId(id);
+    setHydrated(null);
+    setFilled(true);
+    setMode("edit");
+    setError("");
   }
 
   function backToList() {
@@ -434,12 +526,27 @@ export function OccurrenceBookPage() {
     setError("");
     try {
       if (mode === "new") {
-        const created = await adminFetch<EntryDetail>("/admin/ob/entries", { method: "POST", body: JSON.stringify(payload()) });
+        const created = await adminFetch<EntryDetail>("/admin/ob/entries", {
+          method: "POST",
+          body: JSON.stringify({
+            ...payload(),
+            messages: drafts.map((draft) => ({ body: draft.body, group_id: draft.groupId })),
+          }),
+        });
+        setDrafts([]);
         setEditingId(created.id);
         setHydrated(null);
+        setFilled(true);
         setMode("edit");
         void qc.invalidateQueries({ queryKey: ["admin.ob.entry", created.id] });
       } else if (editingId) {
+        if (drafts.length) {
+          await adminFetch(`/admin/ob/entries/${editingId}/messages`, {
+            method: "POST",
+            body: JSON.stringify({ messages: drafts.map((draft) => ({ body: draft.body, group_id: draft.groupId })) }),
+          });
+          setDrafts([]);
+        }
         await adminFetch(`/admin/ob/entries/${editingId}`, { method: "PATCH", body: JSON.stringify(payload()) });
         setHydrated(null);
         await qc.invalidateQueries({ queryKey: ["admin.ob.entry", editingId] });
@@ -467,6 +574,107 @@ export function OccurrenceBookPage() {
       setError(e instanceof Error ? e.message : "Could not close");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function addDraft() {
+    const body = pasteBody.trim();
+    if (!pasteGroupId || !body) {
+      setError("Choose a group and paste a message.");
+      return;
+    }
+    const folded = normalizeMessageBody(body);
+    const onList = drafts.some((draft) => normalizeMessageBody(draft.body) === folded)
+      || (detail.data?.messages ?? []).some((message) => normalizeMessageBody(message.body) === folded);
+    if (onList) {
+      setError("That message is already on this list.");
+      return;
+    }
+    setError("");
+    try {
+      const check = await adminFetch<{ duplicate: boolean; obNumber: string | null }>("/admin/ob/messages/check", {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      });
+      if (check.duplicate) {
+        setError(check.obNumber ? `That message is already on ${check.obNumber}.` : "That message is already on an occurrence book entry.");
+        return;
+      }
+      setDrafts((current) => [...current, { key: crypto.randomUUID(), body, groupId: pasteGroupId }]);
+      setPasteBody("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not check that message");
+    }
+  }
+
+  async function fillFromMessages() {
+    const stored = detail.data?.messages ?? [];
+    const groups = meta.data?.pasteGroups ?? [];
+    const passage = [
+      ...stored.map((message) => ({ groupName: message.groupName, body: message.body })),
+      ...drafts.map((draft) => ({ groupName: groups.find((group) => group.id === draft.groupId)?.name ?? "", body: draft.body })),
+    ];
+    if (!passage.length) return;
+    setFilling(true);
+    setError("");
+    try {
+      const fill = await extractIncident(passage, meta.data?.suburbs ?? []);
+      const firstGroup = groups.find((group) => group.id === (stored[0]?.groupId || drafts[0]?.groupId));
+      const groupIds = [...stored.map((message) => message.groupId), ...drafts.map((draft) => draft.groupId)];
+      const received = [...new Set(groupIds.map((id) => groups.find((group) => group.id === id)?.receivedFrom).filter((value): value is "CPF Group" | "Other Groups" => !!value))];
+      const applied = applyFill(form, fill, mode === "new" && !filled, firstGroup?.sectorId ?? "", received, autoDescription);
+      setForm(applied.form);
+      setAutoDescription(applied.autoDescription);
+      setFilled(true);
+      if (fill.warning) setError(fill.warning);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not fill the entry");
+    } finally {
+      setFilling(false);
+    }
+  }
+
+  async function addGroup() {
+    const name = groupName.trim();
+    if (name.length < 2) return;
+    setError("");
+    try {
+      const row = await adminFetch<PasteGroup>("/admin/ob/paste-groups", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          sector_id: groupSector || profile?.sector_id || meta.data?.sectors[0]?.id,
+          received_from: groupFrom,
+        }),
+      });
+      setGroupName("");
+      setPasteGroupId(row.id);
+      await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the group");
+    }
+  }
+
+  async function removeGroup(id: string) {
+    setError("");
+    try {
+      await adminFetch(`/admin/ob/paste-groups/${id}`, { method: "DELETE" });
+      if (pasteGroupId === id) setPasteGroupId("");
+      await qc.invalidateQueries({ queryKey: ["admin.ob.meta"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove the group");
+    }
+  }
+
+  async function removeStoredMessage(id: string) {
+    if (!editingId) return;
+    setError("");
+    try {
+      await adminFetch(`/admin/ob/entries/${editingId}/messages/${id}`, { method: "DELETE" });
+      setHydrated(null);
+      await qc.invalidateQueries({ queryKey: ["admin.ob.entry", editingId] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove the message");
     }
   }
 
@@ -589,10 +797,92 @@ export function OccurrenceBookPage() {
           </div>
         ) : (
           <div className="space-y-2">
+            <section className="rounded-xl border bg-white p-4 sm:p-6">
+              <h2 className="mb-1 text-sm font-semibold text-gray-900">Messages</h2>
+              <p className="mb-3 text-xs text-gray-500">Add every message for this incident first. Fill entry reads them once. The incident stays active until you close it.</p>
+              <Field label="Add these messages to">
+                <select className={selectCls} value={mode === "edit" ? editingId ?? "" : ""} onChange={(e) => chooseEntry(e.target.value)}>
+                  <option value="">New incident</option>
+                  {(activeEntries.data?.results ?? []).filter((row) => row.status === "active").map((row) => (
+                    <option key={row.id} value={row.id}>{row.obNumber} · {row.primaryType || "Incident"}{row.messageCount ? ` · ${row.messageCount} messages` : ""}</option>
+                  ))}
+                </select>
+              </Field>
+              {entryOpen && (
+                <>
+                  <Field label="Group">
+                    <select className={selectCls} value={pasteGroupId} onChange={(e) => setPasteGroupId(e.target.value)}>
+                      <option value="">Choose a group</option>
+                      {pasteGroups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.receivedFrom}</option>)}
+                    </select>
+                  </Field>
+                  <div className="mb-3 flex justify-end">
+                    <button type="button" className="text-xs font-medium text-gray-600 hover:text-gray-900" onClick={() => setShowGroups((value) => !value)}>
+                      {showGroups ? "Hide groups" : "Groups"}
+                    </button>
+                  </div>
+                  {showGroups && (
+                    <div className="mb-4 rounded-lg border p-3">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <input className={inputCls} placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
+                        <select className={selectCls} value={groupSector || profile?.sector_id || ""} onChange={(e) => setGroupSector(e.target.value)}>
+                          {meta.data?.sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}
+                        </select>
+                        <select className={selectCls} value={groupFrom} onChange={(e) => setGroupFrom(e.target.value as "CPF Group" | "Other Groups")}>
+                          <option value="CPF Group">CPF Group</option>
+                          <option value="Other Groups">Other Groups</option>
+                        </select>
+                        <Btn variant="ghost" onClick={() => void addGroup()}>Add group</Btn>
+                      </div>
+                      <ul className="mt-3 space-y-1 text-sm">
+                        {pasteGroups.map((group) => (
+                          <li key={group.id} className="flex items-center justify-between gap-2">
+                            <span>{group.name}</span>
+                            <button type="button" className="text-xs text-red-700" onClick={() => void removeGroup(group.id)}>Remove</button>
+                          </li>
+                        ))}
+                        {pasteGroups.length === 0 && <li className="text-gray-500">No groups yet.</li>}
+                      </ul>
+                    </div>
+                  )}
+                  <textarea className={inputCls} rows={4} placeholder="Paste one message" value={pasteBody} onChange={(e) => setPasteBody(e.target.value)} />
+                  <div className="mt-2"><Btn variant="ghost" onClick={() => void addDraft()}>Add</Btn></div>
+                </>
+              )}
+              <ul className="mt-4 space-y-2 text-sm">
+                {storedMessages.map((message) => (
+                  <li key={message.id} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
+                      <span>{message.groupName || "Message"}</span>
+                      {entryOpen && <button type="button" className="text-red-700" onClick={() => void removeStoredMessage(message.id)}>Remove</button>}
+                    </div>
+                    <p className="whitespace-pre-wrap text-gray-800">{message.body}</p>
+                  </li>
+                ))}
+                {drafts.map((draft) => (
+                  <li key={draft.key} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
+                      <span>{pasteGroups.find((group) => group.id === draft.groupId)?.name ?? "Message"}</span>
+                      <button type="button" className="text-red-700" onClick={() => setDrafts((current) => current.filter((item) => item.key !== draft.key))}>Remove</button>
+                    </div>
+                    <p className="whitespace-pre-wrap text-gray-800">{draft.body}</p>
+                  </li>
+                ))}
+                {storedMessages.length + drafts.length === 0 && <li className="text-gray-500">No messages yet.</li>}
+              </ul>
+              {entryOpen && (
+                <div className="mt-4 flex justify-end">
+                  <Btn onClick={() => void fillFromMessages()} disabled={filling || storedMessages.length + drafts.length === 0}>
+                    {filling ? "Reading messages…" : "Fill entry"}
+                  </Btn>
+                </div>
+              )}
+            </section>
+            {showForm && <>
             <AccordionSection title="Incident" open={openSection === "incident"} onToggle={() => toggleSection("incident")}>
               {(meta.data?.sectors.length ?? 0) > 1 && (
                 <Field label="Sector" required>
-                  <select className={selectCls} value={form.sectorId} disabled={mode === "edit"} onChange={(e) => setForm({ ...form, sectorId: e.target.value })}>
+                  <select className={selectCls} value={form.sectorId} disabled={mode === "edit" || drafts.length > 0 || storedMessages.length > 0} onChange={(e) => setForm({ ...form, sectorId: e.target.value })}>
                     {meta.data?.sectors.map((s) => <option key={s.id} value={s.id}>{s.name}{s.code ? ` (${s.code})` : ""}</option>)}
                   </select>
                 </Field>
@@ -872,6 +1162,7 @@ export function OccurrenceBookPage() {
                 <Btn variant="danger" onClick={() => void closeEntry()} disabled={saving}>Close incident</Btn>
               )}
             </div>
+            </>}
           </div>
         )}
       </div>
@@ -916,7 +1207,15 @@ export function OccurrenceBookPage() {
           keyExtractor={(r) => r.id}
           emptyMessage="No incidents in the book yet"
           columns={[
-            { header: "OB", render: (r) => <span className="font-medium">{r.obNumber}</span> },
+            {
+              header: "OB",
+              render: (r) => (
+                <span className="font-medium">
+                  {r.obNumber}
+                  {r.messageCount > 0 && <><br /><span className="text-xs font-normal text-gray-500">{r.messageCount} {r.messageCount === 1 ? "message" : "messages"}</span></>}
+                </span>
+              ),
+            },
             { header: "When", render: (r) => <span>{r.occurredAt.slice(0, 16)}<br /><span className="text-xs text-gray-500">{r.dayOfWeek} · {r.timeOfDay}</span></span> },
             { header: "Where", render: (r) => <span>{r.suburbName ?? "—"}{r.street ? ` · ${r.street}` : ""}</span> },
             {

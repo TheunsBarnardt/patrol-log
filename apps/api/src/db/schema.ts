@@ -486,6 +486,11 @@ export const obEntries = sqliteTable("ob_entries", {
   closedById: text("closed_by_id").references(() => patrollers.id, { onDelete: "set null" }),
   capturedById: text("captured_by_id").references(() => patrollers.id, { onDelete: "set null" }),
   callSign: text("call_sign").notNull(),
+  /** manual = typed on the form. paste = filled from collected messages. */
+  source: text("source")
+    .notNull()
+    .default("manual")
+    .$type<"manual" | "paste">(),
   createdAt: text("created_at")
     .notNull()
     .default(sql`datetime('now')`),
@@ -613,6 +618,45 @@ export const obPersons = sqliteTable("ob_persons", {
 }, (t) => ({
   entryIdx: index("ob_persons_entry_idx").on(t.entryId),
   identifierIdx: index("ob_persons_identifier_idx").on(t.identifier),
+}));
+
+/** Named WhatsApp groups the desk pastes from. Sector sets the OB number prefix. */
+export const obPasteGroups = sqliteTable("ob_paste_groups", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  sectorId: text("sector_id")
+    .notNull()
+    .references(() => sectors.id),
+  name: text("name").notNull(),
+  receivedFrom: text("received_from").notNull().$type<"CPF Group" | "Other Groups">(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  cpfIdx: index("ob_paste_groups_cpf_idx").on(t.cpfId),
+  nameIdx: uniqueIndex("ob_paste_groups_name_idx").on(t.cpfId, t.name),
+}));
+
+/** One pasted message on an entry. The same normalized text cannot be stored twice in a CPF. */
+export const obEntryMessages = sqliteTable("ob_entry_messages", {
+  id: text("id").primaryKey().default(sql`lower(hex(randomblob(16)))`),
+  cpfId: text("cpf_id")
+    .notNull()
+    .references(() => cpfs.id, { onDelete: "cascade" }),
+  entryId: text("entry_id")
+    .notNull()
+    .references(() => obEntries.id, { onDelete: "cascade" }),
+  groupId: text("group_id").references(() => obPasteGroups.id, { onDelete: "set null" }),
+  bodyHash: text("body_hash").notNull(),
+  body: text("body").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`datetime('now')`),
+}, (t) => ({
+  entryIdx: index("ob_entry_messages_entry_idx").on(t.entryId, t.createdAt),
+  hashIdx: uniqueIndex("ob_entry_messages_hash_idx").on(t.cpfId, t.bodyHash),
 }));
 
 /** Later “seen here” updates. The latest row is last-seen for BOLOs. */

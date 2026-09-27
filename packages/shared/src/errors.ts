@@ -109,6 +109,10 @@ export const ERROR_CODES = {
   OB_TAG_DUPLICATE: { status: 409, message: "That tag is already on the list." },
   OB_GEOCODE_QUERY: { status: 422, message: "Enter an address to find on the map." },
   OB_GEOCODE_UNAVAILABLE: { status: 503, message: "Address search is unavailable. Click the map and drag it to place the pin." },
+  OB_MESSAGE_DUPLICATE: { status: 409, message: "That message is already on an occurrence book entry." },
+  OB_GROUP_DUPLICATE: { status: 409, message: "That group name is already on the list." },
+  OB_ENTRY_CLOSED: { status: 409, message: "That incident is already closed." },
+  OB_NEEDLE_UNAVAILABLE: { status: 503, message: "Needle is not available yet. The weights file has not been uploaded." },
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;
