@@ -20,7 +20,7 @@ interface Meta {
 
 const TABS = [
   { id: "groups", label: "Groups", hint: "WhatsApp groups for the occurrence book" },
-  { id: "needle", label: "Needle training", hint: "History trainer, live thumbs, and improvement graph" },
+  { id: "ai-training", label: "AI Training", hint: "History trainer, live thumbs, and improvement graph" },
   { id: "residents", label: "Residents", hint: "People who live in the sector" },
   { id: "members", label: "Members", hint: "CPF members, call signs, and access" },
   { id: "emergency-services", label: "Emergency services", hint: "Police, ambulance, fire, and other numbers" },
@@ -42,7 +42,7 @@ function TabIcon({ id }: { id: TabId }) {
       </svg>
     );
   }
-  if (id === "needle") {
+  if (id === "ai-training") {
     return (
       <svg {...common}>
         <path d="M12 4v4M12 16v4M4 12h4M16 12h4" />
@@ -176,6 +176,7 @@ export function SettingsPage() {
     }
   }
 
+  if (section === "needle") return <Navigate to="/settings/ai-training" replace />;
   if (section && !known) return <Navigate to="/settings" replace />;
 
   return (
@@ -275,9 +276,9 @@ export function SettingsPage() {
             </div>
           )}
 
-          {tab === "needle" && (
+          {tab === "ai-training" && (
             <Pane
-              label="Needle training"
+              label="AI Training"
               blurb="Import historical messages and train one by one without creating incidents. Live occurrence book thumbs still count. The graph tracks how fills improve."
             >
               <NeedleTrainingPanel />

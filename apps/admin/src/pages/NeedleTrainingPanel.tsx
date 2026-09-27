@@ -181,7 +181,7 @@ function ImprovementGraph({ weekly }: { weekly: Stats["weekly"] }) {
   const scoreLine = points.map((p, i) => `${i === 0 ? "M" : "L"}${xs[i]},${height - pad - ((p.avgScore ?? 0) / 100) * (height - pad * 2)}`);
   return (
     <div className="overflow-x-auto px-3 py-4">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-52 w-full min-w-[28rem]" role="img" aria-label="Needle training improvement">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-52 w-full min-w-[28rem]" role="img" aria-label="AI Training improvement">
         {[0, 25, 50, 75, 100].map((tick) => {
           const y = height - pad - (tick / 100) * (height - pad * 2);
           return (
@@ -320,7 +320,7 @@ export function NeedleTrainingPanel() {
       setCorrected(fromFill(fill));
       if (fill.warning) setError(fill.warning);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Needle could not read this message");
+      setError(e instanceof Error ? e.message : "AI could not read this message");
     } finally {
       setRunning(false);
     }
@@ -393,7 +393,7 @@ export function NeedleTrainingPanel() {
         <div className="border-b border-black/5 px-5 py-4">
           <h2 className="text-base font-semibold text-gray-900">Improvement</h2>
           <p className="mt-1 text-sm text-gray-600">
-            Live OB thumbs and historical training both feed this chart. Good rate is thumbs; field match compares Needle to your corrections.
+            Live OB thumbs and historical training both feed this chart. Good rate is thumbs; field match compares the AI fill to your corrections.
           </p>
         </div>
         <div className="grid gap-3 border-b border-black/5 px-5 py-4 sm:grid-cols-4">
@@ -451,7 +451,7 @@ export function NeedleTrainingPanel() {
               <div>
                 <h2 className="text-base font-semibold text-gray-900">Train one by one</h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  Run Needle, fix only what is wrong, then vote. {done} reviewed · {remaining} remaining.
+                  Run AI, fix only what is wrong, then vote. {done} reviewed · {remaining} remaining.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -472,7 +472,7 @@ export function NeedleTrainingPanel() {
                 </div>
                 <div className="flex justify-end">
                   <Btn onClick={() => void runNeedle()} disabled={running}>
-                    {running ? "Reading…" : needleFill ? "Run Needle again" : "Run Needle"}
+                    {running ? "Reading…" : needleFill ? "Run AI again" : "Run AI"}
                   </Btn>
                 </div>
 
@@ -543,7 +543,7 @@ export function NeedleTrainingPanel() {
                     <Field label="Contact phone"><input className={inputCls} value={corrected.contactPhone} onChange={(e) => setCorrected({ ...corrected, contactPhone: e.target.value })} /></Field>
                     <div className="sm:col-span-2">
                       <Field label="Note (optional)">
-                        <input className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What Needle got wrong" />
+                        <input className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What the AI got wrong" />
                       </Field>
                     </div>
                     <div className="flex flex-wrap justify-end gap-2 sm:col-span-2">

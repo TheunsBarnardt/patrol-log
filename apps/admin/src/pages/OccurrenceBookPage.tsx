@@ -1021,11 +1021,11 @@ export function OccurrenceBookPage() {
                 <div className="mt-4 rounded-lg border border-black/10 bg-white px-4 py-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900">Needle fill — rate this for training</p>
+                      <p className="text-sm font-medium text-gray-900">AI fill — rate this for training</p>
                       <p className="mt-1 text-xs text-gray-500">
                         Thumbs up keeps the corrected fields as a good example. Thumbs down stores what you fixed so the next fill can learn from it.
                         {" "}
-                        <Link to="/settings/needle" className="font-medium text-gray-700 underline">Manage training in Settings</Link>
+                        <Link to="/settings/ai-training" className="font-medium text-gray-700 underline">Manage AI Training in Settings</Link>
                       </p>
                       <ul className="mt-2 space-y-0.5 text-xs text-gray-700">
                         <li>Type: {lastNeedle.fill.incidentKey ? (obType(lastNeedle.fill.incidentKey)?.name ?? lastNeedle.fill.incidentKey) : "—"}</li>
