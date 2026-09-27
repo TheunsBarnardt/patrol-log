@@ -77,7 +77,7 @@ export function SectorsPage() {
       />
 
       <p className="mb-4 max-w-2xl text-sm text-gray-600">
-        Create and manage CPF sectors (e.g. WBS1, WBS2). Assign members to a sector from the Members page.
+        Create and manage CPF sectors (e.g. WBS1, WBS2). Assign members to a sector from Settings.
       </p>
 
       {isLoading ? (

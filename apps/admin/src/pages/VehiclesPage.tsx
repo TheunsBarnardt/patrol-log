@@ -23,7 +23,7 @@ const STATUSES = ["available", "maintenance", "retired"] as const;
 const EMPTY_ADD = { registration: "", description: "", last_odometer: 0, status: "available" as Vehicle["status"], patroller_id: "" };
 const EMPTY_EDIT = { description: "", status: "available" as Vehicle["status"], last_odometer: 0, patroller_id: "" };
 
-export function VehiclesPage() {
+export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -106,6 +106,7 @@ export function VehiclesPage() {
     <>
       <PageHeader
         title="Vehicles"
+        hideTitle={embedded}
         search={search}
         onSearch={setSearch}
         action={

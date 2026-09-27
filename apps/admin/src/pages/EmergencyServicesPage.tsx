@@ -19,7 +19,7 @@ interface Service {
 
 const EMPTY = { name: "", service_type: "police" as ServiceType, primary_number: "", secondary_number: "", address: "", priority: 100, sensitive: false };
 
-export function EmergencyServicesPage() {
+export function EmergencyServicesPage({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -80,6 +80,7 @@ export function EmergencyServicesPage() {
     <>
       <PageHeader
         title="Emergency services"
+        hideTitle={embedded}
         search={search}
         onSearch={setSearch}
         action={

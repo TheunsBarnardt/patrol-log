@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, NavLink, Navigate, useNavigate } from "react-router-dom";
+import { Link, NavLink, Navigate, useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { authStore } from "../lib/api";
 import { APP_VERSION } from "../version";
@@ -23,15 +23,10 @@ const NAV_ALL: NavItem[] = [
   { to: "/", label: "Dashboard", end: true, roles: OPS },
   { to: "/live-map", label: "Live Map", roles: OPS },
   { to: "/messaging", label: "Messaging", roles: OPS },
-  { to: "/residents", label: "Residents", roles: OPS },
-  { to: "/members", label: "Members", roles: OPS },
-  { to: "/emergency-services", label: "Emergency services", roles: OPS },
-  { to: "/vehicles", label: "Vehicles", roles: OPS },
   { to: "/patrols", label: "Patrols", roles: OPS },
   { to: "/ob-book", label: "OB Book", roles: OPS },
   { to: "/settings", label: "Settings", roles: OPS },
   { to: "/reports", label: "Reports", roles: OPS },
-  { to: "/hotspots", label: "Hotspots", roles: OPS },
   { to: "/sectors", label: "Sectors", roles: SYS },
   { to: "/devices", label: "Devices", roles: SYS },
   { to: "/audit-log", label: "Audit log", roles: SYS },
@@ -41,9 +36,11 @@ const NAV_ALL: NavItem[] = [
 
 export function Layout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const profile = authStore.getProfile();
   const accessLevel = (profile?.access_level ?? "") as Role;
+  const fillMain = location.pathname === "/settings" || location.pathname.startsWith("/settings/");
 
   const navItems = NAV_ALL.filter(
     (item) => item.roles === null || item.roles.includes(accessLevel),
@@ -153,7 +150,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <button onClick={logout} className="mt-2 w-full text-left text-red-600 hover:underline">Log out</button>
         </div>
       </aside>
-      <main className="min-h-0 min-w-0 flex-1 overflow-auto p-4 md:p-6">{children}</main>
+      <main className={`relative min-h-0 min-w-0 flex-1 overflow-auto ${fillMain ? "p-0" : "p-4 md:p-6"}`}>{children}</main>
     </div>
   );
 }

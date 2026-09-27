@@ -2,10 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout, RoleHomeRedirect } from "./components/Layout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
-import { ResidentsPage } from "./pages/ResidentsPage";
-import { MembersPage } from "./pages/MembersPage";
-import { EmergencyServicesPage } from "./pages/EmergencyServicesPage";
-import { VehiclesPage } from "./pages/VehiclesPage";
 import { PatrolsPage } from "./pages/PatrolsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { DevicesPage } from "./pages/DevicesPage";
@@ -14,7 +10,6 @@ import { LiveMapPage } from "./pages/LiveMapPage";
 import { MessagingPage } from "./pages/MessagingPage";
 import { MyDetailsPage } from "./pages/MyDetailsPage";
 import { SystemBackupPage } from "./pages/SystemBackupPage";
-import { HotspotsPage } from "./pages/HotspotsPage";
 import { SectorsPage } from "./pages/SectorsPage";
 import { OccurrenceBookPage } from "./pages/OccurrenceBookPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -69,38 +64,10 @@ export function App() {
                     </RequireRoles>
                   }
                 />
-                <Route
-                  path="residents"
-                  element={
-                    <RequireRoles roles={OPS}>
-                      <ResidentsPage />
-                    </RequireRoles>
-                  }
-                />
-                <Route
-                  path="members"
-                  element={
-                    <RequireRoles roles={OPS}>
-                      <MembersPage />
-                    </RequireRoles>
-                  }
-                />
-                <Route
-                  path="emergency-services"
-                  element={
-                    <RequireRoles roles={OPS}>
-                      <EmergencyServicesPage />
-                    </RequireRoles>
-                  }
-                />
-                <Route
-                  path="vehicles"
-                  element={
-                    <RequireRoles roles={OPS}>
-                      <VehiclesPage />
-                    </RequireRoles>
-                  }
-                />
+                <Route path="residents" element={<Navigate to="/settings/residents" replace />} />
+                <Route path="members" element={<Navigate to="/settings/members" replace />} />
+                <Route path="emergency-services" element={<Navigate to="/settings/emergency-services" replace />} />
+                <Route path="vehicles" element={<Navigate to="/settings/vehicles" replace />} />
                 <Route
                   path="patrols"
                   element={
@@ -118,7 +85,7 @@ export function App() {
                   }
                 />
                 <Route
-                  path="settings"
+                  path="settings/:section?"
                   element={
                     <RequireRoles roles={OPS}>
                       <SettingsPage />
@@ -133,14 +100,7 @@ export function App() {
                     </RequireRoles>
                   }
                 />
-                <Route
-                  path="hotspots"
-                  element={
-                    <RequireRoles roles={OPS}>
-                      <HotspotsPage />
-                    </RequireRoles>
-                  }
-                />
+                <Route path="hotspots" element={<Navigate to="/settings/hotspots" replace />} />
                 <Route
                   path="sectors"
                   element={

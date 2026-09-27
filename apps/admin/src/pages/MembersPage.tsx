@@ -54,7 +54,7 @@ const EMPTY_EDIT = {
   sector_id: "",
 };
 
-export function MembersPage() {
+export function MembersPage({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const isSysAdmin = authStore.getProfile()?.access_level === "system_admin";
   const [search, setSearch] = useState("");
@@ -173,6 +173,7 @@ export function MembersPage() {
     <>
       <PageHeader
         title="Members"
+        hideTitle={embedded}
         search={search}
         onSearch={setSearch}
         action={

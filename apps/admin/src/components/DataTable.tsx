@@ -60,15 +60,16 @@ export function DataTable<T>({
   );
 }
 
-export function PageHeader({ title, action, search, onSearch }: {
+export function PageHeader({ title, action, search, onSearch, hideTitle }: {
   title: string;
   action?: ReactNode;
   search?: string;
   onSearch?: (v: string) => void;
+  hideTitle?: boolean;
 }) {
   return (
     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-      <h1 className="shrink-0 text-lg font-bold text-gray-900">{title}</h1>
+      {hideTitle ? null : <h1 className="shrink-0 text-lg font-bold text-gray-900">{title}</h1>}
       {onSearch && (
         <input
           type="search"

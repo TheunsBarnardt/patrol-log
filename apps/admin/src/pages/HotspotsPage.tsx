@@ -54,7 +54,7 @@ function ratingColor(r: number): string {
   return "#6B7280";
 }
 
-export function HotspotsPage() {
+export function HotspotsPage({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -111,15 +111,18 @@ export function HotspotsPage() {
     <>
       <PageHeader
         title="Hotspots"
+        hideTitle={embedded}
         search={search}
         onSearch={setSearch}
         action={<Btn onClick={() => { setForm(EMPTY); setAddOpen(true); }}>+ Add hotspot</Btn>}
       />
 
-      <p className="mb-4 max-w-2xl text-sm text-gray-600">
-        Mark risk areas for your sector with a rating (1–5), circle diameter in km, and a short description.
-        Patrollers see these on the mobile hotspots map.
-      </p>
+      {embedded ? null : (
+        <p className="mb-4 max-w-2xl text-sm text-gray-600">
+          Mark risk areas for your sector with a rating (1–5), circle diameter in km, and a short description.
+          Patrollers see these on the mobile hotspots map.
+        </p>
+      )}
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>

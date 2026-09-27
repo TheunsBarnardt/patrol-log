@@ -10,7 +10,7 @@ interface Resident { id: string; name: string; phone: string; address: string; s
 
 const EMPTY = { name: "", phone: "", address: "" };
 
-export function ResidentsPage() {
+export function ResidentsPage({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -73,6 +73,7 @@ export function ResidentsPage() {
     <>
       <PageHeader
         title="Residents"
+        hideTitle={embedded}
         search={search}
         onSearch={setSearch}
         action={
