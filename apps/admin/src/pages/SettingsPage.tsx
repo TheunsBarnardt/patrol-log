@@ -180,8 +180,32 @@ export function SettingsPage() {
   if (section && !known) return <Navigate to="/settings" replace />;
 
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-[#f3f3f3]">
-      <aside className="flex h-full w-56 shrink-0 flex-col border-r border-black/10 bg-[#f7f7f7] sm:w-64">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#f3f3f3] md:flex-row">
+      <div className="shrink-0 border-b border-black/10 bg-[#f7f7f7] p-2 md:hidden">
+        <input
+          className="mb-2 w-full rounded-full border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-gray-400"
+          placeholder="Find a setting"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <nav className="flex gap-1 overflow-x-auto pb-1" aria-label="Settings">
+          {tabs.map((item) => {
+            const selected = item.id === tab;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-current={selected ? "page" : undefined}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-sm ${selected ? "bg-gray-900 font-semibold text-white" : "text-gray-800 ring-1 ring-black/10"}`}
+                onClick={() => navigate(item.id === "groups" ? "/settings" : `/settings/${item.id}`)}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+      <aside className="hidden h-full w-56 shrink-0 flex-col border-r border-black/10 bg-[#f7f7f7] sm:w-64 md:flex">
         <div className="p-3">
           <label className="relative block">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">

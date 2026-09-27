@@ -40,7 +40,11 @@ export function Layout({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const profile = authStore.getProfile();
   const accessLevel = (profile?.access_level ?? "") as Role;
-  const fillMain = location.pathname === "/settings" || location.pathname.startsWith("/settings/");
+  const fillMain =
+    location.pathname === "/settings"
+    || location.pathname.startsWith("/settings/")
+    || location.pathname === "/ob-book"
+    || location.pathname.startsWith("/ob-book/");
 
   const navItems = NAV_ALL.filter(
     (item) => item.roles === null || item.roles.includes(accessLevel),

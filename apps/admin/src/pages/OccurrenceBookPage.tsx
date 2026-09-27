@@ -272,33 +272,28 @@ function dangerClass(level: ObDangerLevel | null): string {
   return "bg-gray-100 text-gray-600";
 }
 
+function FormPane({ label, blurb, children }: { label: string; blurb?: string; children: ReactNode }) {
+  return (
+    <div className="flex w-full flex-1 flex-col">
+      <h2 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">{label}</h2>
+      {blurb && <p className="mt-2 max-w-3xl text-sm text-gray-600">{blurb}</p>}
+      <div className="mt-6 w-full flex-1 space-y-4">{children}</div>
+    </div>
+  );
+}
+
 function AccordionSection({
   title,
   open,
-  onToggle,
   children,
 }: {
   title: string;
   open: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   children: ReactNode;
 }) {
-  return (
-    <section className="rounded-xl border bg-white">
-      <h2>
-        <button
-          type="button"
-          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left sm:px-6"
-          aria-expanded={open}
-          onClick={onToggle}
-        >
-          <span className="text-sm font-semibold text-gray-900">{title}</span>
-          <span className="text-lg leading-none text-gray-400" aria-hidden>{open ? "▴" : "▾"}</span>
-        </button>
-      </h2>
-      {open && <div className="border-t px-4 py-4 sm:px-6">{children}</div>}
-    </section>
-  );
+  if (!open) return null;
+  return <FormPane label={title}>{children}</FormPane>;
 }
 
 function applyFill(
@@ -424,7 +419,7 @@ export function OccurrenceBookPage() {
   const [seenNote, setSeenNote] = useState("");
   const [openSection, setOpenSection] = useState("incident");
   function toggleSection(id: string) {
-    setOpenSection((current) => (current === id ? "" : id));
+    setOpenSection(id);
   }
   const [drafts, setDrafts] = useState<DraftMessage[]>([]);
   const [pasteBody, setPasteBody] = useState("");
@@ -531,6 +526,21 @@ export function OccurrenceBookPage() {
   const entryOpen = mode === "new" || detail.data?.status === "active";
   const pasteGroups = meta.data?.pasteGroups ?? [];
   const storedMessages = detail.data?.messages ?? [];
+  const formTabs = useMemo(() => {
+    const tabs: { id: string; label: string; secondary?: boolean }[] = [
+      { id: "incident", label: "Incident" },
+      { id: "location", label: "Location" },
+      { id: "description", label: "Description" },
+    ];
+    if (showVehicle) tabs.push({ id: "vehicle", label: "Vehicle" });
+    if (showPerson) tabs.push({ id: "person", label: "Person" });
+    if (showInjured) tabs.push({ id: "injured", label: "Injured" });
+    tabs.push({ id: "tags", label: "Tags" }, { id: "reacted", label: "Who reacted" });
+    if (mode === "edit" && detail.data && !isShiftRow) tabs.push({ id: "seen", label: "Last seen" });
+    tabs.push({ id: "close", label: "Close" });
+    tabs.push({ id: "ai", label: "AI assist", secondary: true });
+    return tabs;
+  }, [showVehicle, showPerson, showInjured, mode, detail.data, isShiftRow]);
 
   function startNew() {
     const sectorId = profile?.sector_id || meta.data?.sectors[0]?.id || "";
@@ -542,7 +552,7 @@ export function OccurrenceBookPage() {
     setOpenSection("incident");
     setDrafts([]);
     setPasteBody("");
-    setFilled(false);
+    setFilled(true);
     setAutoDescription("");
     setLastNeedle(null);
     setTrainingSaved(null);
@@ -556,7 +566,8 @@ export function OccurrenceBookPage() {
       setForm(emptyForm(sectorId));
       setEditingId(null);
       setHydrated(null);
-      setFilled(false);
+      setFilled(true);
+      setOpenSection("incident");
       setAutoDescription("");
       setLastNeedle(null);
       setTrainingSaved(null);
@@ -924,23 +935,33 @@ export function OccurrenceBookPage() {
   if (mode !== "list") {
     const heading = mode === "new" ? "Log incident" : detail.data?.obNumber ?? "Incident";
     return (
-      <div className="mx-auto max-w-3xl">
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#f3f3f3]">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-black/10 bg-white px-3 py-3 sm:gap-3 sm:px-6">
           <button type="button" className="text-sm font-medium text-gray-600 hover:text-gray-900" onClick={backToList}>
-            ← Back to the book
+            ← Book
           </button>
-          <h1 className="text-lg font-bold text-gray-900">{heading}</h1>
+          <h1 className="text-base font-bold text-gray-900 sm:text-lg">{heading}</h1>
           {detail.data && (
             <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${detail.data.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-gray-200 text-gray-700"}`}>
               {detail.data.status === "active" ? "Active" : "Closed"}
             </span>
           )}
+          {!isShiftRow && (
+            <div className="ml-auto flex flex-wrap justify-end gap-2">
+              <Btn variant="ghost" onClick={backToList}>Cancel</Btn>
+              <Btn onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : mode === "new" ? "Save incident" : "Save changes"}</Btn>
+              {mode === "edit" && form.conclusion && (
+                <Btn variant="danger" onClick={() => void closeEntry()} disabled={saving}>Close</Btn>
+              )}
+            </div>
+          )}
         </div>
-        {error && <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
-        {mode === "edit" && detail.isLoading && <p className="text-sm text-gray-500">Loading…</p>}
+        {error && <p className="shrink-0 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800 sm:px-6">{error}</p>}
+        {mode === "edit" && detail.isLoading && <p className="px-4 py-4 text-sm text-gray-500">Loading…</p>}
 
         {isShiftRow ? (
-          <div className="rounded-xl border bg-white p-4 sm:p-6">
+          <div className="overflow-auto px-4 py-6 sm:px-8">
+            <div className="mx-auto max-w-2xl rounded-lg border border-black/10 bg-white p-5 shadow-sm">
             <p className="mb-4 text-sm text-gray-600">
               {isCommence
                 ? `Commence Shift for ${detail.data?.callSign}. It closes on its own at the end of the hours, or when the next person comes on.`
@@ -957,12 +978,53 @@ export function OccurrenceBookPage() {
               )}
               <Btn onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
             </div>
+            </div>
           </div>
         ) : (
-          <div className="space-y-2">
-            <section className="rounded-xl border bg-white p-4 sm:p-6">
-              <h2 className="mb-1 text-sm font-semibold text-gray-900">Messages</h2>
-              <p className="mb-3 text-xs text-gray-500">Paste the messages for this incident, then fill the entry. Or log it manually. The incident stays active until you close it.</p>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+            <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-black/10 bg-[#f7f7f7] px-2 py-2 md:hidden" aria-label="Incident sections">
+              {formTabs.map((item) => {
+                const selected = openSection === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-current={selected ? "page" : undefined}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-sm ${selected ? "bg-gray-900 font-semibold text-white" : item.secondary ? "text-gray-500 ring-1 ring-gray-200" : "text-gray-800 ring-1 ring-black/10"}`}
+                    onClick={() => setOpenSection(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+            <aside className="hidden h-full w-56 shrink-0 flex-col border-r border-black/10 bg-[#f7f7f7] sm:w-64 md:flex">
+              <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3" aria-label="Incident sections">
+                {formTabs.map((item) => {
+                  const selected = openSection === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-current={selected ? "page" : undefined}
+                      className={`relative flex w-full items-center rounded-md px-3 py-2.5 text-left text-sm ${selected ? "bg-black/10 font-semibold text-gray-900" : item.secondary ? "text-gray-500 hover:bg-black/5" : "text-gray-800 hover:bg-black/5"}`}
+                      onClick={() => setOpenSection(item.id)}
+                    >
+                      {selected && <span className="absolute inset-y-1 left-0 w-1 rounded-full bg-[#0067c0]" aria-hidden />}
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </nav>
+            </aside>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
+              <div className="flex w-full flex-1 flex-col px-4 py-5 sm:px-8 sm:py-8">
+            {openSection === "ai" && (
+            <FormPane
+              label="AI assist"
+              blurb="Optional while the training set is built in Settings → AI Training. Manual logging is the main path."
+            >
+            <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm sm:p-5">
               <Field label="Add these messages to">
                 <select className={selectCls} value={mode === "edit" ? editingId ?? "" : ""} onChange={(e) => chooseEntry(e.target.value)}>
                   <option value="">New incident</option>
@@ -1009,11 +1071,8 @@ export function OccurrenceBookPage() {
               </ul>
               {entryOpen && (
                 <div className="mt-4 flex justify-end gap-2">
-                  {mode === "new" && !filled && (
-                    <Btn variant="ghost" onClick={() => { setFilled(true); setOpenSection("incident"); }}>Log manually</Btn>
-                  )}
                   <Btn onClick={() => void fillFromMessages()} disabled={filling || storedMessages.length + drafts.length === 0}>
-                    {filling ? "Reading messages…" : "Fill entry"}
+                    {filling ? "Reading messages…" : "Fill from AI"}
                   </Btn>
                 </div>
               )}
@@ -1094,7 +1153,9 @@ export function OccurrenceBookPage() {
                 </div>
               )}
             </section>
-            {showForm && <>
+            </FormPane>
+            )}
+            {showForm && openSection !== "ai" && <>
             <AccordionSection title="Incident" open={openSection === "incident"} onToggle={() => toggleSection("incident")}>
               {(meta.data?.sectors.length ?? 0) > 1 && (
                 <Field label="Sector" required>
@@ -1370,15 +1431,9 @@ export function OccurrenceBookPage() {
               </Field>
               <p className="text-xs text-gray-500">Photos are not on this form yet. They will be stored on the incident once file upload is in place.</p>
             </AccordionSection>
-
-            <div className="flex flex-wrap justify-end gap-2">
-              <Btn variant="ghost" onClick={backToList}>Cancel</Btn>
-              <Btn onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : mode === "new" ? "Save incident" : "Save changes"}</Btn>
-              {mode === "edit" && form.conclusion && (
-                <Btn variant="danger" onClick={() => void closeEntry()} disabled={saving}>Close incident</Btn>
-              )}
-            </div>
             </>}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1386,13 +1441,14 @@ export function OccurrenceBookPage() {
   }
 
   return (
-    <>
+    <div className="flex h-full min-h-0 w-full flex-col overflow-auto bg-[#f3f3f3]">
+      <div className="px-4 py-5 sm:px-8 sm:py-8">
       <PageHeader
         title="OB Book"
         search={search}
         onSearch={setSearch}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Btn variant="ghost" onClick={() => setShiftOpen((open) => !open)}>{shiftOpen ? "Hide shift change" : "Shift change"}</Btn>
             <Btn variant="ghost" onClick={() => void standDown()}>Stand Down</Btn>
             <Btn onClick={startNew}>+ Log incident</Btn>
@@ -1483,6 +1539,7 @@ export function OccurrenceBookPage() {
           ]}
         />
       )}
-    </>
+      </div>
+    </div>
   );
 }
