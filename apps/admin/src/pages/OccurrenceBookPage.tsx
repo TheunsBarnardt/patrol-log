@@ -16,6 +16,7 @@ import {
   OB_VOI_SHAPES,
   dangerForTypes,
   dangerMeta,
+  obFormSections,
   obTypesFor,
   requiresAttendance,
   type ObAttendance,
@@ -32,13 +33,13 @@ import { Btn, Field, inputCls, selectCls } from "../components/Modal";
 interface Suburb { id: string; name: string; aliases: string[] }
 interface Company { id: string; name: string }
 interface Sector { id: string; name: string; code: string | null }
-interface OnPatrol { id: string; callSign: string; name: string; sectorId: string }
+interface Member { id: string; callSign: string; name: string; sectorId: string; onPatrol: boolean }
 interface PatrolOption { id: string; label: string; sectorId: string }
 interface Meta {
   suburbs: Suburb[];
   securityCompanies: Company[];
   sectors: Sector[];
-  onPatrol: OnPatrol[];
+  members: Member[];
   patrols: PatrolOption[];
   tags: { key: string; label: string }[];
   canMaintainCompanies: boolean;
@@ -127,6 +128,18 @@ interface FormState {
 
 const emptyVehicle = (): VehicleForm => ({ colour: "", shape: "", make: "", model: "", registration: "", features: "", name: "", identifier: "" });
 const emptyPoi = (): PoiForm => ({ gender: "", clothing: "", direction: "", name: "", ethnicity: "", identifier: "" });
+
+function vehicleFilled(rows: VehicleForm[]): boolean {
+  return rows.some((row) => row.colour || row.shape || row.make || row.model || row.registration || row.features || row.name || row.identifier);
+}
+
+function poiFilled(rows: PoiForm[]): boolean {
+  return rows.some((row) => row.gender || row.clothing || row.direction || row.name || row.ethnicity || row.identifier);
+}
+
+function patientFilled(rows: PatientForm[]): boolean {
+  return rows.some((row) => row.injuryTag || row.note);
+}
 
 function sastNow(): { date: string; time: string } {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -328,12 +341,27 @@ export function OccurrenceBookPage() {
   const danger = form.category === "criminal" && form.phase ? dangerForTypes(typeKeys, form.phase) : null;
   const dangerInfo = dangerMeta(danger);
   const mustAttend = requiresAttendance(form.category, typeKeys);
+  const sections = obFormSections(typeKeys);
+  const showVehicle = sections.vehicle || vehicleFilled(form.vehicles);
+  const showPerson = sections.person || poiFilled(form.pois);
+  const showInjured = sections.injured || patientFilled(form.patients);
+  useEffect(() => {
+    if ((openSection === "vehicle" && !showVehicle) || (openSection === "person" && !showPerson) || (openSection === "injured" && !showInjured)) {
+      setOpenSection("incident");
+    }
+  }, [openSection, showVehicle, showInjured, showPerson]);
   const isCommence = detail.data?.types.some((t) => t.key === "commence_shift") ?? false;
-  const onPatrol = (meta.data?.onPatrol ?? []).filter((p) => !form.sectorId || p.sectorId === form.sectorId);
+  const members = (meta.data?.members ?? [])
+    .filter((p) => !form.sectorId || p.sectorId === form.sectorId)
+    .slice()
+    .sort((a, b) => Number(b.onPatrol) - Number(a.onPatrol) || a.callSign.localeCompare(b.callSign));
   const memberOptions = [
-    ...onPatrol.map((p) => ({ value: p.id, label: `${p.callSign} · ${p.name}` })),
+    ...members.map((p) => ({
+      value: p.id,
+      label: p.onPatrol ? `${p.callSign} · ${p.name} · on patrol` : `${p.callSign} · ${p.name}`,
+    })),
     ...(mode === "edit" ? detail.data?.responders ?? [] : [])
-      .filter((p) => !onPatrol.some((row) => row.id === p.id))
+      .filter((p) => !members.some((row) => row.id === p.id))
       .map((p) => ({ value: p.id, label: `${p.callSign} · ${p.name}` })),
   ];
   const patrolOptions = [
@@ -666,7 +694,7 @@ export function OccurrenceBookPage() {
               <textarea className={inputCls} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </AccordionSection>
 
-            <AccordionSection title="Vehicle of interest" open={openSection === "vehicle"} onToggle={() => toggleSection("vehicle")}>
+            {showVehicle && <AccordionSection title="Vehicle of interest" open={openSection === "vehicle"} onToggle={() => toggleSection("vehicle")}>
               {form.vehicles.map((v, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-2">
                   <select className={selectCls} value={v.colour} onChange={(e) => setForm({ ...form, vehicles: form.vehicles.map((row, j) => j === i ? { ...row, colour: e.target.value } : row) })}>
@@ -689,9 +717,9 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, vehicles: [...form.vehicles, emptyVehicle()] })}>+ Another vehicle</Btn>
-            </AccordionSection>
+            </AccordionSection>}
 
-            <AccordionSection title="Person of interest" open={openSection === "person"} onToggle={() => toggleSection("person")}>
+            {showPerson && <AccordionSection title="Person of interest" open={openSection === "person"} onToggle={() => toggleSection("person")}>
               {form.pois.map((p, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-2">
                   <input className={inputCls} placeholder="Name, if known" value={p.name} onChange={(e) => setForm({ ...form, pois: form.pois.map((row, j) => j === i ? { ...row, name: e.target.value } : row) })} />
@@ -712,9 +740,9 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, pois: [...form.pois, emptyPoi()] })}>+ Person</Btn>
-            </AccordionSection>
+            </AccordionSection>}
 
-            <AccordionSection title="Injured people" open={openSection === "injured"} onToggle={() => toggleSection("injured")}>
+            {showInjured && <AccordionSection title="Injured people" open={openSection === "injured"} onToggle={() => toggleSection("injured")}>
               <p className="mb-3 text-xs text-gray-500">P1–P4 describes that person, not how dangerous the scene is.</p>
               {form.patients.map((p, i) => (
                 <div key={i} className="mb-3 grid gap-2 sm:grid-cols-2">
@@ -726,7 +754,7 @@ export function OccurrenceBookPage() {
                 </div>
               ))}
               <Btn variant="ghost" onClick={() => setForm({ ...form, patients: [...form.patients, { injuryTag: "", note: "" }] })}>+ Injured person</Btn>
-            </AccordionSection>
+            </AccordionSection>}
 
             <AccordionSection title="Tags" open={openSection === "tags"} onToggle={() => toggleSection("tags")}>
               <Field label="Tags">
@@ -754,10 +782,10 @@ export function OccurrenceBookPage() {
                   onChange={(patrolIds) => setForm({ ...form, patrolIds })}
                 />
               </Field>
-              <Field label="CPF members on patrol">
+              <Field label="CPF members">
                 <MultiSelect
                   placeholder="Choose members"
-                  emptyText="Nobody is on patrol in this sector right now."
+                  emptyText="No active members in this sector."
                   options={memberOptions}
                   value={form.responderIds}
                   onChange={(responderIds) => setForm({ ...form, responderIds })}

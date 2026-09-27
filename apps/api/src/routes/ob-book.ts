@@ -640,7 +640,7 @@ ob.get("/meta", async (c) => {
   await ensureSuburbs(db, auth.patroller.cpf_id);
   const sectorId = auth.patroller.access_level === "system_admin" ? null : auth.patroller.sector_id;
 
-  const [suburbRows, companyRows, sectorRows, onPatrol, activePatrols, tagRows] = await Promise.all([
+  const [suburbRows, companyRows, sectorRows, onPatrol, memberRows, activePatrols, tagRows] = await Promise.all([
     db.select().from(obSuburbs).where(eq(obSuburbs.cpfId, auth.patroller.cpf_id)).orderBy(asc(obSuburbs.sortOrder), asc(obSuburbs.name)),
     db
       .select()
@@ -670,6 +670,22 @@ ob.get("/meta", async (c) => {
           sectorId ? eq(patrols.sectorId, sectorId) : undefined,
         ),
       ),
+    db
+      .select({
+        id: patrollers.id,
+        callSign: patrollers.callSign,
+        name: patrollers.name,
+        sectorId: patrollers.sectorId,
+      })
+      .from(patrollers)
+      .where(
+        and(
+          eq(patrollers.cpfId, auth.patroller.cpf_id),
+          eq(patrollers.status, "active"),
+          sectorId ? eq(patrollers.sectorId, sectorId) : undefined,
+        ),
+      )
+      .orderBy(asc(patrollers.callSign)),
     loadPatrolOptions(
       db,
       and(
@@ -681,11 +697,13 @@ ob.get("/meta", async (c) => {
     db.select({ key: obTags.key, label: obTags.label }).from(obTags).where(eq(obTags.cpfId, auth.patroller.cpf_id)).orderBy(asc(obTags.label)),
   ]);
 
+  const onPatrolIds = new Set(onPatrol.map((row) => row.id));
   return c.json({
     suburbs: suburbRows.map((s) => ({ id: s.id, name: s.name, aliases: s.aliases ?? [] })),
     securityCompanies: companyRows.map((s) => ({ id: s.id, name: s.name })),
     sectors: sectorRows,
     onPatrol,
+    members: memberRows.map((row) => ({ ...row, onPatrol: onPatrolIds.has(row.id) })),
     patrols: activePatrols,
     tags: [...OB_TAGS, ...tagRows],
     canMaintainCompanies: canMaintainCompanies(auth),

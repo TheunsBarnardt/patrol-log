@@ -488,6 +488,97 @@ export function streetNameOnly(street: string): string {
   return stripped || street.trim();
 }
 
+/** Vehicle description is part of the incident, not only a later sighting. */
+const VEHICLE_SECTION_KEYS = new Set([
+  "attempted_car_jacking",
+  "attempted_cit",
+  "attempted_hijack_truck",
+  "attempted_theft_of_vehicle",
+  "attempted_theft_out_of_vehicle",
+  "bolo",
+  "car_jacking",
+  "cit_robbery",
+  "drive_by",
+  "drive_under_influence",
+  "fire_vehicle",
+  "hijack_truck",
+  "mba",
+  "mva",
+  "pva",
+  "theft_of_vehicle",
+  "theft_out_of_vehicle",
+  "traffic_offence",
+  "use_vehicle_without_consent",
+  "vehicle_of_interest",
+]);
+
+/** Person description when the type is not already a contact or property crime. */
+const PERSON_SECTION_KEYS = new Set([
+  "bolo",
+  "drive_under_influence",
+  "escaping",
+  "loitering",
+  "mentally_deranged",
+  "mentally_disturbed",
+  "missing_on_mountain",
+  "mba",
+  "missing_person",
+  "mva",
+  "person_of_interest",
+  "pva",
+  "rebellious_person",
+  "wanted_person",
+]);
+
+const INJURED_SECTION_KEYS = new Set([
+  "assault",
+  "assault_gbh",
+  "attempted_drowning",
+  "attempted_murder",
+  "attempted_shooting",
+  "attempted_suicide",
+  "bomb_exploding",
+  "domestic_violence",
+  "drowning",
+  "fighting",
+  "fire_building",
+  "fire_vehicle",
+  "fire_veld",
+  "gang_fighting",
+  "hit_by_train",
+  "injured_person",
+  "mba",
+  "medical",
+  "murder",
+  "mva",
+  "pva",
+  "shooting",
+  "sudden_death",
+  "suicide",
+  "unnatural_death",
+]);
+
+export interface ObFormSections {
+  vehicle: boolean;
+  person: boolean;
+  injured: boolean;
+}
+
+/** Which detail sections the desk form should open for the chosen incident types. */
+export function obFormSections(typeKeys: string[]): ObFormSections {
+  const sections: ObFormSections = { vehicle: false, person: false, injured: false };
+  for (const key of typeKeys) {
+    const type = obType(key);
+    if (!type) continue;
+    if (VEHICLE_SECTION_KEYS.has(key)) sections.vehicle = true;
+    if (type.dangerClass === "contact" || type.dangerClass === "property" || PERSON_SECTION_KEYS.has(key)) {
+      sections.person = true;
+    }
+    if (INJURED_SECTION_KEYS.has(key)) sections.injured = true;
+  }
+  return sections;
+}
+
 export function requiresAttendance(category: ObCategory, typeKeys: string[]): boolean {
   if (category === "emergency") return true;
   return typeKeys.includes("metro_by_law");
