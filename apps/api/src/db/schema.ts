@@ -486,6 +486,8 @@ export const obEntries = sqliteTable("ob_entries", {
   closedById: text("closed_by_id").references(() => patrollers.id, { onDelete: "set null" }),
   capturedById: text("captured_by_id").references(() => patrollers.id, { onDelete: "set null" }),
   callSign: text("call_sign").notNull(),
+  /** Wall-clock SAST when a call-centre shift closes itself: YYYY-MM-DD HH:MM:SS */
+  shiftEndsAt: text("shift_ends_at"),
   /** manual = typed on the form. paste = filled from collected messages. */
   source: text("source")
     .notNull()

@@ -2,7 +2,7 @@
 // Call centre / sector lead capture. Phone, photos, and reports follow.
 
 import { Hono } from "hono";
-import { and, asc, desc, eq, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, like, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   AppError,
   DEFAULT_SUBURBS,
@@ -1032,6 +1032,7 @@ ob.get("/lookup", async (c) => {
 ob.get("/entries", async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
+  await closeDueShifts(c.env);
   const status = c.req.query("status");
   const q = (c.req.query("q") ?? "").trim();
   const pattern = q ? `%${q.replace(/[%_]/g, "")}%` : null;
@@ -1095,6 +1096,7 @@ ob.get("/entries", async (c) => {
         suburbName: r.suburbName,
         street: r.entry.street,
         callSign: r.entry.callSign,
+        description: r.entry.description,
         conclusion: r.entry.conclusion,
         primaryType: def?.name ?? primary?.typeKey ?? "",
         primaryCode: def?.code ?? null,
@@ -1385,18 +1387,6 @@ ob.delete("/paste-groups/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-ob.post("/commence-shift", async (c) => {
-  const auth = getAuth(c);
-  const body = await c.req.json<WriteBody>().catch(() => ({}) as WriteBody);
-  const clock = nowSast();
-  const db = getDb(c.env);
-  const norm = normalize({ ...body, date: body.date || clock.date, time: body.time || clock.time }, { commenceShift: true, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) });
-  const sector = await resolveSector(db, auth, body.sector_id);
-  const created = await insertEntry(c, db, auth, sector, norm);
-  await logAudit(db, "ob.commence_shift", auth, { ob_number: created.obNumber });
-  return c.json(await presentEntry(db, created), 201);
-});
-
 const SHIFT_CONCLUSION = "All in Order - Nothing Found";
 
 async function closeShiftEntry(db: Db, auth: AuthenticatedContext, entry: typeof obEntries.$inferSelect, actionDetails: string) {
@@ -1414,6 +1404,99 @@ async function closeShiftEntry(db: Db, auth: AuthenticatedContext, entry: typeof
     .returning();
   return updated!;
 }
+
+function bookClock(time: string): string {
+  const [hour, minute] = time.split(":");
+  return `${hour}h${minute}`;
+}
+
+function shiftStamp(date: string, time: string): string {
+  return `${date} ${time}:00`;
+}
+
+function nextDate(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year!, (month ?? 1) - 1, (day ?? 1) + 1));
+  return next.toISOString().slice(0, 10);
+}
+
+function shiftChangeText(prefix: string, callSign: string, name: string, from: string, to: string): string {
+  return `${prefix} CALL CENTER SHIFT CHANGE\n\n${callSign} ${name} commence shift\n\n${bookClock(from)} - ${bookClock(to)}`;
+}
+
+export async function closeDueShifts(env: AppContext["Bindings"]): Promise<void> {
+  const db = getDb(env);
+  const clock = nowSast();
+  const now = shiftStamp(clock.date, clock.time);
+  const rows = await db
+    .select({ id: obEntries.id })
+    .from(obEntries)
+    .innerJoin(obEntryTypes, and(eq(obEntryTypes.entryId, obEntries.id), eq(obEntryTypes.typeKey, "commence_shift")))
+    .where(and(eq(obEntries.status, "active"), isNotNull(obEntries.shiftEndsAt), lte(obEntries.shiftEndsAt, now)));
+  if (!rows.length) return;
+  const ended = new Date().toISOString();
+  await db
+    .update(obEntries)
+    .set({
+      status: "closed",
+      conclusion: SHIFT_CONCLUSION,
+      closedAt: ended,
+      updatedAt: ended,
+    })
+    .where(inArray(obEntries.id, rows.map((row) => row.id)));
+}
+
+ob.post("/commence-shift", async (c) => {
+  const auth = getAuth(c);
+  const body = await c.req.json<{ sector_id?: string; patroller_id?: string; date?: string; from?: string; to?: string }>().catch(() => ({}) as { sector_id?: string; patroller_id?: string; date?: string; from?: string; to?: string });
+  const clock = /^\d{2}:\d{2}$/;
+  const date = (body.date ?? "").trim();
+  const from = (body.from ?? "").trim();
+  const to = (body.to ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !clock.test(from) || !clock.test(to)) throw new AppError("OB_INVALID_INPUT");
+  const db = getDb(c.env);
+  const member = await db.query.patrollers.findFirst({
+    where: and(eq(patrollers.id, (body.patroller_id ?? "").trim()), eq(patrollers.cpfId, auth.patroller.cpf_id), eq(patrollers.status, "active")),
+  });
+  if (!member) throw new AppError("OB_INVALID_INPUT");
+  const sector = await resolveSector(db, auth, body.sector_id || member.sectorId);
+  const endDate = to <= from ? nextDate(date) : date;
+  const shiftEndsAt = shiftStamp(endDate, to);
+  const prefix = obPrefixFromSectorCode(sector.code);
+  const description = shiftChangeText(prefix, member.callSign, member.name, from, to);
+  const open = await db
+    .select({ entry: obEntries })
+    .from(obEntries)
+    .innerJoin(obEntryTypes, and(eq(obEntryTypes.entryId, obEntries.id), eq(obEntryTypes.typeKey, "commence_shift")))
+    .where(and(eq(obEntries.cpfId, auth.patroller.cpf_id), eq(obEntries.sectorId, sector.id), eq(obEntries.status, "active")));
+  for (const row of open) {
+    await closeShiftEntry(db, auth, row.entry, "Stood down at shift change");
+  }
+  const norm = normalize(
+    { sector_id: sector.id, date, time: from, description },
+    { commenceShift: true, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) },
+  );
+  const created = await insertEntry(c, db, auth, sector, norm);
+  const now = shiftStamp(nowSast().date, nowSast().time);
+  const finished = shiftEndsAt <= now;
+  const [saved] = await db
+    .update(obEntries)
+    .set({
+      callSign: member.callSign,
+      description,
+      shiftEndsAt,
+      status: finished ? "closed" : "active",
+      conclusion: finished ? SHIFT_CONCLUSION : null,
+      actionDetails: finished ? "Shift ended" : "",
+      closedAt: finished ? new Date().toISOString() : null,
+      closedById: finished ? auth.patroller.patroller_id : null,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(obEntries.id, created.id))
+    .returning();
+  await logAudit(db, "ob.commence_shift", auth, { ob_number: saved!.obNumber, call_sign: member.callSign, until: shiftEndsAt });
+  return c.json(await presentEntry(db, saved!), 201);
+});
 
 ob.post("/stand-down", async (c) => {
   const auth = getAuth(c);
@@ -1438,17 +1521,9 @@ ob.post("/stand-down", async (c) => {
     if (!entry) throw new AppError("OB_NO_OPEN_SHIFT");
     open = entry;
   }
-  await closeShiftEntry(db, auth, open, open.actionDetails.trim() || "Stand down");
-  const clock = nowSast();
-  const norm = normalize(
-    { sector_id: open.sectorId, date: clock.date, time: clock.time, description: "Stand Down" },
-    { standDown: true, extraTagKeys: await extraTagKeys(db, auth.patroller.cpf_id) },
-  );
-  const sector = await resolveSector(db, auth, open.sectorId);
-  const created = await insertEntry(c, db, auth, sector, norm);
-  const closed = await closeShiftEntry(db, auth, created, "Stand down");
-  await logAudit(db, "ob.stand_down", auth, { ob_number: closed.obNumber, closed_commence: open.obNumber });
-  return c.json(await presentEntry(db, closed), 201);
+  const closed = await closeShiftEntry(db, auth, open, "Stand down");
+  await logAudit(db, "ob.stand_down", auth, { ob_number: closed.obNumber });
+  return c.json(await presentEntry(db, closed));
 });
 
 ob.post("/tags", async (c) => {

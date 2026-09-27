@@ -5,6 +5,8 @@ import { Hono } from "hono";
 import { logger } from "hono/logger";
 import type { AppContext } from "./lib/middleware.js";
 import { corsMiddleware, errorHandler } from "./lib/middleware.js";
+import type { Env } from "./env.js";
+import { closeDueShifts } from "./routes/ob-book.js";
 import { auth } from "./routes/auth.js";
 import { patrolRoutes } from "./routes/patrols.js";
 import { hotspotsRoute } from "./routes/hotspots.js";
@@ -48,4 +50,9 @@ app.route("/admin/messages", adminMessagesRoute);
 app.route("/admin/ob", obBookRoutes);
 app.route("/ob", obBookRoutes);
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled(_event: unknown, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(closeDueShifts(env));
+  },
+};

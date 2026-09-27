@@ -62,6 +62,7 @@ interface ListRow {
   suburbName: string | null;
   street: string;
   callSign: string;
+  description: string;
   conclusion: string | null;
   primaryType: string;
   primaryCode: string | null;
@@ -358,6 +359,12 @@ export function OccurrenceBookPage() {
   const [groupName, setGroupName] = useState("");
   const [groupSector, setGroupSector] = useState("");
   const [groupFrom, setGroupFrom] = useState<"CPF Group" | "Other Groups">("CPF Group");
+  const [shiftOpen, setShiftOpen] = useState(false);
+  const [shiftMemberId, setShiftMemberId] = useState("");
+  const [shiftSector, setShiftSector] = useState("");
+  const [shiftDate, setShiftDate] = useState(() => sastNow().date);
+  const [shiftFrom, setShiftFrom] = useState("");
+  const [shiftTo, setShiftTo] = useState("");
 
   const meta = useQuery({
     queryKey: ["admin.ob.meta"],
@@ -687,12 +694,32 @@ export function OccurrenceBookPage() {
   }
 
   async function logShift() {
+    if (!shiftMemberId || !shiftFrom || !shiftTo) {
+      setError("Choose who is coming on, and the hours.");
+      setShiftOpen(true);
+      return;
+    }
     setError("");
+    setSaving(true);
     try {
-      await adminFetch("/admin/ob/commence-shift", { method: "POST", body: JSON.stringify({ sector_id: profile?.sector_id }) });
+      await adminFetch("/admin/ob/commence-shift", {
+        method: "POST",
+        body: JSON.stringify({
+          sector_id: shiftSector || profile?.sector_id || undefined,
+          patroller_id: shiftMemberId,
+          date: shiftDate,
+          from: shiftFrom,
+          to: shiftTo,
+        }),
+      });
+      setShiftOpen(false);
+      setShiftFrom("");
+      setShiftTo("");
       void qc.invalidateQueries({ queryKey: ["admin.ob.entries"] });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not log the shift");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -813,7 +840,9 @@ export function OccurrenceBookPage() {
         {isShiftRow ? (
           <div className="rounded-xl border bg-white p-4 sm:p-6">
             <p className="mb-4 text-sm text-gray-600">
-              {isCommence ? `Commence Shift for ${detail.data?.callSign}.` : `Stand Down for ${detail.data?.callSign}.`} This is a book row, not a patrol.
+              {isCommence
+                ? `Commence Shift for ${detail.data?.callSign}. It closes on its own at the end of the hours, or when the next person comes on.`
+                : `Stand Down for ${detail.data?.callSign}.`} This is a book row, not a patrol.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Date" required><input className={inputCls} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
@@ -1216,13 +1245,45 @@ export function OccurrenceBookPage() {
         onSearch={setSearch}
         action={
           <div className="flex gap-2">
-            <Btn variant="ghost" onClick={() => void logShift()}>Log Commence Shift</Btn>
+            <Btn variant="ghost" onClick={() => setShiftOpen((open) => !open)}>{shiftOpen ? "Hide shift change" : "Shift change"}</Btn>
             <Btn variant="ghost" onClick={() => void standDown()}>Stand Down</Btn>
             <Btn onClick={startNew}>+ Log incident</Btn>
           </div>
         }
       />
       {error && <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
+      {shiftOpen && (
+        <div className="mb-4 rounded-xl border bg-white p-4">
+          <h2 className="mb-1 text-sm font-semibold text-gray-900">Call centre shift change</h2>
+          <p className="mb-3 text-xs text-gray-500">The person already on shift is stood down. This shift closes itself at the end time.</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(meta.data?.sectors.length ?? 0) > 1 && (
+              <select className={selectCls} value={shiftSector || profile?.sector_id || ""} onChange={(e) => { setShiftSector(e.target.value); setShiftMemberId(""); }}>
+                {meta.data?.sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}{sector.code ? ` (${sector.code})` : ""}</option>)}
+              </select>
+            )}
+            <select className={selectCls} value={shiftMemberId} onChange={(e) => setShiftMemberId(e.target.value)}>
+              <option value="">Who is coming on</option>
+              {(meta.data?.members ?? [])
+                .filter((member) => {
+                  const sectorId = shiftSector || profile?.sector_id || "";
+                  return !sectorId || member.sectorId === sectorId;
+                })
+                .slice()
+                .sort((a, b) => a.callSign.localeCompare(b.callSign))
+                .map((member) => <option key={member.id} value={member.id}>{member.callSign} {member.name}</option>)}
+            </select>
+            <input className={inputCls} type="date" value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} />
+            <div className="grid grid-cols-2 gap-2">
+              <input className={inputCls} type="time" value={shiftFrom} onChange={(e) => setShiftFrom(e.target.value)} />
+              <input className={inputCls} type="time" value={shiftTo} onChange={(e) => setShiftTo(e.target.value)} />
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Btn onClick={() => void logShift()} disabled={saving}>{saving ? "Saving…" : "Log shift change"}</Btn>
+          </div>
+        </div>
+      )}
       {meta.isError && <p className="mb-4 text-sm text-red-700">The book lists could not be loaded. Apply the database update (ob book tables) and reload.</p>}
       <div className="mb-4 flex gap-2 text-sm">
         {(["active", "closed", ""] as const).map((value) => (
@@ -1258,16 +1319,7 @@ export function OccurrenceBookPage() {
             },
             { header: "When", render: (r) => <span>{r.occurredAt.slice(0, 16)}<br /><span className="text-xs text-gray-500">{r.dayOfWeek} · {r.timeOfDay}</span></span> },
             { header: "Where", render: (r) => <span>{r.suburbName ?? "—"}{r.street ? ` · ${r.street}` : ""}</span> },
-            {
-              header: "Type",
-              render: (r) => (
-                <span>
-                  {r.primaryType}
-                  {r.primaryCode ? ` (${codeWithPhase(r.primaryCode, r.phase)})` : ""}
-                  {r.typeCount > 1 ? ` +${r.typeCount - 1}` : ""}
-                </span>
-              ),
-            },
+            { header: "Type", render: (r) => <span>{r.primaryType}{r.primaryCode ? ` (${codeWithPhase(r.primaryCode, r.phase)})` : ""}{r.typeCount > 1 ? ` +${r.typeCount - 1}` : ""}{r.primaryType === "Commence Shift" && r.description ? <><br /><span className="whitespace-pre-line text-xs font-normal text-gray-600">{r.description}</span></> : null}</span> },
             {
               header: "Danger",
               render: (r) => r.dangerLevel
