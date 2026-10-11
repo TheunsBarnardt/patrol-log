@@ -144,6 +144,7 @@ export const vehicles = sqliteTable("vehicles", {
     .notNull()
     .references(() => cpfs.id, { onDelete: "cascade" }),
   sectorId: text("sector_id").references(() => sectors.id),
+  /** Legacy primary assignee — kept in sync with the first vehicle_members row. */
   patrollerId: text("patroller_id").references(() => patrollers.id, { onDelete: "set null" }),
   registration: text("registration").notNull(),
   description: text("description"),
@@ -159,6 +160,19 @@ export const vehicles = sqliteTable("vehicles", {
   cpfIdx: index("vehicles_cpf_idx").on(t.cpfId),
   regIdx: uniqueIndex("vehicles_reg_cpf_idx").on(t.registration, t.cpfId),
   patrollerIdx: index("vehicles_patroller_idx").on(t.patrollerId),
+}));
+
+/** Many-to-many: shared household / family vehicles. */
+export const vehicleMembers = sqliteTable("vehicle_members", {
+  vehicleId: text("vehicle_id")
+    .notNull()
+    .references(() => vehicles.id, { onDelete: "cascade" }),
+  patrollerId: text("patroller_id")
+    .notNull()
+    .references(() => patrollers.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.vehicleId, t.patrollerId] }),
+  patrollerIdx: index("vehicle_members_patroller_idx").on(t.patrollerId),
 }));
 
 // ── Patrols ──────────────────────────────────────────────

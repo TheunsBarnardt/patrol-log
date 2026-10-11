@@ -28,6 +28,7 @@ import {
 } from "../db/schema.js";
 import { isGeoSarsCompliant, sealRecord } from "../lib/geo.js";
 import { logAudit } from "../lib/audit.js";
+import { isVehicleMember } from "../lib/vehicle-members.js";
 
 export const patrolRoutes = new Hono<AppContext>();
 
@@ -121,6 +122,9 @@ patrolRoutes.post("/commence", requireAuth(), requireAccessLevel("patroller", "s
       where: (v, { and, eq }) => and(eq(v.id, body.patrol_vehicle!), eq(v.cpfId, auth.patroller.cpf_id)),
     });
     if (!vehicle) throw new AppError("COMMENCE_INVALID_VEHICLE");
+    if (!(await isVehicleMember(db, vehicle.id, auth.patroller.patroller_id))) {
+      throw new AppError("COMMENCE_INVALID_VEHICLE");
+    }
 
     const vehicleActive = await db.query.patrols.findFirst({
       where: (p, { and, eq }) => and(eq(p.vehicleId, vehicle!.id), eq(p.state, "active")),
@@ -231,6 +235,9 @@ patrolRoutes.post("/capture", requireAuth(), requireAccessLevel("patroller", "se
       where: (v, { and, eq }) => and(eq(v.id, body.patrol_vehicle!), eq(v.cpfId, auth.patroller.cpf_id)),
     });
     if (!vehicle) throw new AppError("CAPTURE_INVALID_VEHICLE");
+    if (!(await isVehicleMember(db, vehicle.id, auth.patroller.patroller_id))) {
+      throw new AppError("CAPTURE_INVALID_VEHICLE");
+    }
   }
 
   let distanceKm = 0;

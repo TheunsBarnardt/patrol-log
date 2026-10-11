@@ -70,6 +70,7 @@ DELETE FROM next_of_kin;
 DELETE FROM incidents;
 DELETE FROM emergency_services;
 DELETE FROM residents;
+DELETE FROM vehicle_members;
 DELETE FROM vehicles;
 DELETE FROM live_pins;
 DELETE FROM patrollers;
@@ -96,11 +97,16 @@ INSERT INTO next_of_kin (patroller_id, name, relationship, phone) VALUES
   ('pat000000000003', 'Adele Barnardt', 'Spouse', '+27 72 222 2222'),
   ('pat000000000004', 'Theuns Barnardt', 'Spouse', '+27 72 235 2283');
 
-INSERT INTO vehicles (id, cpf_id, sector_id, registration, description, last_odometer, status) VALUES
-  ('veh000000000001', '${cpfId}', '${wbs1}', 'CPF 001 GP', 'Primary patrol bakkie', 123456, 'available'),
-  ('veh000000000002', '${cpfId}', '${wbs1}', 'CPF 002 GP', 'Backup vehicle', 54321, 'available'),
-  ('veh000000000003', '${cpfId}', '${wbs2}', 'CPF 201 GP', 'WBS2 patrol', 10000, 'available'),
-  ('veh000000000004', '${cpfId}', '${wbs3}', 'CPF 301 GP', 'WBS3 patrol', 20000, 'available');
+INSERT INTO vehicles (id, cpf_id, sector_id, patroller_id, registration, description, last_odometer, status) VALUES
+  ('veh000000000001', '${cpfId}', '${wbs1}', 'pat000000000003', 'CPF 001 GP', 'Shared household bakkie (Theuns & Adele)', 123456, 'available'),
+  ('veh000000000002', '${cpfId}', '${wbs1}', 'pat000000000003', 'CPF 002 GP', 'Theuns extra vehicle', 54321, 'available'),
+  ('veh000000000003', '${cpfId}', '${wbs2}', NULL, 'CPF 201 GP', 'WBS2 patrol', 10000, 'available'),
+  ('veh000000000004', '${cpfId}', '${wbs3}', NULL, 'CPF 301 GP', 'WBS3 patrol', 20000, 'available');
+
+INSERT INTO vehicle_members (vehicle_id, patroller_id) VALUES
+  ('veh000000000001', 'pat000000000003'),
+  ('veh000000000001', 'pat000000000004'),
+  ('veh000000000002', 'pat000000000003');
 `;
 
   for (let i = 0; i < 12; i++) {

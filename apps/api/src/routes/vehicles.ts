@@ -1,12 +1,17 @@
-// Patroller-accessible vehicles — list CPF fleet + register own vehicle.
+// Patroller-accessible vehicles — list assigned (incl. shared) + register own vehicle.
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { AppError } from "@patrol-log/shared";
 import type { AppContext } from "../lib/middleware.js";
 import { requireAuth, getAuth } from "../lib/middleware.js";
 import { getDb } from "../db/index.js";
 import { vehicles } from "../db/schema.js";
 import { logAudit } from "../lib/audit.js";
+import {
+  addVehicleMember,
+  isVehicleMember,
+  vehicleIdsForPatroller,
+} from "../lib/vehicle-members.js";
 
 export const vehiclesRoute = new Hono<AppContext>();
 
@@ -23,17 +28,20 @@ function toRecord(row: typeof vehicles.$inferSelect) {
   };
 }
 
-// Only vehicles registered/assigned to this patroller.
+// Vehicles assigned to this patroller (including shared household vehicles).
 vehiclesRoute.get("/", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const db = getDb(c.env);
+  const ids = await vehicleIdsForPatroller(db, auth.patroller.patroller_id);
+  if (!ids.length) return c.json({ results: [] });
+
   const rows = await db
     .select()
     .from(vehicles)
     .where(
       and(
         eq(vehicles.cpfId, auth.patroller.cpf_id),
-        eq(vehicles.patrollerId, auth.patroller.patroller_id),
+        inArray(vehicles.id, ids),
         eq(vehicles.status, "available"),
       ),
     )
@@ -60,14 +68,20 @@ vehiclesRoute.post("/", requireAuth(), async (c) => {
   });
 
   if (existing) {
-    // Allow reclaiming an unassigned plate, or updating own existing vehicle.
-    if (existing.patrollerId && existing.patrollerId !== auth.patroller.patroller_id) {
-      throw new AppError("VEHICLE_DUPLICATE_REGISTRATION");
+    const mine = await isVehicleMember(db, existing.id, auth.patroller.patroller_id);
+    // Allow reclaiming an unassigned plate, or updating a vehicle already shared with this member.
+    if (!mine) {
+      const anyMembers = await db.query.vehicleMembers.findFirst({
+        where: (vm, { eq }) => eq(vm.vehicleId, existing.id),
+      });
+      if (existing.patrollerId || anyMembers) {
+        throw new AppError("VEHICLE_DUPLICATE_REGISTRATION");
+      }
     }
+
     const [row] = await db
       .update(vehicles)
       .set({
-        patrollerId: auth.patroller.patroller_id,
         description: body?.description?.trim() || existing.description,
         lastOdometer:
           body?.last_odometer != null && Number.isFinite(body.last_odometer)
@@ -78,6 +92,7 @@ vehiclesRoute.post("/", requireAuth(), async (c) => {
       })
       .where(eq(vehicles.id, existing.id))
       .returning();
+    await addVehicleMember(db, row.id, auth.patroller.patroller_id);
     await logAudit(db, "vehicle.own_registered", auth, { vehicle_id: row.id, reused: true });
     return c.json(toRecord(row), 200);
   }
@@ -100,11 +115,12 @@ vehiclesRoute.post("/", requireAuth(), async (c) => {
     })
     .returning();
 
+  await addVehicleMember(db, row.id, auth.patroller.patroller_id);
   await logAudit(db, "vehicle.own_registered", auth, { vehicle_id: row.id, reused: false });
   return c.json(toRecord(row), 201);
 });
 
-/** Edit own vehicle (registration / description / odometer). */
+/** Edit own / shared vehicle (registration / description / odometer). */
 vehiclesRoute.patch("/:id", requireAuth(), async (c) => {
   const auth = getAuth(c);
   const id = c.req.param("id");
@@ -117,7 +133,9 @@ vehiclesRoute.patch("/:id", requireAuth(), async (c) => {
     where: (v, { and, eq }) => and(eq(v.id, id), eq(v.cpfId, auth.patroller.cpf_id)),
   });
   if (!existing) throw new AppError("VEHICLE_NOT_FOUND");
-  if (existing.patrollerId !== auth.patroller.patroller_id) throw new AppError("VEHICLE_FORBIDDEN");
+  if (!(await isVehicleMember(db, existing.id, auth.patroller.patroller_id))) {
+    throw new AppError("VEHICLE_FORBIDDEN");
+  }
 
   const update: Partial<typeof vehicles.$inferInsert> = {};
   if (body?.registration != null) {

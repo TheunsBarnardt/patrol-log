@@ -18,6 +18,7 @@ DELETE FROM patrol_breadcrumbs;
 DELETE FROM patrol_escalation_events;
 DELETE FROM patrol_members;
 DELETE FROM patrols;
+DELETE FROM vehicle_members;
 DELETE FROM vehicles;
 DELETE FROM devices;
 DELETE FROM login_attempts;

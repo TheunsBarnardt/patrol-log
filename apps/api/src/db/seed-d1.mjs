@@ -74,6 +74,7 @@ async function main() {
   await db.delete(schema.incidents);
   await db.delete(schema.emergencyServices);
   await db.delete(schema.residents);
+  await db.delete(schema.vehicleMembers);
   await db.delete(schema.vehicles);
   await db.delete(schema.livePins);
   await db.delete(schema.patrollers);
@@ -127,9 +128,34 @@ async function main() {
   ]);
 
   console.log("[seed] vehicles...");
+  const sharedVehicleId = uuid();
+  const bakkieId = uuid();
   await db.insert(schema.vehicles).values([
-    { id: uuid(), cpfId, sectorId, registration: "CPF 001 GP", description: "Primary patrol bakkie", lastOdometer: 123456, status: "available" },
-    { id: uuid(), cpfId, sectorId, registration: "CPF 002 GP", description: "Backup vehicle", lastOdometer: 54321, status: "available" },
+    {
+      id: sharedVehicleId,
+      cpfId,
+      sectorId,
+      patrollerId: theunsId,
+      registration: "CPF 001 GP",
+      description: "Shared household bakkie (Theuns & Adele)",
+      lastOdometer: 123456,
+      status: "available",
+    },
+    {
+      id: bakkieId,
+      cpfId,
+      sectorId,
+      patrollerId: theunsId,
+      registration: "CPF 002 GP",
+      description: "Theuns extra vehicle",
+      lastOdometer: 54321,
+      status: "available",
+    },
+  ]);
+  await db.insert(schema.vehicleMembers).values([
+    { vehicleId: sharedVehicleId, patrollerId: theunsId },
+    { vehicleId: sharedVehicleId, patrollerId: adeleBId },
+    { vehicleId: bakkieId, patrollerId: theunsId },
   ]);
 
   console.log("[seed] residents...");

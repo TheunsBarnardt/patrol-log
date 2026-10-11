@@ -34,11 +34,17 @@ import {
   patrols,
   residents,
   sectors,
+  vehicleMembers,
   vehicles,
 } from "../db/schema.js";
 import { hashPassword } from "../lib/hashing.js";
 import { logAudit } from "../lib/audit.js";
 import { assertSectorAccess, scopedSectorId, tenantScope } from "../lib/scope.js";
+import {
+  membersForVehicles,
+  resolvePatrollerIdsInCpf,
+  setVehicleMembers,
+} from "../lib/vehicle-members.js";
 
 const EMPTY_HOURS: Record<PatrolType, number> = {
   foot: 0,
@@ -959,52 +965,111 @@ admin.get("/vehicles", async (c) => {
       lastOdometer: vehicles.lastOdometer,
       status: vehicles.status,
       createdAt: vehicles.createdAt,
-      memberCallSign: patrollers.callSign,
-      memberName: patrollers.name,
     })
     .from(vehicles)
-    .leftJoin(patrollers, eq(vehicles.patrollerId, patrollers.id))
     .where(tenantScope(auth, vehicles))
     .orderBy(vehicles.registration);
-  return c.json({ results: rows });
+
+  const byVehicle = await membersForVehicles(db, rows.map((r) => r.id));
+  return c.json({
+    results: rows.map((r) => {
+      const members = byVehicle.get(r.id) ?? [];
+      const first = members[0];
+      return {
+        ...r,
+        patrollerId: first?.id ?? r.patrollerId,
+        patrollerIds: members.map((m) => m.id),
+        members,
+        memberCallSign: first?.callSign ?? null,
+        memberName: first?.name ?? null,
+        memberCallSigns: members.map((m) => m.callSign).join("; ") || null,
+      };
+    }),
+  });
 });
 
 admin.post("/vehicles", async (c) => {
   const auth = getAuth(c);
-  const body = await c.req.json<{ registration: string; description?: string; last_odometer?: number; status?: string; sector_id?: string; patroller_id?: string }>();
+  const body = await c.req.json<{
+    registration: string;
+    description?: string;
+    last_odometer?: number;
+    status?: string;
+    sector_id?: string;
+    patroller_id?: string | null;
+    patroller_ids?: string[];
+  }>();
   const db = getDb(c.env);
+  const requestedIds =
+    body.patroller_ids ?? (body.patroller_id ? [body.patroller_id] : []);
+  const memberIds = await resolvePatrollerIdsInCpf(db, auth.patroller.cpf_id, requestedIds);
+
   const [row] = await db.insert(vehicles).values({
     cpfId: auth.patroller.cpf_id,
     sectorId: body.sector_id ?? auth.patroller.sector_id,
-    patrollerId: body.patroller_id ?? null,
+    patrollerId: memberIds[0] ?? null,
     registration: body.registration.toUpperCase(),
     description: body.description ?? null,
     lastOdometer: body.last_odometer ?? 0,
     status: (body.status as any) ?? "available",
   }).returning();
-  await logAudit(db, "admin.vehicle.created", auth, { vehicle_id: row.id });
-  return c.json(row);
+  await setVehicleMembers(db, row.id, memberIds);
+  await logAudit(db, "admin.vehicle.created", auth, { vehicle_id: row.id, patroller_ids: memberIds });
+  const members = (await membersForVehicles(db, [row.id])).get(row.id) ?? [];
+  return c.json({
+    ...row,
+    patrollerId: members[0]?.id ?? null,
+    patrollerIds: members.map((m) => m.id),
+    members,
+    memberCallSign: members[0]?.callSign ?? null,
+    memberName: members[0]?.name ?? null,
+    memberCallSigns: members.map((m) => m.callSign).join("; ") || null,
+  });
 });
 
 admin.patch("/vehicles/:id", async (c) => {
   const auth = getAuth(c);
   const id = c.req.param("id");
-  const body = await c.req.json<Partial<{ description: string; status: string; last_odometer: number; patroller_id: string | null }>>();
+  const body = await c.req.json<Partial<{
+    description: string;
+    status: string;
+    last_odometer: number;
+    patroller_id: string | null;
+    patroller_ids: string[];
+  }>>();
   const db = getDb(c.env);
   const update: Partial<typeof vehicles.$inferInsert> = {};
   if (body.description !== undefined) update.description = body.description;
   if (body.status !== undefined) update.status = body.status as any;
   if (body.last_odometer !== undefined) update.lastOdometer = body.last_odometer;
-  if ("patroller_id" in body) update.patrollerId = body.patroller_id ?? null;
-  const [row] = await db.update(vehicles).set(update).where(eq(vehicles.id, id)).returning();
+  if (Object.keys(update).length) {
+    await db.update(vehicles).set(update).where(eq(vehicles.id, id));
+  }
+  if (body.patroller_ids !== undefined || "patroller_id" in body) {
+    const requestedIds =
+      body.patroller_ids ?? (body.patroller_id ? [body.patroller_id] : []);
+    const memberIds = await resolvePatrollerIdsInCpf(db, auth.patroller.cpf_id, requestedIds);
+    await setVehicleMembers(db, id, memberIds);
+  }
+  const [row] = await db.select().from(vehicles).where(eq(vehicles.id, id)).limit(1);
   await logAudit(db, "admin.vehicle.updated", auth, { vehicle_id: id });
-  return c.json(row);
+  const members = (await membersForVehicles(db, [id])).get(id) ?? [];
+  return c.json({
+    ...row,
+    patrollerId: members[0]?.id ?? null,
+    patrollerIds: members.map((m) => m.id),
+    members,
+    memberCallSign: members[0]?.callSign ?? null,
+    memberName: members[0]?.name ?? null,
+    memberCallSigns: members.map((m) => m.callSign).join("; ") || null,
+  });
 });
 
 admin.delete("/vehicles/:id", async (c) => {
   const auth = getAuth(c);
   const id = c.req.param("id");
   const db = getDb(c.env);
+  await db.delete(vehicleMembers).where(eq(vehicleMembers.vehicleId, id));
   await db.delete(vehicles).where(eq(vehicles.id, id));
   await logAudit(db, "admin.vehicle.deleted", auth, { vehicle_id: id });
   return c.json({ ok: true });
@@ -1291,28 +1356,45 @@ admin.post("/emergency-services/import", async (c) => {
 
 admin.post("/vehicles/import", async (c) => {
   const auth = getAuth(c);
-  const body = await c.req.json<{ rows: Array<{ registration: string; description?: string; last_odometer?: string | number; status?: string; member_call_sign?: string }> }>();
+  const body = await c.req.json<{
+    rows: Array<{
+      registration: string;
+      description?: string;
+      last_odometer?: string | number;
+      status?: string;
+      member_call_sign?: string;
+      member_call_signs?: string;
+    }>;
+  }>();
   const db = getDb(c.env);
   let imported = 0; let skipped = 0; const errors: string[] = [];
   for (const r of body.rows) {
     if (!r.registration?.trim()) { skipped++; continue; }
     try {
-      let patrollerId: string | null = null;
-      if (r.member_call_sign?.trim()) {
+      const rawSigns = [r.member_call_signs, r.member_call_sign]
+        .filter(Boolean)
+        .join(";");
+      const callSigns = rawSigns
+        .split(/[;,|]/)
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+      const memberIds: string[] = [];
+      for (const cs of callSigns) {
         const member = await db.query.patrollers.findFirst({
-          where: and(eq(patrollers.callSign, r.member_call_sign.trim().toUpperCase()), eq(patrollers.cpfId, auth.patroller.cpf_id)),
+          where: and(eq(patrollers.callSign, cs), eq(patrollers.cpfId, auth.patroller.cpf_id)),
         });
-        patrollerId = member?.id ?? null;
+        if (member) memberIds.push(member.id);
       }
-      await db.insert(vehicles).values({
+      const [row] = await db.insert(vehicles).values({
         cpfId: auth.patroller.cpf_id,
         sectorId: auth.patroller.sector_id,
-        patrollerId,
+        patrollerId: memberIds[0] ?? null,
         registration: r.registration.trim().toUpperCase(),
         description: r.description?.trim() ?? null,
         lastOdometer: Number(r.last_odometer ?? 0),
         status: (r.status as any) ?? "available",
-      });
+      }).returning();
+      await setVehicleMembers(db, row.id, memberIds);
       imported++;
     } catch (e: any) {
       errors.push(`${r.registration}: ${e?.message ?? "duplicate or invalid"}`);

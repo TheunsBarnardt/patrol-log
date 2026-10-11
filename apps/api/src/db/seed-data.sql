@@ -21,6 +21,7 @@ DELETE FROM next_of_kin;
 DELETE FROM incidents;
 DELETE FROM emergency_services;
 DELETE FROM residents;
+DELETE FROM vehicle_members;
 DELETE FROM vehicles;
 DELETE FROM live_pins;
 DELETE FROM patrollers;
@@ -60,9 +61,14 @@ INSERT INTO next_of_kin (patroller_id, name, relationship, phone) VALUES
   ('pat000000000004', 'Theuns Barnardt', 'Spouse', '+27 72 235 2283');
 
 -- ── Vehicles ────────────────────────────────────────────
-INSERT INTO vehicles (id, cpf_id, sector_id, registration, description, last_odometer, status) VALUES
-  ('veh000000000001', 'cpf000000000001', 'sec000000000001', 'CPF 001 GP', 'Primary patrol bakkie', 123456, 'available'),
-  ('veh000000000002', 'cpf000000000001', 'sec000000000001', 'CPF 002 GP', 'Backup vehicle', 54321, 'available');
+INSERT INTO vehicles (id, cpf_id, sector_id, patroller_id, registration, description, last_odometer, status) VALUES
+  ('veh000000000001', 'cpf000000000001', 'sec000000000001', 'pat000000000003', 'CPF 001 GP', 'Shared household bakkie (Theuns & Adele)', 123456, 'available'),
+  ('veh000000000002', 'cpf000000000001', 'sec000000000001', 'pat000000000003', 'CPF 002 GP', 'Theuns extra vehicle', 54321, 'available');
+
+INSERT INTO vehicle_members (vehicle_id, patroller_id) VALUES
+  ('veh000000000001', 'pat000000000003'),
+  ('veh000000000001', 'pat000000000004'),
+  ('veh000000000002', 'pat000000000003');
 
 -- ── Residents ───────────────────────────────────────────
 INSERT INTO residents (cpf_id, sector_id, name, phone, address) VALUES

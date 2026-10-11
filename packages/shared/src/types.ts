@@ -313,8 +313,10 @@ export interface VehicleRecord {
   description: string | null;
   lastOdometer: number;
   status: "available" | "maintenance" | "retired";
-  sectorId: string;
+  sectorId: string | null;
   cpfId: string;
+  /** Present when the API returns assignment metadata. */
+  patrollerId?: string | null;
 }
 
 // ── Live map (extended) ──────────────────────────────────
