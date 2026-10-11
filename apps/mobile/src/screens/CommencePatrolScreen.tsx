@@ -317,12 +317,17 @@ export function CommencePatrolScreen({ navigation }: Props) {
                   ? selectedVehicle.registration
                   : availableVehicles.length === 0
                     ? "Add your vehicle"
-                    : "Choose vehicle"}
+                    : "Choose which vehicle to use"}
               </Text>
               <FontAwesome5 name="chevron-right" size={12} color={colors.textMuted} />
             </Pressable>
             {!!selectedVehicle?.description && (
               <Text style={styles.fieldHint}>{selectedVehicle.description}</Text>
+            )}
+            {!selectedVehicle && availableVehicles.length > 1 && (
+              <Text style={styles.fieldHint}>
+                Shared vehicles appear here too — pick the one you’re using tonight.
+              </Text>
             )}
 
             <Text style={[styles.blockTitle, { marginTop: spacing.lg }]}>Odometer start (optional)</Text>
@@ -446,10 +451,10 @@ export function CommencePatrolScreen({ navigation }: Props) {
             <View style={styles.addIcon}>
               <FontAwesome5 name="plus" size={14} color="#fff" solid />
             </View>
-            <Text style={styles.addText}>Add own vehicle</Text>
+            <Text style={styles.addText}>Add another vehicle</Text>
           </Pressable>
           {availableVehicles.length === 0 ? (
-            <Text style={styles.empty}>No vehicles yet. Add yours to continue.</Text>
+            <Text style={styles.empty}>No vehicles assigned yet. Add yours to continue.</Text>
           ) : (
             <FlatList
               data={availableVehicles}
@@ -492,7 +497,7 @@ export function CommencePatrolScreen({ navigation }: Props) {
         <Pressable style={styles.sheetBackdrop} onPress={() => setAddOwnOpen(false)} />
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>{editingVehicleId ? "Edit vehicle" : "Add own vehicle"}</Text>
+          <Text style={styles.sheetTitle}>{editingVehicleId ? "Edit vehicle" : "Add another vehicle"}</Text>
           <Text style={styles.sheetLabel}>Registration</Text>
           <TextInput
             style={styles.fieldInput}

@@ -62,6 +62,7 @@ DELETE FROM next_of_kin;
 DELETE FROM incidents;
 DELETE FROM emergency_services;
 DELETE FROM residents;
+DELETE FROM vehicle_members;
 DELETE FROM vehicles;
 DELETE FROM live_pins;
 DELETE FROM patrollers;
@@ -89,9 +90,19 @@ if (theuns && adele) {
 
 for (const v of data.vehicles) {
   const id = uuid();
-  const assigned = v.assigned_call_sign ? memberIds.get(String(v.assigned_call_sign).toUpperCase()) : null;
-  const patrollerCol = assigned ? `'${assigned}'` : "NULL";
+  const signs = [
+    ...(Array.isArray(v.assigned_call_signs) ? v.assigned_call_signs : []),
+    ...(v.assigned_call_sign ? [v.assigned_call_sign] : []),
+  ]
+    .map((s) => String(s).toUpperCase())
+    .filter(Boolean);
+  const uniqueSigns = [...new Set(signs)];
+  const assignedIds = uniqueSigns.map((cs) => memberIds.get(cs)).filter(Boolean);
+  const patrollerCol = assignedIds[0] ? `'${assignedIds[0]}'` : "NULL";
   sql += `INSERT INTO vehicles (id, cpf_id, sector_id, patroller_id, registration, description, last_odometer, status) VALUES ('${id}', '${cpfId}', '${sectorId}', ${patrollerCol}, '${esc(v.registration)}', '${esc(v.description || "")}', ${Number(v.last_odometer) || 0}, 'available');\n`;
+  for (const pid of assignedIds) {
+    sql += `INSERT INTO vehicle_members (vehicle_id, patroller_id) VALUES ('${id}', '${pid}');\n`;
+  }
 }
 
 for (const s of data.emergency_services) {

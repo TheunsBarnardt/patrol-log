@@ -224,9 +224,12 @@ export function CapturePatrolScreen({ navigation }: Props) {
           <>
             <Text style={styles.label}>Vehicle</Text>
             {vehicles.length === 0 ? (
-              <Text style={styles.muted}>No vehicles on file — add one under Commence patrol first.</Text>
+              <Text style={styles.muted}>No vehicles assigned — add one under Commence patrol first.</Text>
             ) : (
               <View style={styles.vehicleList}>
+                {vehicles.length > 1 ? (
+                  <Text style={styles.muted}>Pick the vehicle you actually used (shared vehicles included).</Text>
+                ) : null}
                 {vehicles.map((v) => {
                   const on = selectedVehicle?.id === v.id;
                   return (

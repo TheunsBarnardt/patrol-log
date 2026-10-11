@@ -3,7 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetch } from "../lib/api";
 import { DataTable, PageHeader, RowActions, StatusBadge } from "../components/DataTable";
 import { Modal, Field, Btn, inputCls, selectCls } from "../components/Modal";
+import { MultiSelect } from "../components/MultiSelect";
 import { parseCsv, CsvImportButton, csvStamp } from "../components/CsvImport";
+
+interface VehicleMember {
+  id: string;
+  callSign: string;
+  name: string;
+}
 
 interface Vehicle {
   id: string;
@@ -12,16 +19,44 @@ interface Vehicle {
   lastOdometer: number;
   status: "available" | "maintenance" | "retired";
   patrollerId: string | null;
+  patrollerIds?: string[];
+  members?: VehicleMember[];
   memberCallSign: string | null;
   memberName: string | null;
+  memberCallSigns?: string | null;
 }
 
 interface Member { id: string; callSign: string; name: string }
 
 const STATUSES = ["available", "maintenance", "retired"] as const;
 
-const EMPTY_ADD = { registration: "", description: "", last_odometer: 0, status: "available" as Vehicle["status"], patroller_id: "" };
-const EMPTY_EDIT = { description: "", status: "available" as Vehicle["status"], last_odometer: 0, patroller_id: "" };
+const EMPTY_ADD = {
+  registration: "",
+  description: "",
+  last_odometer: 0,
+  status: "available" as Vehicle["status"],
+  patroller_ids: [] as string[],
+};
+const EMPTY_EDIT = {
+  description: "",
+  status: "available" as Vehicle["status"],
+  last_odometer: 0,
+  patroller_ids: [] as string[],
+};
+
+function memberIdsOf(r: Vehicle): string[] {
+  if (r.patrollerIds?.length) return r.patrollerIds;
+  if (r.members?.length) return r.members.map((m) => m.id);
+  return r.patrollerId ? [r.patrollerId] : [];
+}
+
+function assignedLabel(r: Vehicle): string {
+  if (r.members?.length) {
+    return r.members.map((m) => m.callSign).join(", ");
+  }
+  if (r.memberCallSigns) return r.memberCallSigns.replace(/;\s*/g, ", ");
+  return r.memberCallSign ?? "";
+}
 
 export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
@@ -40,12 +75,16 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
     queryFn: () => adminFetch<{ results: Member[] }>("/admin/members"),
   });
   const members: Member[] = membersData?.results ?? [];
+  const memberOptions = members.map((m) => ({
+    value: m.id,
+    label: `${m.callSign} — ${m.name}`,
+  }));
 
   const create = useMutation({
     mutationFn: (body: typeof EMPTY_ADD) =>
       adminFetch<Vehicle>("/admin/vehicles", {
         method: "POST",
-        body: JSON.stringify({ ...body, patroller_id: body.patroller_id || null }),
+        body: JSON.stringify({ ...body, patroller_ids: body.patroller_ids }),
       }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin.vehicles"] }); setAddOpen(false); setAddForm(EMPTY_ADD); },
   });
@@ -53,7 +92,7 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
     mutationFn: (body: typeof EMPTY_EDIT & { id: string }) =>
       adminFetch(`/admin/vehicles/${body.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ ...body, patroller_id: body.patroller_id || null }),
+        body: JSON.stringify({ ...body, patroller_ids: body.patroller_ids }),
       }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin.vehicles"] }); setEditRow(null); },
   });
@@ -73,13 +112,16 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
     },
   });
 
-  const rows = (data?.results ?? []).filter((r) =>
-    !search ||
-    r.registration.toLowerCase().includes(search.toLowerCase()) ||
-    r.description?.toLowerCase().includes(search.toLowerCase()) ||
-    r.memberCallSign?.toLowerCase().includes(search.toLowerCase()) ||
-    r.memberName?.toLowerCase().includes(search.toLowerCase()),
-  );
+  const rows = (data?.results ?? []).filter((r) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      r.registration.toLowerCase().includes(q) ||
+      r.description?.toLowerCase().includes(q) ||
+      assignedLabel(r).toLowerCase().includes(q) ||
+      r.members?.some((m) => m.name.toLowerCase().includes(q) || m.callSign.toLowerCase().includes(q))
+    );
+  });
 
   function openEdit(r: Vehicle) {
     setEditRow(r);
@@ -87,7 +129,7 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
       description: r.description ?? "",
       status: r.status,
       last_odometer: r.lastOdometer,
-      patroller_id: r.patrollerId ?? "",
+      patroller_ids: memberIdsOf(r),
     });
   }
 
@@ -96,7 +138,7 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
     reader.onload = (e) => {
       const { rows } = parseCsv(e.target?.result as string);
       if (!rows.length) { alert("No data rows found in CSV."); return; }
-      if (!confirm(`Import ${rows.length} vehicles?\n\nExpected columns: registration, description, last_odometer, status, member_call_sign`)) return;
+      if (!confirm(`Import ${rows.length} vehicles?\n\nExpected columns: registration, description, last_odometer, status, member_call_signs\n(Use ; or , between call signs for shared vehicles. member_call_sign still works.)`)) return;
       importMut.mutate(rows);
     };
     reader.readAsText(file);
@@ -116,19 +158,22 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
               loading={importMut.isPending}
               exportCsv={{
                 filename: `vehicles-${csvStamp()}.csv`,
-                headers: ["registration", "description", "last_odometer", "status", "member_call_sign"],
+                headers: ["registration", "description", "last_odometer", "status", "member_call_signs"],
                 rows: rows.map((r) => [
                   r.registration,
                   r.description ?? "",
                   String(r.lastOdometer),
                   r.status,
-                  r.memberCallSign ?? "",
+                  r.members?.map((m) => m.callSign).join("; ")
+                    ?? r.memberCallSigns
+                    ?? r.memberCallSign
+                    ?? "",
                 ]),
               }}
               template={{
                 filename: "vehicles-template.csv",
-                headers: ["registration", "description", "last_odometer", "status", "member_call_sign"],
-                example: ["JHB 123 GP", "White Toyota Hilux 2.8 GD-6", "45000", "available", "ALPHA1"],
+                headers: ["registration", "description", "last_odometer", "status", "member_call_signs"],
+                example: ["JHB 123 GP", "White Toyota Hilux 2.8 GD-6", "45000", "available", "ALPHA1; ALPHA2"],
               }}
             />
             <Btn onClick={() => { setAddForm(EMPTY_ADD); setAddOpen(true); }}>+ Add vehicle</Btn>
@@ -143,9 +188,26 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
           columns={[
             { header: "Registration", render: (r) => <span className="font-mono font-bold">{r.registration}</span> },
             { header: "Description", render: (r) => r.description ?? <span className="text-gray-400">—</span> },
-            { header: "Assigned to", render: (r) => r.memberCallSign
-              ? <span>{r.memberCallSign} <span className="text-gray-400 text-xs">— {r.memberName}</span></span>
-              : <span className="text-gray-400 text-xs">Unassigned</span>
+            {
+              header: "Assigned to",
+              render: (r) => {
+                const list = r.members?.length
+                  ? r.members
+                  : r.memberCallSign
+                    ? [{ id: r.patrollerId ?? "", callSign: r.memberCallSign, name: r.memberName ?? "" }]
+                    : [];
+                if (!list.length) return <span className="text-gray-400 text-xs">Unassigned</span>;
+                return (
+                  <div className="flex flex-col gap-0.5">
+                    {list.map((m) => (
+                      <span key={m.id || m.callSign}>
+                        {m.callSign}
+                        {m.name ? <span className="text-gray-400 text-xs"> — {m.name}</span> : null}
+                      </span>
+                    ))}
+                  </div>
+                );
+              },
             },
             { header: "Odometer", render: (r) => `${r.lastOdometer.toLocaleString()} km` },
             { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
@@ -177,17 +239,16 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
         <Field label="Description">
           <input className={inputCls} placeholder="e.g. White Toyota Hilux" value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} />
         </Field>
-        <Field label="Assigned member">
-          <select
-            className={selectCls}
-            value={addForm.patroller_id}
-            onChange={(e) => setAddForm({ ...addForm, patroller_id: e.target.value })}
-          >
-            <option value="">— Unassigned —</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>{m.callSign} — {m.name}</option>
-            ))}
-          </select>
+        <Field label="Assigned members">
+          <MultiSelect
+            options={memberOptions}
+            value={addForm.patroller_ids}
+            onChange={(patroller_ids) => setAddForm({ ...addForm, patroller_ids })}
+            placeholder="— Unassigned —"
+            emptyText="No members"
+            searchable
+          />
+          <p className="mt-1 text-xs text-gray-500">Select more than one for shared vehicles (e.g. husband and wife).</p>
         </Field>
         <Field label="Current odometer (km)">
           <input className={inputCls} type="number" min={0} value={addForm.last_odometer} onChange={(e) => setAddForm({ ...addForm, last_odometer: Number(e.target.value) })} />
@@ -216,17 +277,16 @@ export function VehiclesPage({ embedded = false }: { embedded?: boolean }) {
         <Field label="Description">
           <input className={inputCls} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
         </Field>
-        <Field label="Assigned member">
-          <select
-            className={selectCls}
-            value={editForm.patroller_id}
-            onChange={(e) => setEditForm({ ...editForm, patroller_id: e.target.value })}
-          >
-            <option value="">— Unassigned —</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>{m.callSign} — {m.name}</option>
-            ))}
-          </select>
+        <Field label="Assigned members">
+          <MultiSelect
+            options={memberOptions}
+            value={editForm.patroller_ids}
+            onChange={(patroller_ids) => setEditForm({ ...editForm, patroller_ids })}
+            placeholder="— Unassigned —"
+            emptyText="No members"
+            searchable
+          />
+          <p className="mt-1 text-xs text-gray-500">Select more than one for shared vehicles (e.g. husband and wife).</p>
         </Field>
         <Field label="Current odometer (km)">
           <input className={inputCls} type="number" min={0} value={editForm.last_odometer} onChange={(e) => setEditForm({ ...editForm, last_odometer: Number(e.target.value) })} />

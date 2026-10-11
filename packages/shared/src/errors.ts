@@ -19,7 +19,7 @@ export const ERROR_CODES = {
   COMMENCE_INVALID_PATROL_TYPE: { status: 422, message: "Select a valid patrol type (foot, vehicle, static, sector monitoring, OPS, or responding)" },
   COMMENCE_VEHICLE_REQUIRED: { status: 422, message: "Choose a vehicle for this patrol type" },
   COMMENCE_ALREADY_ON_PATROL: { status: 409, message: "You are already on an active patrol" },
-  COMMENCE_INVALID_VEHICLE: { status: 422, message: "Selected vehicle is not available for your sector" },
+  COMMENCE_INVALID_VEHICLE: { status: 422, message: "Selected vehicle is not assigned to you" },
   COMMENCE_VEHICLE_IN_USE: { status: 409, message: "This vehicle is already on another active patrol" },
   COMMENCE_ODOMETER_START_INVALID: { status: 422, message: "Enter a valid odometer reading at or above the last recorded value" },
   COMMENCE_JOINED_PATROLLER_UNAVAILABLE: { status: 409, message: "One or more joined patrollers are unavailable" },
@@ -31,12 +31,12 @@ export const ERROR_CODES = {
   CAPTURE_TOO_OLD: { status: 422, message: "Captured patrols can only be logged for the last 7 days" },
   CAPTURE_DISTANCE_REQUIRED: { status: 422, message: "Enter kilometres travelled for this patrol" },
   CAPTURE_VEHICLE_REQUIRED: { status: 422, message: "Choose a vehicle for this patrol type" },
-  CAPTURE_INVALID_VEHICLE: { status: 422, message: "Selected vehicle is not available for your sector" },
+  CAPTURE_INVALID_VEHICLE: { status: 422, message: "Selected vehicle is not assigned to you" },
   CAPTURE_ALREADY_ON_PATROL: { status: 409, message: "Stand down your active patrol before capturing a past one" },
 
   // vehicles
   VEHICLE_REGISTRATION_REQUIRED: { status: 422, message: "Enter the vehicle registration" },
-  VEHICLE_DUPLICATE_REGISTRATION: { status: 409, message: "That registration is already registered to another patroller" },
+  VEHICLE_DUPLICATE_REGISTRATION: { status: 409, message: "That registration is already assigned to another member — ask an admin to share it, or use a different plate" },
 
   // workflow/stand-down-patrol
   STAND_DOWN_NOT_ON_PATROL: { status: 409, message: "You are not on any active patrol" },
